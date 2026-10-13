@@ -14,6 +14,7 @@ help: ## Show this list
 
 setup: ## First run after cloning: install, start the local database, write env files, create the demo user
 	@scripts/require-tools.sh
+	@scripts/name-project.sh
 	cd agent && uv sync --locked --all-groups
 	cd web && npm ci
 	$(MAKE) db-start

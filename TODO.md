@@ -16,3 +16,13 @@ Open work on the template itself. Product work in a project made from this templ
 - [ ] No browser test of the full path (sign in, start a run, approve). See `docs/testing.md`.
 - [ ] A run cannot be cancelled from the web.
 - [ ] No follow-up message on a finished run (the saved conversation would allow it).
+
+## Port back to the template
+
+Found while building this repo from the template. Each one is a change to
+`clemenjuan/industrial-agent-template`, not only to this repo.
+
+- [ ] A clone shared the template's local database: `project_id` in `supabase/config.toml` names
+      the Docker volumes. Fixed here with `scripts/name-project.sh`, called from `make setup`.
+- [ ] `scripts/bootstrap.sh` asked for the Supabase keys and left sign-ups and users to do by
+      hand. It now reads the keys from the project, turns sign-ups off and creates users.
