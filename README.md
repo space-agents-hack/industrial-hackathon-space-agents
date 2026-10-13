@@ -23,6 +23,9 @@ make dev
 Open http://localhost:3000 and sign in with the demo user that `make setup` printed. Start the
 example run. It stops at "put the notice on hold" and waits for you to approve or deny.
 
+The **Setup** page in the app (http://localhost:3000/setup) lists the steps from here to a
+production deployment and checks the ones it can.
+
 To use a real model, edit `agent/.env`: set `AGENT_MODEL` (for example
 `anthropic:claude-opus-5-5`, `openai:gpt-5.2`, `openrouter:...`, `deepseek:...`) and the matching
 API key. Nothing else changes.

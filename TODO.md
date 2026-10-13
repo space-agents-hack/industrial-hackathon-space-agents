@@ -29,3 +29,6 @@ Found while building this repo from the template. Each one is a change to
 - [ ] Functions ran in Vercel's default region (Washington) while the database is in Frankfurt:
       every event the agent writes crossed the Atlantic. Both `vercel.json` files now pin `fra1`.
       In the template this should be one documented setting next to the database region.
+- [ ] There was no place that walked a person through the cloud setup. Added `/setup` in the web:
+      a checklist that checks what it can observe and says where each secret goes
+      (`web/lib/setup.ts`, `web/lib/setup-facts.ts`, `web/app/(app)/setup/`).
