@@ -12,11 +12,16 @@ DB ?= local
 # After setup, the env file is the record of that choice.
 USES_LOCAL_DB := $(shell grep -q '^SUPABASE_URL=http://127.0.0.1' agent/.env 2>/dev/null && echo yes)
 
-.PHONY: help setup dev check check-agent check-web check-db check-db-run test-integration types \
+.PHONY: help guide setup dev check check-agent check-web check-db check-db-run test-integration types \
         eval db-start db-reset db-stop user purge-data
 
 help: ## Show this list
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
+
+guide: ## Show the setup steps at http://localhost:3000/setup. Needs only Node, nothing configured
+	@cd web && { [ -d node_modules ] || npm ci; }
+	@echo "Open http://localhost:3000/setup  (Ctrl-C to stop)"
+	@cd web && npm run dev
 
 setup: ## First run after cloning. Local database in Docker by default; DB=hosted needs no Docker
 	@scripts/require-tools.sh $(DB)

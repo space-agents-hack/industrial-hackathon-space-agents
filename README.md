@@ -8,6 +8,15 @@ deploy pipeline that several people can push to without breaking production.
 It runs out of the box with no API key, using a scripted model that plays the example task
 (triaging an engineering change notice against mock PLM, CAD and ERP systems).
 
+## Start here
+
+```bash
+make guide    # needs only Node; open http://localhost:3000/setup
+```
+
+That page gives you the steps for whichever you want, a local environment or a production one,
+and ticks off the ones it can check. The same steps are written out below.
+
 ## Run it locally
 
 Needs `uv`, Node 24+ and the Supabase CLI. Docker is only for the local database; production does
@@ -81,8 +90,8 @@ Once per repository. After this, every push to `main` deploys.
    is green, open the web project's domain from Vercel, sign in and start the example run.
 
 To switch to a real model afterwards, set `AGENT_MODEL` and the provider's API key in the agent's
-Vercel project and re-run the Deploy workflow. The same steps are in the app at `/setup`. If a
-step of the workflow fails, see `docs/deploy.md`.
+Vercel project and re-run the Deploy workflow. If a step of the workflow fails, see
+`docs/deploy.md`.
 
 ## What is in the box
 

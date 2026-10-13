@@ -1,8 +1,18 @@
-import type { NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 
 import { updateSession } from "@/lib/supabase/proxy";
 
 export async function proxy(request: NextRequest) {
+  // On a developer's machine the Setup page is open to anyone and needs nothing configured, so
+  // it can be read on a fresh clone (`make guide`). Deployed, it shows the state of production
+  // and stays behind sign-in like every other page.
+  if (!process.env.VERCEL) {
+    if (request.nextUrl.pathname === "/setup") return NextResponse.next();
+    const configured =
+      process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    // Nothing else can work without a database; send the person to the steps instead of an error.
+    if (!configured) return NextResponse.redirect(new URL("/setup", request.url));
+  }
   return updateSession(request);
 }
 
