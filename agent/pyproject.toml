@@ -1,0 +1,51 @@
+[project]
+name = "agent-service"
+version = "0.1.0"
+description = "Agent loop and tools. Writes runs, events and approval requests to Postgres."
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.143",
+    "pydantic-ai-slim[anthropic,openai,openrouter]>=2.55",
+    "pydantic-settings>=2.15",
+    "supabase>=2.32",
+    "uvicorn>=0.54",
+]
+
+[tool.uv]
+# An application, not a library: nothing is built or published, `main.py` is the entrypoint.
+package = false
+required-version = ">=0.9.7"
+
+[dependency-groups]
+# One group on purpose. In a local `vercel build` (CLI 63.1.2) the builder left `dev` out of the
+# function but installed a separate `evals` group, so the eval library was being deployed.
+dev = [
+    "httpx>=0.28",
+    "pydantic-evals>=2.55",
+    "pyright>=1.1.414",
+    "pytest>=9.1",
+    "ruff>=0.17",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC"]
+
+[tool.pyright]
+typeCheckingMode = "standard"
+pythonVersion = "3.13"
+venvPath = "."
+venv = ".venv"
+include = ["agent_service", "tests", "evals", "main.py"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+# The Supabase client warns about its own internals on every call; nothing here can act on it.
+filterwarnings = ["ignore::DeprecationWarning:supabase.*"]
+markers = [
+    "integration: needs a running local Supabase stack (SUPABASE_URL and SUPABASE_SECRET_KEY)",
+]

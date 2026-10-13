@@ -1,0 +1,74 @@
+# Architecture
+
+The decisions and their reasons are in `docs/adr/`. This page is the map.
+
+## The pieces
+
+```mermaid
+flowchart LR
+  B[Browser] -->|pages, sign-in| W[web/ Next.js on Vercel]
+  B <-->|live rows, as the signed-in user| D[(Supabase Postgres)]
+  W -->|insert run, record decision, as the user| D
+  W -->|"POST /runs/{id}/advance + shared secret"| A[agent/ FastAPI on Vercel]
+  A -->|runs, events, approvals, saved conversation, with the secret key| D
+  A -->|tool calls| S[Company systems]
+  A -->|model calls| M[Model provider chosen by AGENT_MODEL]
+```
+
+- **web/** knows nothing about models or tools. It shows rows and writes two things: a new run and
+  a decision on an approval.
+- **agent/** knows nothing about pages or users. It advances a run and writes down what happened.
+- **supabase/** is the contract between them. A change to a table is a change to both sides.
+
+## A run, step by step
+
+1. A person submits a task. The web inserts a `runs` row as that user (`queued`) and calls the
+   agent: "advance this run".
+2. The agent claims the run (`queued` to `running`, in one conditional update so two requests
+   cannot both get it) and starts the loop. Every model message and tool call becomes a
+   `run_events` row as it happens. The browser shows them live.
+3. The model calls a tool marked `requires_approval`. The library stops the run before the tool
+   executes. The agent saves the conversation to `run_state`, inserts an `approvals` row, sets the
+   run to `awaiting_approval`, and the request ends. Nothing is running now.
+4. A person approves or denies in the web. The web records the decision as that user and calls
+   "advance" again.
+5. The agent loads the conversation, hands the decision to the library, and the loop continues:
+   the tool runs if approved, or the model is told it was denied.
+6. The run ends as `succeeded` with an output, or `failed` with an error.
+
+## Where things live
+
+| To change | Edit |
+|---|---|
+| What the agent is for: prompt, tools, mock systems | `agent/agent_service/domain/` |
+| Which model runs it | `AGENT_MODEL` and the provider's key; no code |
+| The loop, limits, what gets logged | `agent/agent_service/runner.py`, `settings.py` |
+| Tables, who can read and write | `supabase/migrations/` and `supabase/tests/` |
+| Pages and the trace | `web/app/`, `web/lib/trace.ts` |
+| What runs on a push | `.github/workflows/deploy.yml`, `Makefile` |
+
+## How it fails
+
+| What happens | What you see | Why it is handled this way |
+|---|---|---|
+| A tool raises, or the model loops | Run `failed`, with the error in the trace | A failure is a recorded state, not a crash |
+| The run exceeds `RUN_TIMEOUT_S` (270 s) | Run `failed`: "Ran out of time" | It ends before the platform kills the function |
+| The function dies mid-run | Run stays `running`; after 60 s without a heartbeat the next "advance" marks it `failed` | Nothing is re-run automatically: an approved write could execute twice |
+| The agent is unreachable | Run stays `queued`; the page offers Retry | The run exists as a row whether or not the agent answered |
+| The model provider is down | Run `failed`; set `AGENT_MODEL=scripted` to keep the demo alive | The scripted model needs no network |
+| Two people click Approve and Deny | The first one wins; the second gets a conflict | The policy only lets a pending approval be decided |
+
+## What this does not do
+
+- **No queue and no background workers.** A run executes inside one HTTP request. A step longer
+  than the function limit (300 s on Vercel Hobby, 800 s on Pro) does not fit; the way out is the
+  container in `agent/Dockerfile`.
+- **No multi-tenancy.** Every signed-in user sees every run. Access is controlled by who has an
+  account.
+- **The approval is a pause, not a permission check.** Any signed-in user can approve. If a step
+  needs a specific person's consent, the tool has to check who decided.
+- **No streaming of the model's text token by token.** The trace updates per message and per tool
+  call, which is what a reviewer needs.
+- **No tracing product.** The `run_events` table is the trace. Logfire or another OpenTelemetry
+  backend can be added in `agent_service/__init__.py` in a few lines.
+- **The mock systems do not persist writes.** They exist to be replaced.

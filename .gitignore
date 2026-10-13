@@ -1,0 +1,27 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Challenge or client material. Kept out of git on purpose: see docs/hackathon.md and
+# scripts/purge-challenge-data.sh.
+data/*
+!data/.gitkeep
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.next/
+*.tsbuildinfo
+
+# Platforms
+.vercel/
+supabase/.temp/
+supabase/.branches/
+
+.DS_Store

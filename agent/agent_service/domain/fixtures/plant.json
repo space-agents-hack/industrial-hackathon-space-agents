@@ -1,0 +1,35 @@
+{
+  "min_clearance_mm": 0.2,
+  "parts": {
+    "BR-204": { "name": "Mounting bracket", "parameter": "wall_thickness_mm", "nominal_mm": 2.0 },
+    "CV-310": { "name": "Cover plate", "parameter": "thickness_mm", "nominal_mm": 1.5 }
+  },
+  "ecns": {
+    "ECN-1001": {
+      "title": "Bracket wall thickness 2.0 to 2.5 mm",
+      "part_id": "BR-204",
+      "parameter": "wall_thickness_mm",
+      "from_mm": 2.0,
+      "to_mm": 2.5,
+      "status": "open"
+    },
+    "ECN-1002": {
+      "title": "Cover plate thickness 1.5 to 1.6 mm",
+      "part_id": "CV-310",
+      "parameter": "thickness_mm",
+      "from_mm": 1.5,
+      "to_mm": 1.6,
+      "status": "open"
+    }
+  },
+  "assemblies": {
+    "ASM-310": { "name": "Pump housing, left", "uses": { "BR-204": { "qty": 2, "free_clearance_mm": 0.3 } } },
+    "ASM-311": { "name": "Pump housing, right", "uses": { "BR-204": { "qty": 2, "free_clearance_mm": 1.2 } } },
+    "ASM-420": { "name": "Control cabinet door", "uses": { "CV-310": { "qty": 1, "free_clearance_mm": 0.8 } } }
+  },
+  "orders": [
+    { "order_id": "SO-88014", "part_id": "BR-204", "assembly_id": "ASM-310", "qty": 40, "due": "2026-11-06" },
+    { "order_id": "SO-88031", "part_id": "BR-204", "assembly_id": "ASM-311", "qty": 15, "due": "2026-11-20" },
+    { "order_id": "SO-88102", "part_id": "CV-310", "assembly_id": "ASM-420", "qty": 120, "due": "2026-12-01" }
+  ]
+}
