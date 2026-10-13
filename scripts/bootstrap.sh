@@ -10,14 +10,16 @@
 #   2. links the Supabase project you give it and, if you agree, applies the migrations
 #   3. sets the production environment variables of both Vercel projects
 #   4. sets the secrets and variables the GitHub workflow reads
+#   5. turns new sign-ups off in the Supabase project and creates the users you name
 #
-# What it does NOT do: create the Supabase project (do that in the dashboard first), create users,
-# turn sign-ups off (supabase/README.md), or push.
+# What it does NOT do: create the Supabase project (do that in the dashboard first) or push.
 #
 # Every secret is typed into a hidden prompt and passed on standard input. Nothing is written to
 # disk except the two .vercel/ link folders, which are git-ignored.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# shellcheck source=scripts/lib.sh
+source scripts/lib.sh
 
 say() { printf '\n== %s\n' "$*"; }
 ask() { # prompt, default -> answer on stdout
@@ -64,22 +66,35 @@ vercel_token="$(ask_secret "Vercel token")"
 # production domain when it is created, so ask Vercel for it instead of guessing the name.
 team_query=""
 [[ "$org_id" == team_* ]] && team_query="?teamId=$org_id"
-agent_domain="$(curl -fsS -H "Authorization: Bearer $vercel_token" \
-  "https://api.vercel.com/v9/projects/$agent_id/domains$team_query" \
-  | python3 -c 'import json,sys; d=json.load(sys.stdin).get("domains", []); print(d[0]["name"] if d else "")' \
-  || true)"
+project_domain() { # project id -> its first production domain, or nothing
+  curl -fsS -H "Authorization: Bearer $vercel_token" \
+    "https://api.vercel.com/v9/projects/$1/domains$team_query" \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin).get("domains", []); print(d[0]["name"] if d else "")' \
+    || true
+}
+agent_domain="$(project_domain "$agent_id")"
+web_domain="$(project_domain "$web_id")"
 agent_domain="$(ask "Production domain of the agent project" "${agent_domain:-$name-agent.vercel.app}")"
 
 say "Supabase"
 echo "Create the project at https://supabase.com/dashboard/new if you have not, then copy:"
-echo "  the project reference (Settings, General), and the keys (Settings, API Keys)."
+echo "  the project reference (Settings, General) and the database password you chose."
 project_ref="$(ask "Project reference" "")"
 [[ -n "$project_ref" ]] || { echo "A project reference is required." >&2; exit 1; }
 db_password="$(ask_secret "Database password")"
-publishable_key="$(ask "Publishable key (sb_publishable_...)" "")"
-secret_key="$(ask_secret "Secret key (sb_secret_...)")"
 echo "Create a personal access token at https://supabase.com/dashboard/account/tokens"
 supabase_token="$(ask_secret "Supabase access token")"
+
+# The API keys are read straight from the project, so they are never typed or shown.
+publishable_key="$(find_supabase_key "$project_ref" sb_publishable_)"
+secret_key="$(find_supabase_key "$project_ref" sb_secret_)"
+if [[ -n "$publishable_key" && -n "$secret_key" ]]; then
+  echo "Read the publishable and secret keys from the project."
+else
+  echo "Could not read the keys automatically. Copy them from Settings, API Keys."
+  publishable_key="$(ask "Publishable key (sb_publishable_...)" "")"
+  secret_key="$(ask_secret "Secret key (sb_secret_...)")"
+fi
 supabase_url="https://$project_ref.supabase.co"
 
 SUPABASE_DB_PASSWORD="$db_password" supabase link --project-ref "$project_ref"
@@ -137,12 +152,30 @@ set_secret SUPABASE_DB_PASSWORD "$db_password"
 gh variable set VERCEL_AUTHOR_NAME --repo "$repo" --body "$(git config user.name)"
 gh variable set VERCEL_AUTHOR_EMAIL --repo "$repo" --body "$(git config user.email)"
 
+say "Supabase: closing sign-ups"
+# Every signed-in user can see every run and spend model credits, so an open sign-up page is an
+# open door. Best effort: if the API refuses, the message says where to do it by hand.
+if curl -fsS -o /dev/null -X PATCH "https://api.supabase.com/v1/projects/$project_ref/config/auth" \
+  -H "Authorization: Bearer $supabase_token" -H "content-type: application/json" \
+  -d '{"disable_signup": true}'; then
+  echo "New sign-ups are off."
+else
+  echo "Could NOT turn sign-ups off automatically. Do it in the dashboard:"
+  echo "  Authentication, Sign In / Providers, 'Allow new users to sign up'."
+fi
+
+say "Users"
+while true; do
+  user_email="$(ask "Email of a user to create (empty to finish)" "")"
+  [[ -n "$user_email" ]] || break
+  SUPABASE_URL="$supabase_url" SUPABASE_SECRET_KEY="$secret_key" scripts/create-user.sh "$user_email" \
+    || echo "That user was not created; you can retry with scripts/create-user.sh later."
+done
+
 cat <<NEXT
 
-Done. Still by hand, in this order:
-  1. Supabase dashboard: turn off new sign-ups and set the Site URL (supabase/README.md).
-  2. Create your users:
-       SUPABASE_URL=$supabase_url SUPABASE_SECRET_KEY=<secret key> scripts/create-user.sh you@example.com
-  3. git push. Watch the run in the Actions tab; the first release is the real test of this setup.
-  4. Open the site, start the example run and approve the step.
+Done. Next:
+  1. git push (or re-run the Deploy workflow). The first release is the real test of this setup.
+  2. Open https://${web_domain:-$name-web.vercel.app}, sign in, start the example run and
+     approve the step.
 NEXT

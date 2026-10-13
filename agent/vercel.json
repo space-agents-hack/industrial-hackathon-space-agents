@@ -8,5 +8,8 @@
       "maxDuration": 300,
       "excludeFiles": "{tests/**,evals/**,Dockerfile,.env.example}"
     }
-  }
+  },
+  "regions": [
+    "fra1"
+  ]
 }

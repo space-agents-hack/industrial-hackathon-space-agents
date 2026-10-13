@@ -6,23 +6,37 @@ SHELL := /bin/bash
 # Local services the app does not use. Leaving them out roughly halves the first start.
 SUPABASE_SKIP := edge-runtime,logflare,vector,imgproxy,storage-api,supavisor
 
-.PHONY: help setup dev check check-agent check-web check-db test-integration types eval \
-        db-start db-reset db-stop user purge-data
+# Which database local development uses. `local` runs Supabase in Docker on this machine.
+# `hosted` uses the Supabase project in the cloud and needs no Docker.
+DB ?= local
+# After setup, the env file is the record of that choice.
+USES_LOCAL_DB := $(shell grep -q '^SUPABASE_URL=http://127.0.0.1' agent/.env 2>/dev/null && echo yes)
+
+.PHONY: help setup dev check check-agent check-web check-db check-db-run test-integration types \
+        eval db-start db-reset db-stop user purge-data
 
 help: ## Show this list
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
 
-setup: ## First run after cloning: install, start the local database, write env files, create the demo user
-	@scripts/require-tools.sh
+setup: ## First run after cloning. Local database in Docker by default; DB=hosted needs no Docker
+	@scripts/require-tools.sh $(DB)
+	@scripts/name-project.sh
 	cd agent && uv sync --locked --all-groups
 	cd web && npm ci
+ifeq ($(DB),hosted)
+	scripts/hosted-env.sh
+else
 	$(MAKE) db-start
 	scripts/local-env.sh
 	scripts/create-user.sh
+endif
 	@echo
 	@echo "Ready. Run 'make dev' and open http://localhost:3000"
 
-dev: db-start ## Run the agent (port 8000) and the web (port 3000) together; Ctrl-C stops both
+dev: ## Run the agent (port 8000) and the web (port 3000) together; Ctrl-C stops both
+ifeq ($(USES_LOCAL_DB),yes)
+	@$(MAKE) db-start
+endif
 	scripts/dev.sh
 
 check: check-agent check-web check-db ## Everything CI checks. Run before every push
@@ -34,7 +48,17 @@ check-agent: ## Python: lint, format, types, tests, evals with the scripted mode
 check-web: ## Web: lint, types, tests, build
 	cd web && npm run lint && npm run typecheck && npm test && npm run build
 
-check-db: db-start ## Database: apply new migrations locally, RLS tests, SQL lint, agent contract test
+check-db: ## Database: new migrations, RLS tests, SQL lint, agent contract test. Needs Docker
+	@if docker info >/dev/null 2>&1; then \
+		$(MAKE) check-db-run; \
+	else \
+		echo; \
+		echo "SKIPPED: the database checks need Docker and it is not running."; \
+		echo "SQL and RLS were NOT tested on this machine. CI runs them on every push and"; \
+		echo "blocks the release if they fail."; \
+	fi
+
+check-db-run: db-start
 	supabase migration up --local
 	supabase test db --local
 	supabase db lint --local --schema public --level warning --fail-on error
@@ -46,7 +70,7 @@ test-integration: ## The agent's storage code against the local database
 
 types: ## Regenerate web/lib/database.types.ts after changing the schema
 	@# The generator ends with a blank line, which `git diff --check` reports on every regeneration.
-	supabase gen types typescript --local | sed -e '$${/^$$/d;}' > web/lib/database.types.ts
+	supabase gen types typescript $(if $(USES_LOCAL_DB),--local,--linked) | sed -e '$${/^$$/d;}' > web/lib/database.types.ts
 
 eval: ## Run the evals with AGENT_MODEL (a real model spends tokens)
 	cd agent && uv run python -m evals.ecn_triage

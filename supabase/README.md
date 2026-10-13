@@ -5,6 +5,9 @@ The schema in `migrations/` is the contract between `agent/` and `web/`. Read th
 
 ## Local
 
+This section is about the local database in Docker. Without Docker (`make setup DB=hosted`) the
+commands below that touch the local stack do not apply.
+
 `make setup` starts the stack and creates the demo user. Ports are the Supabase defaults plus 100
 so this project does not collide with another one running on the same machine:
 

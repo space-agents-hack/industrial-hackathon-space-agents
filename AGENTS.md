@@ -32,8 +32,9 @@ Run `make check` before every push. It runs, in this order:
 - database: pending migrations applied locally, `supabase test db`, `supabase db lint`, and the
   agent's contract test against the local stack
 
-The database part needs Docker and the Supabase CLI. If they are not available, say that SQL and
-RLS were not tested against real PostgreSQL. After changing the schema run `make types`. After
+The database part needs Docker. Without it `make check` prints SKIPPED for that part and still
+exits green: say then that SQL and RLS were not tested against real PostgreSQL on this machine,
+and that CI will run them. After changing the schema run `make types`. After
 changing the prompt, a tool description or the model, run `make eval` with the real model and
 report the result. Finish with `git diff --check` and read the diff for secrets.
 

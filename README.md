@@ -10,22 +10,24 @@ It runs out of the box with no API key, using a scripted model that plays the ex
 
 ## Run it locally
 
-Needs `uv`, Node 24 or newer, the Supabase CLI and Docker running.
+Needs `uv`, Node 24+ and the Supabase CLI. Docker is only for the local database; production does
+not use it.
 
 ```bash
-make setup
+make setup    # local database in Docker, no accounts needed
+make dev      # http://localhost:3000, sign in with the demo user that setup printed
 ```
+
+No Docker: use the hosted database instead. The Supabase project must exist and `supabase login`
+must be done. Runs you start locally are then visible to everyone with an account.
 
 ```bash
-make dev
+make setup DB=hosted PROJECT_REF=<project reference>
 ```
 
-Open http://localhost:3000 and sign in with the demo user that `make setup` printed. Start the
-example run. It stops at "put the notice on hold" and waits for you to approve or deny.
-
-To use a real model, edit `agent/.env`: set `AGENT_MODEL` (for example
-`anthropic:claude-opus-5-5`, `openai:gpt-5.2`, `openrouter:...`, `deepseek:...`) and the matching
-API key. Nothing else changes.
+Start the example run: it stops at "put the notice on hold" and waits for you to approve or deny.
+The Setup page (http://localhost:3000/setup) lists the steps to production and checks the ones it
+can. To use a real model, set `AGENT_MODEL` and its API key in `agent/.env`.
 
 ## Start a project from it
 
