@@ -52,6 +52,7 @@ test("a fresh clone, local target: everything is still to do and nothing is call
     setup: "todo",
     dev: "todo",
     "try-local": "manual",
+    customise: "manual",
   });
   assert.match(describeWhere(fresh), /Nothing is set up/);
 });
@@ -64,6 +65,7 @@ test("after setup, a silent agent is a problem; a running one adds the model ste
     dev: "done",
     "try-local": "manual",
     model: "manual",
+    customise: "manual",
   });
 });
 

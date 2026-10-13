@@ -4,7 +4,7 @@ import { updateSession } from "@/lib/supabase/proxy";
 
 export async function proxy(request: NextRequest) {
   // On a developer's machine the Setup page is open to anyone and needs nothing configured, so
-  // it can be read on a fresh clone (`make guide`). Deployed, it shows the state of production
+  // it can be read on a fresh clone. Deployed, it shows the state of production
   // and stays behind sign-in like every other page.
   if (!process.env.VERCEL) {
     if (request.nextUrl.pathname === "/setup") return NextResponse.next();

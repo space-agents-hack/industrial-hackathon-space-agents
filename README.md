@@ -8,59 +8,15 @@ deploy pipeline that several people can push to without breaking production.
 It runs out of the box with no API key, using a scripted model that plays the example task
 (triaging an engineering change notice against mock PLM, CAD and ERP systems).
 
-## Start here
-
-```bash
-make guide    # needs only Node; open http://localhost:3000/setup
-```
-
-That page gives you the steps for a local environment or a production one, and ticks off the ones
-it can check. Docker is only needed for a local database.
-
-## Start a project from it
+## Use it
 
 ```bash
 gh repo create my-project --private --template clemenjuan/industrial-agent-template --clone
+cd my-project
+make dev
 ```
 
-```bash
-cd my-project && make guide
-```
+Open http://localhost:3000. The page tells you what to do next, for running it on your machine or
+for deploying it, and checks each step as you go. Only Node is needed to get that far.
 
-Then make it yours: everything about *what the agent is for* is in one folder,
-`agent/agent_service/domain/`.
-
-| File | Replace with |
-|---|---|
-| `systems.py` | Calls to the real systems or data |
-| `tools.py` | The tools the model may call; mark every write `requires_approval=True` |
-| `prompt.md` | How the agent should work and report |
-| `scripted.py` | A scripted run of your task, or delete it and remove `scripted` from the settings |
-
-## What is in the box
-
-- `agent/`: Python 3.13 and `uv`, FastAPI, Pydantic AI. Model-agnostic: one environment variable
-  picks the provider.
-- `web/`: Next.js. Sign-in, new run, live trace, approve or deny.
-- `supabase/`: the schema both sides share, row-level security, and tests for it.
-- `.github/workflows/deploy.yml`: checks, migrations, deploy, smoke test, promote.
-- `Makefile`: `make check` runs exactly what CI runs.
-- `SOUL.md`, `AGENTS.md`, `CLAUDE.md`: how coding agents and people work in this repo.
-
-## What it does not do
-
-- Run longer than one serverless request per step (300 s on Vercel Hobby, 800 s on Pro).
-- Separate users from each other: everyone with an account sees every run.
-- Check *who* approved: the approval is a pause, not a permission system.
-- Persist anything in the mock systems, which exist to be replaced.
-
-The full list, with the reasons, is in `docs/architecture.md`.
-
-## Documents
-
-- `docs/architecture.md`: the map, a run step by step, how it fails.
-- `docs/adr/`: why Python plus Next.js, why Pydantic AI, why two Vercel projects.
-- `docs/testing.md`: what is tested, what is evaluated, what is not covered.
-- `docs/deploy.md`: the pipeline, the secrets, rollback, what to do when `main` is red.
-- `docs/hackathon.md`: the first hour, the rhythm, the freeze, the data rules.
-- `supabase/README.md`: local database, changing the schema, the hosted project.
+The reasons behind the design are in `docs/`.
