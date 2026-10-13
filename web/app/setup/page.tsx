@@ -30,8 +30,10 @@ export default function SetupPage(props: PageProps<"/setup">) {
         <div className="mx-auto flex h-11 w-full max-w-5xl items-center gap-3 px-4">
           <span className="font-semibold tracking-tight">{APP_NAME}</span>
           <span className="text-xs text-muted-foreground">Setup</span>
-          <Link href="/" className="ml-auto text-xs text-muted-foreground hover:text-foreground">
-            Open the app
+          {/* /login, not /: signed out, / comes straight back here. Signed in, /login goes on to
+              the app. */}
+          <Link href="/login" className="ml-auto text-xs text-muted-foreground hover:text-foreground">
+            Sign in
           </Link>
         </div>
       </header>
@@ -178,13 +180,13 @@ function Instructions({ id, database }: { id: StepId; database: Database }) {
     case "try-local":
       return (
         <p>
-          Open <Link href="/" className="text-primary underline underline-offset-2">the app</Link>
+          <Link href="/login" className="text-primary underline underline-offset-2">Sign in</Link>
           {database === "hosted" ? (
-            " and sign in with your own account"
+            " with your own account"
           ) : (
             <>
               {" "}
-              and sign in as <Cmd>{LOCAL_DEMO_USER.email}</Cmd> with password{" "}
+              as <Cmd>{LOCAL_DEMO_USER.email}</Cmd> with password{" "}
               <Cmd>{LOCAL_DEMO_USER.password}</Cmd>
             </>
           )}

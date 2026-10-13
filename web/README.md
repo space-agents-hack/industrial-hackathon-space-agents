@@ -56,7 +56,7 @@ After a migration, regenerate the database types with `make types` from the repo
 
 | Route | Auth | What it does |
 | --- | --- | --- |
-| `/login` | public | Email and password sign-in. |
+| `/login` | public | Email and password sign-in. Signed-out visitors are sent here when deployed; on a developer's machine they are sent to `/setup` first. |
 | `/` | session | "New run" form and the list of runs, newest first, updated live. |
 | `/runs/[id]` | session | The live trace: task, status, events, pending approvals, result, error, model and usage. |
 | `/setup` | public locally, session when deployed | The steps to a local or a production environment (`?env=local` or `?env=production`), with the ones it can observe checked. Works with nothing configured (`make guide`). Never asks for a secret. |

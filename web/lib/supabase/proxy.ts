@@ -44,7 +44,10 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
       response,
     );
   }
-  return withSessionCookies(NextResponse.redirect(new URL("/login", request.url)), response);
+  // On a developer's machine a signed-out visitor lands on the Setup page, which says what to run
+  // and links to sign-in. Deployed, there is nothing to set up, so it is the login page.
+  const landing = process.env.VERCEL ? "/login" : "/setup";
+  return withSessionCookies(NextResponse.redirect(new URL(landing, request.url)), response);
 }
 
 // A response built here replaces the one the Supabase client wrote to, so the cookies it set
