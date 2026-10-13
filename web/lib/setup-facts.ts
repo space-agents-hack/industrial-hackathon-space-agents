@@ -5,25 +5,31 @@ import path from "node:path";
 
 import { connection } from "next/server";
 
-import { type AgentHealth, type SetupFacts, environmentOf } from "@/lib/setup";
-import { supabaseEnv } from "@/lib/supabase/env";
+import { type AgentHealth, type SetupFacts, databaseOf } from "@/lib/setup";
 
-// What the Setup page can observe: the agent's health over HTTP and, on a developer's machine,
-// the link files the CLIs leave behind. It reads no secret and writes nothing.
+// What the Setup page can observe: the configuration of this server, the agent's health over
+// HTTP and, on a developer's machine, the link files the CLIs leave behind. It reads no secret,
+// writes nothing, and must work on a clone where nothing has been set up.
 export async function gatherSetupFacts(): Promise<SetupFacts> {
   // Request-time only: a prerendered answer would show the state of the build machine.
   await connection();
 
-  const environment = environmentOf(supabaseEnv().url, Boolean(process.env.VERCEL));
+  const onVercel = Boolean(process.env.VERCEL);
   // On Vercel there is no checkout to look at. The steps logic treats production as linked.
-  const onDisk = environment !== "production";
   const [agent, supabaseLinked, vercelWebLinked, vercelAgentLinked] = await Promise.all([
     agentHealth(),
-    onDisk ? exists("..", "supabase", ".temp", "project-ref") : null,
-    onDisk ? exists(".vercel", "project.json") : null,
-    onDisk ? exists("..", "agent", ".vercel", "project.json") : null,
+    onVercel ? null : exists("..", "supabase", ".temp", "project-ref"),
+    onVercel ? null : exists(".vercel", "project.json"),
+    onVercel ? null : exists("..", "agent", ".vercel", "project.json"),
   ]);
-  return { environment, agent, supabaseLinked, vercelWebLinked, vercelAgentLinked };
+  return {
+    onVercel,
+    database: databaseOf(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    agent,
+    supabaseLinked,
+    vercelWebLinked,
+    vercelAgentLinked,
+  };
 }
 
 // Relative to web/, which is where `next dev` runs. The ignore comment stops the bundler from
@@ -39,7 +45,8 @@ async function exists(...segments: string[]): Promise<boolean> {
 }
 
 async function agentHealth(): Promise<AgentHealth> {
-  const baseUrl = process.env.AGENT_URL;
+  // On a fresh clone AGENT_URL is not set yet; the agent would still be on its default port.
+  const baseUrl = process.env.AGENT_URL ?? (process.env.VERCEL ? "" : "http://127.0.0.1:8000");
   if (!baseUrl) {
     return { reachable: false, reason: "AGENT_URL is not set on the web server." };
   }
@@ -59,9 +66,6 @@ async function agentHealth(): Promise<AgentHealth> {
         : "unknown";
     return { reachable: true, model: field("model"), version: field("version") };
   } catch {
-    return {
-      reachable: false,
-      reason: "The agent service did not answer. Locally: is `make dev` running?",
-    };
+    return { reachable: false, reason: "The agent service is not answering." };
   }
 }
