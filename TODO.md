@@ -26,3 +26,6 @@ Found while building this repo from the template. Each one is a change to
       the Docker volumes. Fixed here with `scripts/name-project.sh`, called from `make setup`.
 - [ ] `scripts/bootstrap.sh` asked for the Supabase keys and left sign-ups and users to do by
       hand. It now reads the keys from the project, turns sign-ups off and creates users.
+- [ ] Functions ran in Vercel's default region (Washington) while the database is in Frankfurt:
+      every event the agent writes crossed the Atlantic. Both `vercel.json` files now pin `fra1`.
+      In the template this should be one documented setting next to the database region.
