@@ -26,8 +26,10 @@ make setup DB=hosted PROJECT_REF=<project reference>
 ```
 
 Start the example run: it stops at "put the notice on hold" and waits for you to approve or deny.
-The Setup page (http://localhost:3000/setup) lists the steps to production and checks the ones it
-can. To use a real model, set `AGENT_MODEL` and its API key in `agent/.env`.
+To use a real model, set `AGENT_MODEL` and its API key in `agent/.env`.
+
+**Going to production:** open http://localhost:3000/setup in the local app. It walks you through
+connecting a hosted Supabase project and Vercel, and checks each step it can.
 
 ## Start a project from it
 
