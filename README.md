@@ -14,28 +14,8 @@ It runs out of the box with no API key, using a scripted model that plays the ex
 make guide    # needs only Node; open http://localhost:3000/setup
 ```
 
-That page gives you the steps for whichever you want, a local environment or a production one,
-and ticks off the ones it can check. The same steps are written out below.
-
-## Run it locally
-
-Needs `uv`, Node 24+ and the Supabase CLI. Docker is only for the local database; production does
-not use it.
-
-```bash
-make setup    # local database in Docker, no accounts needed
-make dev      # http://localhost:3000, sign in with the demo user that setup printed
-```
-
-No Docker: use the hosted database instead. The Supabase project must exist and `supabase login`
-must be done. Runs you start locally are then visible to everyone with an account.
-
-```bash
-make setup DB=hosted PROJECT_REF=<project reference>
-```
-
-Start the example run: it stops at "put the notice on hold" and waits for you to approve or deny.
-To use a real model, set `AGENT_MODEL` and its API key in `agent/.env`.
+That page gives you the steps for a local environment or a production one, and ticks off the ones
+it can check. Docker is only needed for a local database.
 
 ## Start a project from it
 
@@ -44,7 +24,7 @@ gh repo create my-project --private --template clemenjuan/industrial-agent-templ
 ```
 
 ```bash
-cd my-project && make setup
+cd my-project && make guide
 ```
 
 Then make it yours: everything about *what the agent is for* is in one folder,
@@ -56,42 +36,6 @@ Then make it yours: everything about *what the agent is for* is in one folder,
 | `tools.py` | The tools the model may call; mark every write `requires_approval=True` |
 | `prompt.md` | How the agent should work and report |
 | `scripted.py` | A scripted run of your task, or delete it and remove `scripted` from the settings |
-
-## Deploy to production
-
-Once per repository. After this, every push to `main` deploys.
-
-1. **Create the Supabase project** at https://supabase.com/dashboard/new. Name it like the
-   repository, pick the region closest to you, click **Generate a password** and copy it. When
-   the project is ready, copy its **Project ID** from Settings, General.
-2. **Create a Supabase token** at https://supabase.com/dashboard/account/tokens.
-3. **Create a Vercel token** at https://vercel.com/account/tokens, scoped to the team that will
-   own the projects.
-4. **Run the script** and answer its questions in this order:
-
-   ```bash
-   scripts/bootstrap.sh
-   ```
-
-   | It asks | You answer |
-   |---|---|
-   | Name for the Vercel projects | Enter |
-   | Vercel token | paste (step 3) |
-   | Production domain of the agent | Enter |
-   | Project reference | paste the Project ID (step 1) |
-   | Database password | paste (step 1) |
-   | Supabase access token | paste (step 2) |
-   | Apply the migrations now? | `y` |
-   | AGENT_MODEL | Enter (keeps the scripted model for the first deploy) |
-   | Email of a user to create | an email, then a password of 12+ characters; repeat per person; empty to finish |
-
-   Nothing appears on screen when you paste a token or password.
-5. **Push.** `git push`, then watch the Deploy workflow in the repository's Actions tab. When it
-   is green, open the web project's domain from Vercel, sign in and start the example run.
-
-To switch to a real model afterwards, set `AGENT_MODEL` and the provider's API key in the agent's
-Vercel project and re-run the Deploy workflow. If a step of the workflow fails, see
-`docs/deploy.md`.
 
 ## What is in the box
 
