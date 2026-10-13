@@ -42,6 +42,9 @@ Vercel, Production environment variables:
 | web | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `AGENT_URL`, `AGENT_SHARED_SECRET` |
 | agent | `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `AGENT_SHARED_SECRET`, `AGENT_MODEL`, and the API key of that model's provider |
 
+Both `vercel.json` files pin the functions to `fra1` (Frankfurt). Keep that next to the database's
+region: the agent writes a row per event, and each one is a round trip.
+
 With none of the Vercel secrets set, the release job says so and stays green. With some of them
 set, it fails and names the missing ones.
 
