@@ -3,8 +3,9 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { ToneBadge } from "@/components/status-badge";
-import { APP_NAME } from "@/lib/config";
+import { APP_NAME, LOCAL_DEMO_USER } from "@/lib/config";
 import {
+  type Database,
   type Step,
   type StepId,
   type StepState,
@@ -72,7 +73,7 @@ async function Guide({ searchParams }: { searchParams: PageProps<"/setup">["sear
       )}
       <ol className="grid gap-2">
         {steps.map((step, index) => (
-          <StepItem key={step.id} step={step} number={index + 1} />
+          <StepItem key={step.id} step={step} number={index + 1} database={facts.database} />
         ))}
       </ol>
     </>
@@ -115,7 +116,15 @@ const TITLES: Record<StepId, string> = {
   model: "Choose a model",
 };
 
-function StepItem({ step, number }: { step: Step; number: number }) {
+function StepItem({
+  step,
+  number,
+  database,
+}: {
+  step: Step;
+  number: number;
+  database: Database;
+}) {
   const meta = STATE_META[step.state];
   return (
     <li className="rounded-md border bg-card px-3 py-2.5">
@@ -129,14 +138,14 @@ function StepItem({ step, number }: { step: Step; number: number }) {
       <p className="mt-1 text-muted-foreground">{step.summary}</p>
       {step.state === "done" ? null : (
         <div className="mt-2 grid gap-2 border-t pt-2">
-          <Instructions id={step.id} />
+          <Instructions id={step.id} database={database} />
         </div>
       )}
     </li>
   );
 }
 
-function Instructions({ id }: { id: StepId }) {
+function Instructions({ id, database }: { id: StepId; database: Database }) {
   switch (id) {
     case "tools":
       return (
@@ -152,7 +161,7 @@ function Instructions({ id }: { id: StepId }) {
           <Block>make setup</Block>
           <p>
             Installs the dependencies, starts the local database, writes the environment files and
-            creates a demo user. It prints that user&apos;s email and password.
+            creates the demo user.
           </p>
         </>
       );
@@ -169,8 +178,17 @@ function Instructions({ id }: { id: StepId }) {
     case "try-local":
       return (
         <p>
-          Open <Link href="/" className="text-primary underline underline-offset-2">the app</Link>,
-          sign in with the demo user, start the first example run and approve the step.
+          Open <Link href="/" className="text-primary underline underline-offset-2">the app</Link>
+          {database === "hosted" ? (
+            " and sign in with your own account"
+          ) : (
+            <>
+              {" "}
+              and sign in as <Cmd>{LOCAL_DEMO_USER.email}</Cmd> with password{" "}
+              <Cmd>{LOCAL_DEMO_USER.password}</Cmd>
+            </>
+          )}
+          . Start the first example run and approve the step.
         </p>
       );
     case "supabase-project":

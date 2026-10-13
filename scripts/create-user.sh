@@ -10,6 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Local only. Printed below on purpose: it opens nothing but a database on this machine.
+# The login page shows the same two values (web/lib/config.ts); change both together.
 LOCAL_EMAIL="demo@example.test"
 LOCAL_PASSWORD="local-demo-only"
 
