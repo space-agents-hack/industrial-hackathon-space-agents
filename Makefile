@@ -7,7 +7,7 @@ SHELL := /bin/bash
 SUPABASE_SKIP := edge-runtime,logflare,vector,imgproxy,storage-api,supavisor
 
 # Which database local development uses. `local` runs Supabase in Docker on this machine.
-# `hosted` uses the Supabase project in the cloud and needs no Docker (README, "What you need").
+# `hosted` uses the Supabase project in the cloud and needs no Docker.
 DB ?= local
 # After setup, the env file is the record of that choice.
 USES_LOCAL_DB := $(shell grep -q '^SUPABASE_URL=http://127.0.0.1' agent/.env 2>/dev/null && echo yes)

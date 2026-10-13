@@ -19,20 +19,9 @@ Open work on the template itself. Product work in a project made from this templ
 
 ## Port back to the template
 
-Found while building this repo from the template. Each one is a change to
-`clemenjuan/industrial-agent-template`, not only to this repo.
+Nothing pending. Everything found up to 2026-10-13 was ported: per-clone local database
+identity, bootstrap reading keys and creating users, Frankfurt region, the Setup page, optional
+Docker.
 
-- [ ] A clone shared the template's local database: `project_id` in `supabase/config.toml` names
-      the Docker volumes. Fixed here with `scripts/name-project.sh`, called from `make setup`.
-- [ ] `scripts/bootstrap.sh` asked for the Supabase keys and left sign-ups and users to do by
-      hand. It now reads the keys from the project, turns sign-ups off and creates users.
-- [ ] Functions ran in Vercel's default region (Washington) while the database is in Frankfurt:
-      every event the agent writes crossed the Atlantic. Both `vercel.json` files now pin `fra1`.
-      In the template this should be one documented setting next to the database region.
-- [ ] There was no place that walked a person through the cloud setup. Added `/setup` in the web:
-      a checklist that checks what it can observe and says where each secret goes
-      (`web/lib/setup.ts`, `web/lib/setup-facts.ts`, `web/app/(app)/setup/`).
-- [ ] Docker was required to run anything. It is now optional: `make setup DB=hosted` points the
-      local app at the hosted project (`scripts/hosted-env.sh`), `make check` skips the database
-      part with a loud note when Docker is not running, and the README says what needs what.
-      NOT yet verified against a real project: only against a fake CLI.
+Still unverified in both repos until a real project exists: `scripts/bootstrap.sh`,
+`make setup DB=hosted`, and the release half of the workflow.

@@ -22,9 +22,8 @@ day. Everything else is our own plan and can change.
 - [ ] Everyone has `uv`, Node 24 and the Supabase CLI installed, and has run `make setup` once on
       the laptop they will bring. Whoever runs `scripts/bootstrap.sh` also needs `gh` and the
       Vercel CLI, signed in.
-- [ ] Decide per person: a private database in Docker, or the hosted one with no Docker
-      (`README.md`, "What you need"). Whoever chooses Docker pulls the images at home, not on the
-      venue's network. Whoever chooses hosted needs an invitation to the Supabase organisation.
+- [ ] Per person: local database in Docker (pull the images at home), or `make setup DB=hosted`
+      with no Docker (needs an invitation to the Supabase organisation).
 - [ ] Decide who owns the Vercel and Supabase accounts for the weekend. That person runs
       `scripts/bootstrap.sh` and their git identity becomes the deploy author.
 - [ ] Decide roles for the first three hours: who talks to the challenge owner, who wires the
