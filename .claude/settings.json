@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make:*)",
+      "Bash(uv run:*)",
+      "Bash(uv sync:*)",
+      "Bash(npm run:*)",
+      "Bash(npm test:*)",
+      "Bash(supabase status:*)",
+      "Bash(supabase test db:*)",
+      "Bash(supabase db lint:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ],
+    "deny": [
+      "Read(./agent/.env)",
+      "Read(./web/.env.local)"
+    ]
+  }
+}

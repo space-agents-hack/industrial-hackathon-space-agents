@@ -1,0 +1,10 @@
+# Not needed to run the service; Python functions bundle every file they can reach.
+.venv
+.env
+.env.*
+tests
+evals
+__pycache__
+.pytest_cache
+.ruff_cache
+Dockerfile

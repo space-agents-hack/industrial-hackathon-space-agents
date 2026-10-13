@@ -1,0 +1,76 @@
+import { AgentError, advanceRun, describeAgentFailure } from "@/lib/agent";
+import { createClient, getSessionUser } from "@/lib/supabase/server";
+import { isUuid, parseDecision, readJson } from "@/lib/validation";
+
+// The run resumes while this function holds the connection to the agent (lib/agent.ts).
+// 300 s is the ceiling on Vercel Hobby; Pro allows 800.
+export const maxDuration = 300;
+
+export async function POST(request: Request, ctx: RouteContext<"/api/approvals/[id]">) {
+  const supabase = await createClient();
+  const user = await getSessionUser(supabase);
+  if (!user) return Response.json({ error: "Not signed in." }, { status: 401 });
+
+  const { id } = await ctx.params;
+  if (!isUuid(id)) return Response.json({ error: "Unknown approval." }, { status: 404 });
+
+  const parsed = parseDecision(await readJson(request));
+  if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+  const { decision, note } = parsed.value;
+
+  // Updated as the user. RLS only lets a row through while it is still pending, so a second
+  // decision (another tab, a teammate) matches zero rows instead of overwriting the first.
+  const { data: decided, error } = await supabase
+    .from("approvals")
+    .update({ status: decision, note, decided_by: user.id })
+    .eq("id", id)
+    .eq("status", "pending")
+    .select("id, run_id, status");
+  if (error) {
+    console.error(`POST /api/approvals/${id}: update failed`, error);
+    return Response.json({ error: "The decision could not be saved." }, { status: 500 });
+  }
+  if (decided.length === 0) {
+    return Response.json(
+      { error: "This approval has already been decided, or does not exist." },
+      { status: 409 },
+    );
+  }
+  const runId = decided[0].run_id;
+
+  // The agent resumes only when every approval of the pause has an answer.
+  const { count, error: countError } = await supabase
+    .from("approvals")
+    .select("id", { count: "exact", head: true })
+    .eq("run_id", runId)
+    .eq("status", "pending");
+  if (countError) {
+    console.error(`POST /api/approvals/${id}: could not count pending approvals`, countError);
+    return Response.json({
+      status: decision,
+      run_id: runId,
+      resumed: false,
+      warning: "The decision was saved, but the run was not resumed. Use Retry.",
+    });
+  }
+  if ((count ?? 0) > 0) return Response.json({ status: decision, run_id: runId, resumed: false });
+
+  try {
+    await advanceRun(runId);
+  } catch (agentError) {
+    // 409 here means the run is no longer waiting: a teammate decided the other approval at the
+    // same moment and their request resumed it first.
+    if (agentError instanceof AgentError && agentError.status === 409) {
+      return Response.json({ status: decision, run_id: runId, resumed: true });
+    }
+    console.error(`POST /api/approvals/${id}: decision saved but run ${runId} not resumed`, agentError);
+    // The decision stands. The run page shows Retry while the run waits with nothing pending.
+    return Response.json({
+      status: decision,
+      run_id: runId,
+      resumed: false,
+      warning: describeAgentFailure(agentError),
+    });
+  }
+  return Response.json({ status: decision, run_id: runId, resumed: true });
+}

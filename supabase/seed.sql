@@ -1,0 +1,4 @@
+-- Runs after the migrations on `supabase db reset`. Local only: `supabase db push` does not run it.
+-- Left empty on purpose. The local demo user is created through the Auth admin API by
+-- scripts/create-user.sh, because rows written straight into auth.users break when Auth changes
+-- its columns.

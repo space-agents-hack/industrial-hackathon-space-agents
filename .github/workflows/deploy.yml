@@ -1,0 +1,352 @@
+name: Deploy
+
+# One workflow, two halves:
+#   checks   on every push and pull request: Python, web and database, in parallel.
+#   release  on a push to main, only if every check is green: migrations, then the agent, then the
+#            web. Each side is deployed WITHOUT the production domain, smoke-tested, and only then
+#            promoted. A broken build never becomes what people see.
+#
+# Several people push to main. What keeps that safe is in the release job: one release at a time,
+# and a release for a commit that is no longer the head of main is skipped.
+#
+# A clone with no secrets yet stays green: the release job says what is missing and stops.
+# docs/deploy.md lists the secrets; scripts/bootstrap.sh sets them.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # To release again without a new commit, for example after setting a missing variable.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Pinned on purpose. A new CLI can change how a build is packaged without anything changing in
+  # this repo. Raise these deliberately, in a commit of their own.
+  VERCEL_CLI_VERSION: "63.1.2"
+  SUPABASE_CLI_VERSION: "2.115.0"
+  UV_VERSION: "0.13.0"
+  NODE_VERSION: "24"
+
+jobs:
+  agent:
+    name: Check agent (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: agent/uv.lock
+
+      # --locked: fail if uv.lock does not match pyproject.toml, instead of quietly resolving
+      # different versions from the ones that were tested.
+      - name: Install
+        run: uv sync --locked --all-groups
+
+      # Fastest first: a lint error is easier to read than the test failure it causes.
+      - name: Lint
+        run: uv run ruff check . && uv run ruff format --check .
+
+      - name: Types
+        run: uv run pyright
+
+      - name: Tests
+        run: uv run pytest -q
+
+      # The scripted model, so this is free and offline. It proves the eval harness still runs;
+      # evaluating a real model is a manual step (`make eval`).
+      - name: Evals (scripted model)
+        run: uv run python -m evals.ecn_triage
+
+  web:
+    name: Check web (Next.js)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Types
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      # Placeholder values: the build needs the variables to exist, not to work.
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54421
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_placeholder
+
+  database:
+    name: Check database (migrations, RLS, contract)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: supabase/setup-cli@v3
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      # Starting from nothing applies every migration in order, which is the test that a fresh
+      # project can be built from this repo. Services the checks do not use are left out because
+      # pulling their images is most of the start-up time.
+      - name: Start Supabase
+        run: supabase start -x edge-runtime,logflare,vector,imgproxy,storage-api,supavisor,studio,mailpit
+
+      - name: RLS tests (pgTAP)
+        run: supabase test db --local
+
+      - name: Lint SQL
+        run: supabase db lint --local --schema public --level warning --fail-on error
+
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: agent/uv.lock
+
+      # The agent's storage code against the real schema, through the API gateway. This is what
+      # fails when a migration and the agent stop agreeing.
+      - name: Contract test (agent against this schema)
+        working-directory: agent
+        run: |
+          set -euo pipefail
+          eval "$(cd .. && supabase status -o env | grep -E '^(API_URL|SECRET_KEY)=')"
+          echo "::add-mask::$SECRET_KEY"
+          uv sync --locked --all-groups
+          SUPABASE_URL="$API_URL" SUPABASE_SECRET_KEY="$SECRET_KEY" uv run pytest -q -m integration
+
+  release:
+    name: Release to production
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [agent, web, database]
+    runs-on: ubuntu-latest
+    environment: production
+    # One release at a time, none cancelled half-way. The queue starts after the checks, so a push
+    # whose checks fail never delays a green one.
+    concurrency:
+      group: production-release
+      cancel-in-progress: false
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      WEB_PROJECT_ID: ${{ secrets.VERCEL_WEB_PROJECT_ID }}
+      AGENT_PROJECT_ID: ${{ secrets.VERCEL_AGENT_PROJECT_ID }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: What is configured
+        id: config
+        shell: bash
+        run: |
+          missing_vercel=()
+          for name in VERCEL_TOKEN VERCEL_ORG_ID WEB_PROJECT_ID AGENT_PROJECT_ID; do
+            [[ -n "${!name}" ]] || missing_vercel+=("$name")
+          done
+          missing_db=()
+          for name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF; do
+            [[ -n "${!name}" ]] || missing_db+=("$name")
+          done
+
+          if (( ${#missing_vercel[@]} == 4 )); then
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "database=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Not released: this repository is not connected to Vercel yet"
+              echo
+              echo "Checks passed. To deploy, run \`scripts/bootstrap.sh\` (see docs/deploy.md)."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Half-configured is a mistake, not a choice: say which names are missing and stop.
+          if (( ${#missing_vercel[@]} > 0 )); then
+            echo "::error::Vercel is partly configured. Missing: ${missing_vercel[*]} (docs/deploy.md)."
+            exit 1
+          fi
+          echo "deploy=true" >> "$GITHUB_OUTPUT"
+
+          if (( ${#missing_db[@]} == 0 )); then
+            echo "database=true" >> "$GITHUB_OUTPUT"
+          elif (( ${#missing_db[@]} == 3 )); then
+            echo "database=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Supabase secrets are not set: migrations are NOT applied by this workflow. Apply them by hand before code that needs them (supabase/README.md)."
+          else
+            echo "::error::Supabase is partly configured. Missing: ${missing_db[*]} (docs/deploy.md)."
+            exit 1
+          fi
+
+      # GitHub does not guarantee the order of the queue. If main has moved on, a newer release is
+      # coming and this one would only put older code in front of people for a few minutes.
+      - name: Is this commit still the head of main
+        id: head
+        if: steps.config.outputs.deploy == 'true'
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          current_sha="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [[ -z "$current_sha" ]]; then
+            echo "::error::Could not resolve origin/main"
+            exit 1
+          fi
+          if [[ "$current_sha" != "$EXPECTED_SHA" ]]; then
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "Release skipped: main is now at $current_sha." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "current=true" >> "$GITHUB_OUTPUT"
+
+      # Migrations first: new code may need a new column, old code must tolerate it. That is why
+      # a migration has to work with the PREVIOUS version of the code (AGENTS.md, "Limits").
+      # Applying to the remote cannot be undone from here; the fix for a bad migration is a new
+      # migration.
+      - uses: supabase/setup-cli@v3
+        if: steps.head.outputs.current == 'true' && steps.config.outputs.database == 'true'
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Apply migrations
+        if: steps.head.outputs.current == 'true' && steps.config.outputs.database == 'true'
+        run: |
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
+          supabase db push
+
+      # Vercel can refuse a deployment whose commit author is not a member of the team that owns
+      # the project. The amend exists only on this runner: it is never pushed and does not change
+      # the commit on GitHub. Set the two repository variables to the Vercel owner's identity.
+      - name: Re-author the commit as the Vercel owner
+        if: steps.head.outputs.current == 'true' && vars.VERCEL_AUTHOR_EMAIL != ''
+        run: |
+          git config user.name "${{ vars.VERCEL_AUTHOR_NAME }}"
+          git config user.email "${{ vars.VERCEL_AUTHOR_EMAIL }}"
+          git commit --amend --no-edit \
+            --author="${{ vars.VERCEL_AUTHOR_NAME }} <${{ vars.VERCEL_AUTHOR_EMAIL }}>"
+
+      - uses: actions/setup-node@v7
+        if: steps.head.outputs.current == 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install Vercel CLI
+        if: steps.head.outputs.current == 'true'
+        run: npm install --global "vercel@${VERCEL_CLI_VERSION}"
+
+      # The agent is built by Vercel from source, not prebuilt here: its compiled Python packages
+      # have to match the machine they run on (docs/adr/0003-deploy-topology.md).
+      # --skip-domain: a production build that does not get the production domain yet.
+      - name: Deploy agent (not yet live)
+        id: agent
+        if: steps.head.outputs.current == 'true'
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_AGENT_PROJECT_ID }}
+        run: |
+          url="$(vercel deploy --cwd agent --prod --skip-domain --yes)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Agent deployment: $url" >> "$GITHUB_STEP_SUMMARY"
+
+      # That it built does not show that it starts. /health shows the app imports and answers.
+      # A POST without the secret must be 401: the endpoint is up AND closed. A 503 here means
+      # AGENT_SHARED_SECRET is not set in the agent's Vercel environment.
+      - name: Smoke agent
+        if: steps.head.outputs.current == 'true'
+        shell: bash
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_AGENT_PROJECT_ID }}
+          DEPLOYMENT_URL: ${{ steps.agent.outputs.url }}
+        run: |
+          vercel curl /health --cwd agent --deployment "$DEPLOYMENT_URL" -- \
+            --fail --silent --show-error --retry 5 --retry-delay 2 --retry-all-errors >/dev/null
+
+          code=""
+          for attempt in 1 2 3; do
+            code="$(vercel curl /runs/00000000-0000-0000-0000-000000000000/advance \
+              --cwd agent --deployment "$DEPLOYMENT_URL" -- \
+              --silent --output /dev/null --write-out '%{http_code}' --request POST || true)"
+            if [[ "$code" == "401" ]]; then break; fi
+            echo "attempt $attempt: got '$code'"
+            sleep 3
+          done
+          if [[ "$code" != "401" ]]; then
+            echo "::error::The agent answered '$code' to a request without the secret; expected 401. Not promoted."
+            exit 1
+          fi
+
+      - name: Build web
+        if: steps.head.outputs.current == 'true'
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_WEB_PROJECT_ID }}
+        run: |
+          vercel pull --cwd web --yes --environment=production
+          vercel build --cwd web --prod
+
+      - name: Deploy web (not yet live)
+        id: web
+        if: steps.head.outputs.current == 'true'
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_WEB_PROJECT_ID }}
+        run: |
+          url="$(vercel deploy --cwd web --prebuilt --prod --skip-domain)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Web deployment: $url" >> "$GITHUB_STEP_SUMMARY"
+
+      # Signed out, the home page must redirect to /login. A 200 would mean the session check is
+      # not running and every page is public.
+      - name: Smoke web
+        if: steps.head.outputs.current == 'true'
+        shell: bash
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_WEB_PROJECT_ID }}
+          DEPLOYMENT_URL: ${{ steps.web.outputs.url }}
+        run: |
+          for path in /api/health /login; do
+            vercel curl "$path" --cwd web --deployment "$DEPLOYMENT_URL" -- \
+              --fail --silent --show-error --retry 5 --retry-delay 2 --retry-all-errors >/dev/null
+          done
+
+          code="$(vercel curl / --cwd web --deployment "$DEPLOYMENT_URL" -- \
+            --silent --output /dev/null --write-out '%{http_code}' || true)"
+          if [[ "$code" != "307" ]]; then
+            echo "::error::The home page answered '$code' to a signed-out request; expected a 307 to /login. Not promoted."
+            exit 1
+          fi
+
+      # Agent first: the new web may call something only the new agent has.
+      - name: Promote agent
+        if: steps.head.outputs.current == 'true'
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_AGENT_PROJECT_ID }}
+        run: vercel promote "${{ steps.agent.outputs.url }}" --cwd agent --yes
+
+      - name: Promote web
+        if: steps.head.outputs.current == 'true'
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_WEB_PROJECT_ID }}
+        run: vercel promote "${{ steps.web.outputs.url }}" --cwd web --yes
