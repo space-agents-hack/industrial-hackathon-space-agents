@@ -8,9 +8,30 @@ deploy pipeline that several people can push to without breaking production.
 It runs out of the box with no API key, using a scripted model that plays the example task
 (triaging an engineering change notice against mock PLM, CAD and ERP systems).
 
+## What you need
+
+Docker has one job here: running a private copy of the database on your own machine. Production
+never uses it, and you can work without it.
+
+| To do this | You need |
+|---|---|
+| Run the app with its **own private database** on your machine | `uv`, Node 24+, the Supabase CLI and **Docker** |
+| Run the app on your machine against the **hosted database** | `uv`, Node 24+ and the Supabase CLI. No Docker |
+| Deploy | Nothing on your machine: pushing to `main` deploys |
+| Connect a new repository to Vercel and Supabase, once | The `gh` and Vercel CLIs, for `scripts/bootstrap.sh` |
+| Run the database tests before pushing | Docker. Without it they run in CI, which blocks the release if they fail |
+
+Which to choose:
+
+- **With Docker** you need no account at all, you work offline, and nothing you try is visible to
+  anyone. It costs an install, a few gigabytes of images on the first start and some memory.
+- **Without Docker** setup is shorter, but the runs you start locally are stored in the hosted
+  database where everyone with an account sees them, you need a network connection, and a
+  migration you want to try is applied to the real database.
+
 ## Run it locally
 
-Needs `uv`, Node 24 or newer, the Supabase CLI and Docker running.
+### With Docker (private database, no accounts)
 
 ```bash
 make setup
@@ -23,8 +44,27 @@ make dev
 Open http://localhost:3000 and sign in with the demo user that `make setup` printed. Start the
 example run. It stops at "put the notice on hold" and waits for you to approve or deny.
 
+### Without Docker (hosted database)
+
+The Supabase project has to exist first (see "Start a project from it"), and your Supabase account
+needs access to it. Sign in once with `supabase login`, then:
+
+```bash
+make setup DB=hosted PROJECT_REF=<project reference>
+```
+
+```bash
+make dev
+```
+
+Sign in with your own account; the project owner creates it with `scripts/create-user.sh`.
+`PROJECT_REF` can be left out on a machine where `scripts/bootstrap.sh` or `supabase link` has
+already run.
+
+### Either way
+
 The **Setup** page in the app (http://localhost:3000/setup) lists the steps from here to a
-production deployment and checks the ones it can.
+production deployment, checks the ones it can, and says which database you are on.
 
 To use a real model, edit `agent/.env`: set `AGENT_MODEL` (for example
 `anthropic:claude-opus-5-5`, `openai:gpt-5.2`, `openrouter:...`, `deepseek:...`) and the matching

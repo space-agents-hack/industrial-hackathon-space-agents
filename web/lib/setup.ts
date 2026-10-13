@@ -1,7 +1,9 @@
 // Pure logic for the Setup page: given what could be observed, which steps are done.
 // No React, no Next.js and no file or network access, so `node --test` can run the tests.
 
-export type Environment = "local" | "production";
+// Three, not two: a laptop can run the app against the hosted database (`make setup DB=hosted`).
+// Calling that "local" would hide that its runs are stored where everyone can see them.
+export type Environment = "local" | "local-hosted" | "production";
 
 export type AgentHealth =
   | { reachable: true; model: string; version: string }
@@ -30,16 +32,26 @@ export type StepId =
 
 export type Step = { id: StepId; state: StepState; summary: string };
 
-export function environmentOf(supabaseUrl: string): Environment {
+export function environmentOf(supabaseUrl: string, onVercel: boolean): Environment {
+  if (onVercel) return "production";
   try {
     const host = new URL(supabaseUrl).hostname;
     return host === "127.0.0.1" || host === "localhost" || host.endsWith(".localhost")
       ? "local"
-      : "production";
+      : "local-hosted";
   } catch {
-    return "production";
+    // Unreadable configuration must not make the page claim it is a private sandbox.
+    return "local-hosted";
   }
 }
+
+export const ENVIRONMENT_NOTE: Record<Environment, string> = {
+  local:
+    "This is your machine with its own database (Docker). Nothing you do here is visible to anyone else.",
+  "local-hosted":
+    "This is your machine using the hosted database. Runs you start here are stored in the cloud and visible to everyone who can sign in.",
+  production: "This is the deployed app.",
+};
 
 export function isScripted(model: string): boolean {
   return model === "scripted";
@@ -54,7 +66,10 @@ export function buildSteps(facts: SetupFacts): Step[] {
     steps.push({
       id: "local-app",
       state: "done",
-      summary: "The web, the local database and your sign-in work: you are reading this page.",
+      summary:
+        environment === "local"
+          ? "The web, the local database and your sign-in work: you are reading this page."
+          : "The web and your sign-in work against the hosted database: you are reading this page.",
     });
   }
 
@@ -78,7 +93,9 @@ export function buildSteps(facts: SetupFacts): Step[] {
 
   // In production every cloud step has necessarily happened: this page is being served by the
   // result of them.
-  const supabaseDone = inProduction || facts.supabaseLinked === true;
+  // A laptop already talking to the hosted database is past this step too, linked or not.
+  const supabaseDone =
+    inProduction || environment === "local-hosted" || facts.supabaseLinked === true;
   steps.push({
     id: "supabase-project",
     state: supabaseDone ? "done" : "todo",

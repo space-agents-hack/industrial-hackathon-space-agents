@@ -2,7 +2,14 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import { ToneBadge } from "@/components/status-badge";
-import { type Step, type StepId, type StepState, buildSteps, countRemaining } from "@/lib/setup";
+import {
+  ENVIRONMENT_NOTE,
+  type Step,
+  type StepId,
+  type StepState,
+  buildSteps,
+  countRemaining,
+} from "@/lib/setup";
 import { gatherSetupFacts } from "@/lib/setup-facts";
 import type { Tone } from "@/lib/trace";
 
@@ -37,7 +44,7 @@ async function Checklist() {
   return (
     <section className="grid gap-3">
       <p className="rounded-md border bg-card px-3 py-2">
-        You are looking at the <strong>{facts.environment}</strong> environment.{" "}
+        {ENVIRONMENT_NOTE[facts.environment]}{" "}
         {remaining === 0
           ? "Nothing this page can check is outstanding."
           : `${remaining} step${remaining === 1 ? "" : "s"} still to do.`}

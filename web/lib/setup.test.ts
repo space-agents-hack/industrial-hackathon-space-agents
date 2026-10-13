@@ -22,12 +22,21 @@ function states(facts: SetupFacts): Partial<Record<StepId, StepState>> {
   return Object.fromEntries(buildSteps(facts).map((step) => [step.id, step.state]));
 }
 
-test("environmentOf: a local Supabase address is local, anything else is production", () => {
-  assert.equal(environmentOf("http://127.0.0.1:54421"), "local");
-  assert.equal(environmentOf("http://localhost:54421"), "local");
-  assert.equal(environmentOf("https://abcd.supabase.co"), "production");
-  // Unreadable configuration must not make the page claim it is a safe local sandbox.
-  assert.equal(environmentOf("not a url"), "production");
+test("environmentOf: a laptop on the hosted database is its own case, not local", () => {
+  assert.equal(environmentOf("http://127.0.0.1:54421", false), "local");
+  assert.equal(environmentOf("http://localhost:54421", false), "local");
+  assert.equal(environmentOf("https://abcd.supabase.co", false), "local-hosted");
+  assert.equal(environmentOf("https://abcd.supabase.co", true), "production");
+  // Unreadable configuration must not make the page claim it is a private sandbox.
+  assert.equal(environmentOf("not a url", false), "local-hosted");
+});
+
+test("on the hosted database from a laptop, the project exists but bootstrap is judged by links", () => {
+  const hosted = states({ ...fresh, environment: "local-hosted" });
+  assert.equal(hosted["local-app"], "done");
+  assert.equal(hosted["supabase-project"], "done");
+  assert.equal(hosted.bootstrap, "todo");
+  assert.equal(hosted.release, "manual");
 });
 
 test("a fresh clone: local steps done, cloud steps still to do", () => {

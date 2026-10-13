@@ -18,6 +18,8 @@
 # disk except the two .vercel/ link folders, which are git-ignored.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# shellcheck source=scripts/lib.sh
+source scripts/lib.sh
 
 say() { printf '\n== %s\n' "$*"; }
 ask() { # prompt, default -> answer on stdout
@@ -83,31 +85,9 @@ db_password="$(ask_secret "Database password")"
 echo "Create a personal access token at https://supabase.com/dashboard/account/tokens"
 supabase_token="$(ask_secret "Supabase access token")"
 
-# The API keys are read straight from the project, so they are never typed or shown. The search
-# is by prefix rather than by field name because the shape of this output has changed before.
-find_key() { # prefix -> first matching value on stdout
-  supabase projects api-keys --project-ref "$project_ref" --reveal --output-format json 2>/dev/null \
-    | python3 -c '
-import json, sys
-prefix = sys.argv[1]
-def walk(node):
-    if isinstance(node, str):
-        if node.startswith(prefix):
-            yield node
-    elif isinstance(node, dict):
-        for value in node.values():
-            yield from walk(value)
-    elif isinstance(node, list):
-        for value in node:
-            yield from walk(value)
-try:
-    print(next(walk(json.load(sys.stdin)), ""))
-except Exception:
-    print("")
-' "$1" || true
-}
-publishable_key="$(find_key sb_publishable_)"
-secret_key="$(find_key sb_secret_)"
+# The API keys are read straight from the project, so they are never typed or shown.
+publishable_key="$(find_supabase_key "$project_ref" sb_publishable_)"
+secret_key="$(find_supabase_key "$project_ref" sb_secret_)"
 if [[ -n "$publishable_key" && -n "$secret_key" ]]; then
   echo "Read the publishable and secret keys from the project."
 else

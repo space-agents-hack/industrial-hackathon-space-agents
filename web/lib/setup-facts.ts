@@ -14,9 +14,9 @@ export async function gatherSetupFacts(): Promise<SetupFacts> {
   // Request-time only: a prerendered answer would show the state of the build machine.
   await connection();
 
-  const environment = environmentOf(supabaseEnv().url);
+  const environment = environmentOf(supabaseEnv().url, Boolean(process.env.VERCEL));
   // On Vercel there is no checkout to look at. The steps logic treats production as linked.
-  const onDisk = environment === "local" && !process.env.VERCEL;
+  const onDisk = environment !== "production";
   const [agent, supabaseLinked, vercelWebLinked, vercelAgentLinked] = await Promise.all([
     agentHealth(),
     onDisk ? exists("..", "supabase", ".temp", "project-ref") : null,

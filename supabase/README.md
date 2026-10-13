@@ -5,6 +5,10 @@ The schema in `migrations/` is the contract between `agent/` and `web/`. Read th
 
 ## Local
 
+This section is about the private database in Docker. To work without Docker against the hosted
+project instead, see `README.md`, "What you need"; the commands below that touch the local stack
+do not apply then.
+
 `make setup` starts the stack and creates the demo user. Ports are the Supabase defaults plus 100
 so this project does not collide with another one running on the same machine:
 

@@ -19,11 +19,14 @@ day. Everything else is our own plan and can change.
 
 - [ ] One full drill from an empty repository to a deployed run with an approval, timed. Fix what
       was slow in the template, not in the drill.
-- [ ] Everyone has `uv`, Node 24, Docker, the Supabase CLI, `gh` and the Vercel CLI installed and
-      signed in, and has run `make setup` once on the laptop they will bring.
+- [ ] Everyone has `uv`, Node 24 and the Supabase CLI installed, and has run `make setup` once on
+      the laptop they will bring. Whoever runs `scripts/bootstrap.sh` also needs `gh` and the
+      Vercel CLI, signed in.
+- [ ] Decide per person: a private database in Docker, or the hosted one with no Docker
+      (`README.md`, "What you need"). Whoever chooses Docker pulls the images at home, not on the
+      venue's network. Whoever chooses hosted needs an invitation to the Supabase organisation.
 - [ ] Decide who owns the Vercel and Supabase accounts for the weekend. That person runs
       `scripts/bootstrap.sh` and their git identity becomes the deploy author.
-- [ ] Docker images are already pulled (`make setup` at home, not on the venue's network).
 - [ ] Decide roles for the first three hours: who talks to the challenge owner, who wires the
       systems, who owns the demo story.
 

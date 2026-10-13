@@ -32,3 +32,7 @@ Found while building this repo from the template. Each one is a change to
 - [ ] There was no place that walked a person through the cloud setup. Added `/setup` in the web:
       a checklist that checks what it can observe and says where each secret goes
       (`web/lib/setup.ts`, `web/lib/setup-facts.ts`, `web/app/(app)/setup/`).
+- [ ] Docker was required to run anything. It is now optional: `make setup DB=hosted` points the
+      local app at the hosted project (`scripts/hosted-env.sh`), `make check` skips the database
+      part with a loud note when Docker is not running, and the README says what needs what.
+      NOT yet verified against a real project: only against a fake CLI.
