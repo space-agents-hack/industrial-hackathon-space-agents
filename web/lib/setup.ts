@@ -28,6 +28,7 @@ export type StepId =
   | "setup"
   | "dev"
   | "try-local"
+  | "customise"
   | "supabase-project"
   | "tokens"
   | "bootstrap"
@@ -107,6 +108,11 @@ function localSteps(facts: SetupFacts): Step[] {
     },
   ];
   if (agent.reachable) steps.push(modelStep(agent.model));
+  steps.push({
+    id: "customise",
+    state: "manual",
+    summary: "Everything about what the agent is for lives in one folder.",
+  });
   return steps;
 }
 

@@ -59,7 +59,7 @@ After a migration, regenerate the database types with `make types` from the repo
 | `/login` | public | Email and password sign-in. Signed-out visitors are sent here when deployed; on a developer's machine they are sent to `/setup` first. |
 | `/` | session | "New run" form and the list of runs, newest first, updated live. |
 | `/runs/[id]` | session | The live trace: task, status, events, pending approvals, result, error, model and usage. |
-| `/setup` | public locally, session when deployed | The steps to a local or a production environment (`?env=local` or `?env=production`), with the ones it can observe checked. Works with nothing configured (`make guide`). Never asks for a secret. |
+| `/setup` | public locally, session when deployed | The steps to a local or a production environment (`?env=local` or `?env=production`), with the ones it can observe checked. Works with nothing configured. Never asks for a secret. |
 | `GET /api/health` | public | `{ "status": "ok" }`. Used by the deploy smoke test; does not touch Supabase. |
 | `POST /api/runs` | session | Body `{ task }`. Inserts the run as the user, asks the agent to start it, returns `{ id }`, plus `warning` when the run was saved but the agent call failed. |
 | `POST /api/runs/[id]/advance` | session | Retry: asks the agent to pick the run up again. Passes the agent's `404` and `409` through; `502` when it cannot be reached. |

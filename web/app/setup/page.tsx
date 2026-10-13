@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = { title: "Setup" };
 
 // The steps to a local or a production environment. On a developer's machine this page needs
-// nothing: no database, no sign-in, no agent (`make guide`). It sits outside the (app) group for
+// nothing: no database, no sign-in, no agent (`make dev` on a fresh clone). It sits outside the (app) group for
 // that reason, and proxy.ts lets it through. It never asks for a password, a token or a key.
 export default function SetupPage(props: PageProps<"/setup">) {
   return (
@@ -110,6 +110,7 @@ const TITLES: Record<StepId, string> = {
   setup: "Run setup",
   dev: "Start the app",
   "try-local": "Try it",
+  customise: "Make it yours",
   "supabase-project": "Create the Supabase project",
   tokens: "Create two access tokens",
   bootstrap: "Run the bootstrap script",
@@ -163,7 +164,7 @@ function Instructions({ id, database }: { id: StepId; database: Database }) {
           <Block>make setup</Block>
           <p>
             Installs the dependencies, starts the local database, writes the environment files and
-            creates the demo user.
+            creates the demo user. Then stop <Cmd>make dev</Cmd> (Ctrl-C) and run it again.
           </p>
         </>
       );
@@ -172,8 +173,8 @@ function Instructions({ id, database }: { id: StepId; database: Database }) {
         <>
           <Block>make dev</Block>
           <p>
-            Starts the agent on port 8000 and the web on port 3000. If you opened this page with{" "}
-            <Cmd>make guide</Cmd>, stop that first (Ctrl-C): both use port 3000.
+            The same command that showed you this page. Once setup has run, it also starts the
+            database and the agent. If it is already running, stop it (Ctrl-C) and run it again.
           </p>
         </>
       );
@@ -192,6 +193,33 @@ function Instructions({ id, database }: { id: StepId; database: Database }) {
           )}
           . Start the first example run and approve the step.
         </p>
+      );
+    case "customise":
+      return (
+        <>
+          <p>
+            Edit the files in <Cmd>agent/agent_service/domain/</Cmd> and nothing outside it:
+          </p>
+          <ul className="list-disc pl-5">
+            <li>
+              <Cmd>systems.py</Cmd>: calls to the real systems or data
+            </li>
+            <li>
+              <Cmd>tools.py</Cmd>: what the model may call; mark every write{" "}
+              <Cmd>requires_approval=True</Cmd>
+            </li>
+            <li>
+              <Cmd>prompt.md</Cmd>: how the agent should work and report
+            </li>
+            <li>
+              <Cmd>scripted.py</Cmd>: a scripted run of your task, for tests and demos without a
+              model
+            </li>
+          </ul>
+          <p>
+            Run <Cmd>make check</Cmd> before you push.
+          </p>
+        </>
       );
     case "supabase-project":
       return (
