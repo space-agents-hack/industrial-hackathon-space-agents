@@ -52,7 +52,7 @@ export function NewRunForm({ organizationId }: { organizationId: string }) {
       }
       setTask("");
       // With a warning the run exists but the agent never heard of it; the run page says so and
-      // offers Retry.
+      // offers Send to agent.
       router.push(`/runs/${body.id}${body.warning ? "?agent=unreachable" : ""}`);
     } catch {
       setError("The run could not be started: the server did not answer.");

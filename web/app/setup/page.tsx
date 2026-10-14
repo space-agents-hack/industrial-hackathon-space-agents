@@ -371,9 +371,7 @@ function Rotation() {
   return (
     <div className="grid gap-1 text-sm">
       <p>
-        What you entered is saved on this machine only, in <Cmd>.env.setup.local</Cmd>: readable by
-        your user account alone, never committed, never deployed. Press <strong>Show</strong> in a
-        field to check a value. To change one, edit it, press <strong>Connect</strong>, then{" "}
+        Press <strong>Show</strong> in a field to check a value. To change one, edit it, press <strong>Connect</strong>, then{" "}
         <strong>Start the release</strong>.
       </p>
       <ul className="list-disc pl-5 text-muted-foreground">

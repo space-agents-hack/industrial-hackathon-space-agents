@@ -7,8 +7,8 @@ import { isUuid } from "@/lib/validation";
 // 300 s is the ceiling on Vercel Hobby; Pro allows 800.
 export const maxDuration = 300;
 
-// "Retry": for a run the agent never picked up, or one whose last approval was decided but the
-// call that should have resumed it failed.
+// "Send to agent" and "Resume run" on the run page: for a run the agent never picked up, or one
+// whose last approval was decided but the call that should have resumed it failed.
 export async function POST(_request: Request, ctx: RouteContext<"/api/runs/[id]/advance">) {
   const supabase = await createClient();
   if (!(await getSessionUser(supabase))) {

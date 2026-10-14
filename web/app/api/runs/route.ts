@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     await advanceRun(run.id);
   } catch (agentError) {
     console.error(`POST /api/runs: run ${run.id} saved but not started`, agentError);
-    // The run exists and stays `queued`; the run page offers Retry.
+    // The run exists and stays `queued`; the run page offers Send to agent.
     return Response.json({ id: run.id, warning: describeAgentFailure(agentError) }, { status: 201 });
   }
   return Response.json({ id: run.id }, { status: 201 });

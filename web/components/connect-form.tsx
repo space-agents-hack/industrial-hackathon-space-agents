@@ -431,7 +431,7 @@ function Field({
   return (
     <div className="grid gap-1">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <Label htmlFor={id} className="shrink-0">
+        <Label id={`${id}-label`} htmlFor={id} className="shrink-0">
           {label}
         </Label>
         {hint ? (
@@ -451,6 +451,7 @@ function Secret({
   ...control
 }: Control & { value: string; onChange: (value: string) => void }) {
   const [visible, setVisible] = useState(false);
+  const buttonId = useId();
   return (
     <div className="flex gap-1.5">
       <Input
@@ -466,7 +467,14 @@ function Secret({
         className="font-mono"
         required
       />
-      <Button type="button" variant="outline" onClick={() => setVisible((v) => !v)}>
+      {/* Read as "Show Database password", not a bare "Show" next to four others. */}
+      <Button
+        id={buttonId}
+        type="button"
+        variant="outline"
+        aria-labelledby={`${buttonId} ${control.id}-label`}
+        onClick={() => setVisible((v) => !v)}
+      >
         {visible ? "Hide" : "Show"}
       </Button>
     </div>
@@ -493,7 +501,12 @@ function PersonPassword({
         autoComplete="new-password"
         aria-label={label}
       />
-      <Button type="button" variant="outline" onClick={() => setVisible((v) => !v)}>
+      <Button
+        type="button"
+        variant="outline"
+        aria-label={`${visible ? "Hide" : "Show"} ${label.toLowerCase()}`}
+        onClick={() => setVisible((v) => !v)}
+      >
         {visible ? "Hide" : "Show"}
       </Button>
     </div>
