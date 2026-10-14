@@ -168,13 +168,16 @@ export function toRelease(run: ReleaseRun, jobs: ReleaseJob[]): Release {
   return { ...run, outcome: outcomeOf(run, jobs), jobs };
 }
 
-// "Release to production › Smoke web": what is happening now, for the one-line summary.
+// "Check web › Build; Check agent › Tests": what is happening now, for the one-line summary. The
+// checks run in parallel, so there can be several.
 export function currentStep(release: Release): string | null {
-  for (const job of release.jobs) {
-    if (job.phase !== "running") continue;
-    const step = job.steps.find((s) => s.phase === "running");
-    return step ? `${job.name} › ${step.name}` : job.name;
-  }
+  const now = release.jobs
+    .filter((job) => job.phase === "running")
+    .map((job) => {
+      const step = job.steps.find((s) => s.phase === "running");
+      return step ? `${job.name} › ${step.name}` : job.name;
+    });
+  if (now.length) return now.join("; ");
   return release.jobs.some((job) => job.phase === "waiting") ? "Waiting for a runner" : null;
 }
 

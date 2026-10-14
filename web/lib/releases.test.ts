@@ -106,6 +106,12 @@ test("a running release says which step it is on", () => {
   ]);
   assert.equal(live.outcome, "running");
   assert.equal(currentStep(live), "Release to production › Smoke web");
+
+  const checks = release({ status: "in_progress", conclusion: null }, [
+    job("Check web (Next.js)", [step("Build", "in_progress", null)], "in_progress", null),
+    job("Check agent (Python)", [step("Tests", "in_progress", null)], "in_progress", null),
+  ]);
+  assert.equal(currentStep(checks), "Check web (Next.js) › Build; Check agent (Python) › Tests");
 });
 
 test("a failed release names the step where it stopped", () => {
