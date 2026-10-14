@@ -189,3 +189,13 @@ The browser never calls the agent, and never needs the response of that call: it
 - **No cancel, delete or edit of a run.** The schema grants the web no way to do it.
 - **No Markdown rendering.** The task, the agent's text and the result are shown as plain text.
 - **No dark mode, analytics, telemetry or i18n.**
+
+## If the local page keeps reloading itself
+
+The development server can lose track of its modules when something else rebuilds or installs
+in `web/` while it runs (a `make check`, `npm ci`, switching branches). The page then retries a
+failed render forever. Stop `make dev`, delete the development cache and start again:
+
+```bash
+rm -rf web/.next/dev && make dev
+```
