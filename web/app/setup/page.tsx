@@ -245,7 +245,9 @@ function Instructions({
         <p>
           <Cmd>uv</Cmd>, Node 24 or newer, the Supabase CLI, and Docker running. Docker is only for
           the local database; without it, do the production steps first and then run{" "}
-          <Cmd>make setup DB=hosted</Cmd> instead of the next step.
+          <Cmd>make setup DB=hosted</Cmd> instead of the next step. On Windows, install and run
+          everything inside WSL2, with the project cloned there rather than under{" "}
+          <Cmd>/mnt/c</Cmd>.
         </p>
       );
     case "setup":

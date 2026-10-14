@@ -13,13 +13,34 @@ need() { # command, how to install
   fi
 }
 
+wsl=""
+grep -qi microsoft /proc/version 2>/dev/null && wsl=yes
+
+# A clone on the Windows drive (/mnt/c/...) is slow under WSL and gets CRLF line endings from Git
+# for Windows, which bash cannot run.
+if [[ -n "$wsl" && "$PWD" == /mnt/* ]]; then
+  echo "This clone is on the Windows drive ($PWD). Clone it inside WSL instead, e.g. under ~/."
+  missing=1
+fi
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  supabase_hint="brew install supabase/tap/supabase"
+else
+  supabase_hint="the .deb or .rpm from https://github.com/supabase/cli/releases/latest, or Homebrew"
+fi
+if [[ -n "$wsl" ]]; then
+  docker_hint="Docker Desktop for Windows, with WSL integration on for this distribution"
+else
+  docker_hint="https://docs.docker.com/get-docker/"
+fi
+
 need uv "curl -LsSf https://astral.sh/uv/install.sh | sh"
 need node "https://nodejs.org (version 24 or newer)"
 need npm "comes with Node.js"
-need supabase "brew install supabase/tap/supabase"
+need supabase "$supabase_hint"
 need python3 "comes with macOS and most Linux; https://www.python.org"
 need openssl "comes with macOS and most Linux"
-[[ "$db" == "hosted" ]] || need docker "https://docs.docker.com/get-docker/ (or use: make setup DB=hosted)"
+[[ "$db" == "hosted" ]] || need docker "$docker_hint (or use: make setup DB=hosted)"
 
 if command -v uv >/dev/null 2>&1; then
   uv_version="$(uv --version | awk '{print $2}')"

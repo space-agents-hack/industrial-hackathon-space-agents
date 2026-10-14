@@ -19,4 +19,6 @@ make dev
 Open http://localhost:3000. The page tells you what to do next, for running it on your machine or
 for deploying it, and checks each step as you go. Only Node is needed to get that far.
 
+Works on macOS and Linux. On Windows, use WSL2 (Ubuntu) and clone inside it, not under `/mnt/c`.
+
 The reasons behind the design are in `docs/`.
