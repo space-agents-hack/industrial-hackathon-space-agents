@@ -179,7 +179,10 @@ export function ConnectForm() {
 
       <form onSubmit={connect} className="grid gap-3" autoComplete="off">
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Supabase Project ID" hint="Settings, General">
+          <Field
+            label="Supabase Project ID"
+            hint="in Supabase, not Vercel: the code after /project/ in the dashboard URL"
+          >
             <Input
               value={projectRef}
               onChange={(e) => setProjectRef(e.target.value)}
