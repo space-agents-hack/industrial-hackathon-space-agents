@@ -11,16 +11,19 @@ find_supabase_keys() { # project ref, prefix
     | python3 -c '
 import json, sys
 prefix = sys.argv[1]
+# Only the full keys: each entry also has a short "prefix" label (e.g. "sb_secret_AbCd") that
+# starts the same way, and counting it made one key look like two.
 def walk(node):
-    if isinstance(node, str):
-        if node.startswith(prefix):
-            yield node
-    elif isinstance(node, dict):
-        for value in node.values():
-            yield from walk(value)
+    if isinstance(node, dict):
+        value = node.get("api_key")
+        if isinstance(value, str) and value.startswith(prefix):
+            yield value
+        for key, child in node.items():
+            if key != "api_key":
+                yield from walk(child)
     elif isinstance(node, list):
-        for value in node:
-            yield from walk(value)
+        for child in node:
+            yield from walk(child)
 try:
     for key in dict.fromkeys(walk(json.load(sys.stdin))):
         print(key)
