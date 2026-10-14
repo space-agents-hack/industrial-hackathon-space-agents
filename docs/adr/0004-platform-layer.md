@@ -1,6 +1,6 @@
 # ADR-0004: A platform layer every project starts with
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-14: organisations as the client model; all eight parts)
 **Date:** 2026-10-14
 **Deciders:** Clemente
 
@@ -29,7 +29,7 @@ Facts checked on 2026-10-14 that bound the design:
   to the user's own OpenRouter account. One such key reaches Claude, GPT and most other models.
 - **Supabase recommends Vault for secrets;** pgsodium is being deprecated.
 
-## Decision (proposed)
+## Decision
 
 Add a platform layer to the template, in this order of value:
 
@@ -77,6 +77,6 @@ Add a platform layer to the template, in this order of value:
 
 ## Action Items
 
-1. [ ] Confirm the decisions marked proposed (owner).
+1. [x] Decisions confirmed by the owner on 2026-10-14.
 2. [ ] Build 1–7 in the template, then `git pull template main` in each project.
 3. [ ] Build 8 together with the deep health check from the tech-debt audit.

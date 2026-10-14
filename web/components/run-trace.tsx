@@ -39,11 +39,15 @@ export function RunTrace({
   initialEvents,
   initialApprovals,
   agentUnreachable,
+  canAct,
 }: {
   initialRun: RunRow;
   initialEvents: RunEventRow[];
   initialApprovals: ApprovalRow[];
   agentUnreachable: boolean;
+  // Admin or member of the run's organisation. A viewer sees the same page without the buttons;
+  // the database and the route handlers refuse their decisions anyway.
+  canAct: boolean;
 }) {
   const runId = initialRun.id;
   const [run, setRun] = useState(initialRun);
@@ -199,7 +203,7 @@ export function RunTrace({
   const pending = pendingApprovals(approvals);
   const finished = isFinished(run.status);
   const usage = formatUsage(run.usage);
-  const showRetry = canRetry(run.status, approvals);
+  const showRetry = canAct && canRetry(run.status, approvals);
 
   return (
     <div className="grid gap-4">
@@ -260,7 +264,7 @@ export function RunTrace({
         </div>
       ) : null}
 
-      {stalled ? (
+      {stalled && canAct ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-attention-border bg-attention-surface px-3 py-2 text-attention">
           <p className="min-w-0 flex-1 basis-64">
             The agent has not reported for over a minute. It probably stopped mid-run. Closing the
@@ -273,7 +277,7 @@ export function RunTrace({
       ) : null}
 
       {pending.map((approval) => (
-        <ApprovalCard key={approval.id} approval={approval} onDecide={decide} />
+        <ApprovalCard key={approval.id} approval={approval} onDecide={canAct ? decide : null} />
       ))}
 
       {run.error ? (

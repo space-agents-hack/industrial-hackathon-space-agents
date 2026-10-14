@@ -1,4 +1,5 @@
 import { AgentError, advanceRun, describeAgentFailure } from "@/lib/agent";
+import { actsInRunOrganization } from "@/lib/current-org";
 import { createClient, getSessionUser } from "@/lib/supabase/server";
 import { isUuid, parseDecision, readJson } from "@/lib/validation";
 
@@ -17,6 +18,13 @@ export async function POST(request: Request, ctx: RouteContext<"/api/approvals/[
   const parsed = parseDecision(await readJson(request));
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
   const { decision, note } = parsed.value;
+
+  // RLS refuses a viewer's decision as "zero rows", which would read as "already decided". Ask
+  // first so a viewer is told the real reason. The update below is still the check that counts.
+  const { data: target } = await supabase.from("approvals").select("run_id").eq("id", id).maybeSingle();
+  if (target && (await actsInRunOrganization(supabase, target.run_id)) === "no") {
+    return Response.json({ error: "Viewers cannot decide approvals." }, { status: 403 });
+  }
 
   // Updated as the user. RLS only lets a row through while it is still pending, so a second
   // decision (another tab, a teammate) matches zero rows instead of overwriting the first.

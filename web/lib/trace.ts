@@ -53,6 +53,9 @@ export type RunEventRow = {
 
 export type RunRow = {
   id: string;
+  // Optional so rows built by hand (tests, older Realtime payloads) still fit; the database
+  // always has it.
+  organization_id?: string;
   created_at: string;
   updated_at: string;
   created_by: string;

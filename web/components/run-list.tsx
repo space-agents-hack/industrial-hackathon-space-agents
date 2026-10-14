@@ -13,7 +13,15 @@ import { type RunSummary, isRunRow, mergeRunList, summarizeRun } from "@/lib/tra
 // same topic while the old one is still leaving hands back the old, already-subscribed channel.
 let subscriptions = 0;
 
-export function RunList({ initialRuns }: { initialRuns: RunSummary[] }) {
+export function RunList({
+  initialRuns,
+  organizationId,
+  canStart,
+}: {
+  initialRuns: RunSummary[];
+  organizationId: string;
+  canStart: boolean;
+}) {
   const [runs, setRuns] = useState(initialRuns);
   const [stale, setStale] = useState(false);
 
@@ -24,7 +32,7 @@ export function RunList({ initialRuns }: { initialRuns: RunSummary[] }) {
 
     async function refetch() {
       try {
-        const fresh = await fetchRunList(supabase);
+        const fresh = await fetchRunList(supabase, organizationId);
         if (cancelled) return;
         setRuns(fresh);
         setStale(false);
@@ -39,15 +47,21 @@ export function RunList({ initialRuns }: { initialRuns: RunSummary[] }) {
       await supabase.realtime.setAuth();
       if (cancelled) return;
       channel = supabase
-        .channel(`runs:${++subscriptions}`)
-        .on("postgres_changes", { event: "*", schema: "public", table: "runs" }, (change) => {
-          if (change.eventType === "DELETE" || !isRunRow(change.new)) {
-            void refetch();
-            return;
-          }
-          const run = summarizeRun(change.new);
-          setRuns((current) => mergeRunList(current, [run], RUN_LIST_LIMIT));
-        })
+        .channel(`runs:${organizationId}:${++subscriptions}`)
+        // Only this organisation: RLS alone would also deliver the runs of every other
+        // organisation the person can read.
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "runs", filter: `organization_id=eq.${organizationId}` },
+          (change) => {
+            if (change.eventType === "DELETE" || !isRunRow(change.new)) {
+              void refetch();
+              return;
+            }
+            const run = summarizeRun(change.new);
+            setRuns((current) => mergeRunList(current, [run], RUN_LIST_LIMIT));
+          },
+        )
         .subscribe((state) => {
           // Runs created between the server render and this moment were never announced.
           if (state === "SUBSCRIBED") void refetch();
@@ -67,12 +81,12 @@ export function RunList({ initialRuns }: { initialRuns: RunSummary[] }) {
       window.removeEventListener("focus", onVisible);
       if (channel) void supabase.removeChannel(channel);
     };
-  }, []);
+  }, [organizationId]);
 
   if (runs.length === 0) {
     return (
       <p className="rounded-md border border-dashed px-3 py-6 text-center text-muted-foreground">
-        No runs yet. Start one above.
+        {canStart ? "No runs yet. Start one above." : "No runs yet."}
       </p>
     );
   }

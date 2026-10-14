@@ -29,16 +29,20 @@ export async function readJson(request: Request): Promise<unknown> {
   }
 }
 
-export function parseNewRun(body: unknown): Parsed<{ task: string }> {
+// The organisation comes from the form, not from the `org` cookie: it is the one the person saw
+// on the page when they pressed Start, even if another tab has switched since. RLS decides
+// whether they may start runs there.
+export function parseNewRun(body: unknown): Parsed<{ task: string; organizationId: string }> {
   if (!isRecord(body) || typeof body.task !== "string") {
-    return { ok: false, error: 'Expected a JSON body like { "task": "..." }.' };
+    return { ok: false, error: 'Expected a JSON body like { "task": "...", "organization_id": "..." }.' };
   }
   const task = body.task.trim();
   if (task === "") return { ok: false, error: "The task is empty." };
   if (characters(task) > TASK_MAX_LENGTH) {
     return { ok: false, error: `The task is longer than ${TASK_MAX_LENGTH} characters.` };
   }
-  return { ok: true, value: { task } };
+  if (!isUuid(body.organization_id)) return { ok: false, error: "Choose an organisation first." };
+  return { ok: true, value: { task, organizationId: body.organization_id } };
 }
 
 export type Decision = "approved" | "denied";

@@ -31,7 +31,7 @@ ifeq ($(DB),hosted)
 else
 	$(MAKE) db-start
 	scripts/local-env.sh
-	scripts/create-user.sh
+	scripts/create-user.sh --platform-admin
 endif
 	@echo
 	@echo "Ready. Run 'make dev' and open http://localhost:3000"
@@ -84,13 +84,13 @@ db-start: ## Start the local Supabase stack if it is not running
 
 db-reset: ## Wipe the local database, re-apply every migration, re-create the demo user
 	supabase db reset --local
-	scripts/create-user.sh
+	scripts/create-user.sh --platform-admin
 
 db-stop: ## Stop the local Supabase stack
 	supabase stop
 
-user: ## Create a user. Local: make user EMAIL=a@b.c  Hosted: see supabase/README.md
-	scripts/create-user.sh $(EMAIL)
+user: ## Create a user. Local: make user EMAIL=a@b.c [ROLE=member]  Hosted: see supabase/README.md
+	scripts/create-user.sh $(EMAIL) --role $(or $(ROLE),admin)
 
 purge-data: ## Delete challenge material from this machine (data/ and local database rows)
 	scripts/purge-challenge-data.sh

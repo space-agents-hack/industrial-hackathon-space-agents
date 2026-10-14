@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { NoAccess } from "@/components/no-access";
 import { RunTrace } from "@/components/run-trace";
+import { hasNoAccess, permissionsIn } from "@/lib/access";
+import { getAccess } from "@/lib/current-org";
 import { fetchApprovals, fetchRun, fetchRunEvents } from "@/lib/runs";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/validation";
@@ -33,12 +36,17 @@ async function Run({ params, searchParams }: PageProps<"/runs/[id]">) {
   if (!isUuid(id)) return <Missing />;
 
   const supabase = await createClient();
-  const [run, events, approvals] = await Promise.all([
+  const [run, events, approvals, { access, failed }] = await Promise.all([
     fetchRun(supabase, id),
     fetchRunEvents(supabase, id),
     fetchApprovals(supabase, id),
+    getAccess(),
   ]);
+  if (failed || hasNoAccess(access)) return <NoAccess failed={failed} />;
   if (!run) return <Missing />;
+  // The role in the run's own organisation, not in the one chosen in the header: a link to a run
+  // can come from anywhere.
+  const canAct = permissionsIn(access, run.organization_id).decideApprovals;
 
   return (
     <RunTrace
@@ -47,6 +55,7 @@ async function Run({ params, searchParams }: PageProps<"/runs/[id]">) {
       initialEvents={events}
       initialApprovals={approvals}
       agentUnreachable={query.agent === "unreachable"}
+      canAct={canAct}
     />
   );
 }

@@ -25,7 +25,7 @@ const EXAMPLES: { label: string; task: string }[] = [
   },
 ];
 
-export function NewRunForm() {
+export function NewRunForm({ organizationId }: { organizationId: string }) {
   const router = useRouter();
   const [task, setTask] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +41,7 @@ export function NewRunForm() {
       const response = await fetch("/api/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ task: trimmed }),
+        body: JSON.stringify({ task: trimmed, organization_id: organizationId }),
       });
       const body: { id?: string; warning?: string; error?: string } = await response
         .json()
