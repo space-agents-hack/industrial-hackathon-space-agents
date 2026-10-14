@@ -5,6 +5,9 @@ description = "Agent loop and tools. Writes runs, events and approval requests t
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.143",
+    # Used directly (provider checks and model lists), not only through the libraries below.
+    "genai-prices>=0.1.11",
+    "httpx>=0.28",
     "pydantic-ai-slim[anthropic,openai,openrouter]>=2.55",
     "pydantic-settings>=2.15",
     "supabase>=2.32",
@@ -22,7 +25,6 @@ required-version = ">=0.10"
 # One group on purpose. In a local `vercel build` (CLI 63.1.2) the builder left `dev` out of the
 # function but installed a separate `evals` group, so the eval library was being deployed.
 dev = [
-    "httpx>=0.28",
     "pydantic-evals>=2.55",
     "pyright>=1.1.414",
     "pytest>=9.1",

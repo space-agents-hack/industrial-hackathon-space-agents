@@ -230,9 +230,14 @@ else
 fi
 
 say "Users"
+# Everyone created here administers the first organisation; the first person is also a platform
+# admin (manages every organisation). Others get finer roles later from Admin, People.
+first_user=true
 create() { # email, password
+  local flags=(--role admin)
+  if [[ "$first_user" == true ]]; then flags+=(--platform-admin); first_user=false; fi
   printf '%s\n' "$2" \
-    | SUPABASE_URL="$supabase_url" SUPABASE_SECRET_KEY="$secret_key" scripts/create-user.sh "$1" \
+    | SUPABASE_URL="$supabase_url" SUPABASE_SECRET_KEY="$secret_key" scripts/create-user.sh "$1" "${flags[@]}" \
     || echo "$1 was not created; retry later with scripts/create-user.sh."
 }
 if [[ -n "$answers" ]]; then

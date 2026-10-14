@@ -13,10 +13,13 @@ export const RUN_LIST_LIMIT = 50;
 // the hosted default).
 const PAGE_SIZE = 1000;
 
-export async function fetchRunList(supabase: Client): Promise<RunSummary[]> {
+// One organisation's runs. RLS would also return the runs of every other organisation the person
+// can read (all of them, for a platform admin), so the filter is what scopes the list.
+export async function fetchRunList(supabase: Client, organizationId: string): Promise<RunSummary[]> {
   const { data, error } = await supabase
     .from("runs")
     .select("id, created_at, status, model, task")
+    .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
     .limit(RUN_LIST_LIMIT);
   if (error) throw error;

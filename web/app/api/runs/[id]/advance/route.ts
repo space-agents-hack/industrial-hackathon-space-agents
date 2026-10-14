@@ -1,4 +1,5 @@
 import { advanceRun, agentFailureStatus, describeAgentFailure } from "@/lib/agent";
+import { actsInRunOrganization } from "@/lib/current-org";
 import { createClient, getSessionUser } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/validation";
 
@@ -16,6 +17,14 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/runs/[id]/
 
   const { id } = await ctx.params;
   if (!isUuid(id)) return Response.json({ error: "Unknown run." }, { status: 404 });
+
+  // The agent acts with the secret key and would advance any run it is given, so the role is
+  // checked here: readers of the run's organisation may watch it, not push it.
+  const acts = await actsInRunOrganization(supabase, id);
+  if (acts === "missing") return Response.json({ error: "Unknown run." }, { status: 404 });
+  if (acts === "no") {
+    return Response.json({ error: "Only admins and members of this organisation can retry runs." }, { status: 403 });
+  }
 
   try {
     await advanceRun(id);

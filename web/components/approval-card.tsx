@@ -15,7 +15,8 @@ export function ApprovalCard({
   onDecide,
 }: {
   approval: ApprovalRow;
-  onDecide: (approvalId: string, decision: Decision, note: string) => Promise<void>;
+  // Null for a viewer: the card shows what is waiting, without the controls.
+  onDecide: ((approvalId: string, decision: Decision, note: string) => Promise<void>) | null;
 }) {
   const [note, setNote] = useState("");
   const [sending, setSending] = useState<Decision | null>(null);
@@ -23,6 +24,7 @@ export function ApprovalCard({
   const noteId = `note-${approval.id}`;
 
   async function decide(decision: Decision) {
+    if (!onDecide) return;
     setSending(decision);
     try {
       await onDecide(approval.id, decision, note);
@@ -75,32 +77,40 @@ export function ApprovalCard({
         </div>
       )}
 
-      <div className="grid gap-1.5">
-        <Label htmlFor={noteId}>Note for the agent (optional)</Label>
-        <Textarea
-          id={noteId}
-          rows={2}
-          maxLength={NOTE_MAX_LENGTH}
-          placeholder="Why you approve or deny. The agent reads this."
-          className="min-h-14 bg-card"
-          value={note}
-          onChange={(event) => setNote(event.target.value)}
-        />
-      </div>
+      {onDecide === null ? (
+        <p className="text-xs text-attention">
+          Only an admin or a member of this organisation can decide. You can follow the run.
+        </p>
+      ) : (
+        <>
+          <div className="grid gap-1.5">
+            <Label htmlFor={noteId}>Note for the agent (optional)</Label>
+            <Textarea
+              id={noteId}
+              rows={2}
+              maxLength={NOTE_MAX_LENGTH}
+              placeholder="Why you approve or deny. The agent reads this."
+              className="min-h-14 bg-card"
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+            />
+          </div>
 
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={() => decide("approved")} disabled={sending !== null}>
-          {sending === "approved" ? "Approving…" : "Approve"}
-        </Button>
-        <Button
-          variant="outline"
-          className="border-danger-border bg-card text-danger hover:bg-danger-surface hover:text-danger"
-          onClick={() => decide("denied")}
-          disabled={sending !== null}
-        >
-          {sending === "denied" ? "Denying…" : "Deny"}
-        </Button>
-      </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => decide("approved")} disabled={sending !== null}>
+              {sending === "approved" ? "Approving…" : "Approve"}
+            </Button>
+            <Button
+              variant="outline"
+              className="border-danger-border bg-card text-danger hover:bg-danger-surface hover:text-danger"
+              onClick={() => decide("denied")}
+              disabled={sending !== null}
+            >
+              {sending === "denied" ? "Denying…" : "Deny"}
+            </Button>
+          </div>
+        </>
+      )}
     </section>
   );
 }

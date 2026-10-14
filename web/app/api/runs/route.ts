@@ -15,13 +15,21 @@ export async function POST(request: Request) {
   const parsed = parseNewRun(await readJson(request));
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
 
-  // Inserted as the user: `created_by` defaults to auth.uid() and RLS rejects anything else.
+  // Inserted as the user: `created_by` defaults to auth.uid(), and RLS accepts the row only if
+  // they are an active admin or member of that organisation. A viewer, a suspended person or a
+  // platform admin who is not a member is refused here, by the database.
   const { data: run, error } = await supabase
     .from("runs")
-    .insert({ task: parsed.value.task })
+    .insert({ task: parsed.value.task, organization_id: parsed.value.organizationId })
     .select("id")
     .single();
   if (error) {
+    if (error.code === "42501") {
+      return Response.json(
+        { error: "You cannot start runs in this organisation. Ask one of its admins for the member role." },
+        { status: 403 },
+      );
+    }
     console.error("POST /api/runs: insert failed", error);
     return Response.json({ error: "The run could not be saved." }, { status: 500 });
   }

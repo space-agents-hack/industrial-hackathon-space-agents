@@ -3,17 +3,23 @@ test_runner.py, but through the API gateway, the grants and the triggers of the 
 
 This is the test that catches a migration the agent can no longer work with. It runs when
 SUPABASE_URL and SUPABASE_SECRET_KEY point at a local stack (`make test-integration`).
+
+Each test makes its own organisation, so nothing here reads or changes the stack's "Default" one
+or the keys a developer may have connected to it.
 """
 
 import os
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
+from postgrest.exceptions import APIError
 from supabase import AsyncClient, acreate_client
 
 from agent_service import runner
+from agent_service.records import OrganizationSettings
 from agent_service.settings import Settings
 from agent_service.store import SupabaseRunStore
 
@@ -41,28 +47,65 @@ def rows(response: Any) -> list[dict[str, Any]]:
 async def db() -> AsyncIterator[AsyncClient]:
     client = await acreate_client(URL, KEY)
     yield client
+    await close(client)
+
+
+async def close(client: AsyncClient) -> None:
     await client.postgrest.aclose()
+    await client.auth.close()
 
 
 @pytest.fixture
-async def user_id(db: AsyncClient) -> AsyncIterator[str]:
+async def store() -> AsyncIterator[SupabaseRunStore]:
+    store = await SupabaseRunStore.connect(URL, KEY)
+    yield store
+    await store.aclose()
+
+
+PASSWORD = "integration-test-password"
+
+
+@pytest.fixture
+async def user(db: AsyncClient) -> AsyncIterator[tuple[str, str]]:
+    """(id, email) of a confirmed user whose password is PASSWORD."""
+    email = f"it-{uuid4().hex[:12]}@example.test"
     created = await db.auth.admin.create_user(
-        {"email": f"it-{uuid4().hex[:12]}@example.test", "email_confirm": True}
+        {"email": email, "password": PASSWORD, "email_confirm": True}
     )
     uid = created.user.id
-    yield uid
-    await db.table("runs").delete().eq("created_by", uid).execute()
+    yield uid, email
+    # Runs go with the user (on delete cascade); memberships too.
     await db.auth.admin.delete_user(uid)
 
 
-async def test_pause_and_resume_through_the_real_schema(
-    db: AsyncClient, user_id: str, settings: Settings
-) -> None:
-    inserted = (
-        await db.table("runs").insert({"task": "Triage ECN-1001.", "created_by": user_id}).execute()
+@pytest.fixture
+def user_id(user: tuple[str, str]) -> str:
+    return user[0]
+
+
+@pytest.fixture
+async def org(db: AsyncClient, user_id: str) -> AsyncIterator[str]:
+    """An organisation of its own with the user as its admin."""
+    created = await db.table("organizations").insert({"name": f"it-{uuid4().hex[:8]}"}).execute()
+    org_id = rows(created)[0]["id"]
+    await (
+        db.table("memberships")
+        .insert({"organization_id": org_id, "user_id": user_id, "role": "admin"})
+        .execute()
     )
-    run_id = UUID(rows(inserted)[0]["id"])
-    store = await SupabaseRunStore.connect(URL, KEY)
+    yield org_id
+    await db.table("organizations").delete().eq("id", org_id).execute()
+
+
+async def insert_run(db: AsyncClient, org: str, user_id: str, **fields: Any) -> UUID:
+    row = {"task": "Triage ECN-1001.", "created_by": user_id, "organization_id": org, **fields}
+    return UUID(rows(await db.table("runs").insert(row).execute())[0]["id"])
+
+
+async def test_pause_and_resume_through_the_real_schema(
+    db: AsyncClient, store: SupabaseRunStore, org: str, user_id: str, settings: Settings
+) -> None:
+    run_id = await insert_run(db, org, user_id)
 
     plan = await runner.prepare(store, settings, run_id)
     assert await runner.execute(store, settings, plan) == "awaiting_approval"
@@ -100,4 +143,138 @@ async def test_pause_and_resume_through_the_real_schema(
     assert kinds[-1] == "status"
     assert kinds.count("approval_requested") == 1
     assert kinds.count("approval_resolved") == 1
-    await store.aclose()
+
+
+async def test_a_run_reads_its_organisation(
+    db: AsyncClient, store: SupabaseRunStore, org: str, user_id: str
+) -> None:
+    run_id = await insert_run(db, org, user_id)
+    run = await store.get_run(run_id)
+    assert run is not None
+    assert str(run.organization_id) == org
+
+
+async def test_organisation_settings_hold_only_what_was_changed(
+    db: AsyncClient, store: SupabaseRunStore, org: str
+) -> None:
+    assert await store.organization_settings(UUID(org)) is None
+
+    await (
+        db.table("organization_settings")
+        .insert({"organization_id": org, "max_model_requests": 7, "monthly_cost_cap_usd": 12.5})
+        .execute()
+    )
+
+    assert await store.organization_settings(UUID(org)) == OrganizationSettings(
+        model=None, max_model_requests=7, monthly_cost_cap_usd=12.5
+    )
+
+
+async def test_month_cost_sums_this_months_runs_of_this_organisation_only(
+    db: AsyncClient, store: SupabaseRunStore, org: str, user_id: str
+) -> None:
+    month_start = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    await insert_run(db, org, user_id, usage={"cost_usd": 1.25})
+    await insert_run(db, org, user_id, usage={"cost_usd": 0.5})
+    # Unpriced model, and a run that has not recorded usage yet.
+    await insert_run(db, org, user_id, usage={"cost_usd": None})
+    await insert_run(db, org, user_id)
+    # Last month.
+    await insert_run(
+        db,
+        org,
+        user_id,
+        usage={"cost_usd": 100},
+        created_at=(month_start - timedelta(seconds=1)).isoformat(),
+    )
+    other = rows(await db.table("organizations").insert({"name": "it-other"}).execute())[0]["id"]
+    try:
+        await insert_run(db, other, user_id, usage={"cost_usd": 1000})
+
+        assert await store.month_cost(UUID(org)) == pytest.approx(1.75)
+    finally:
+        await db.table("organizations").delete().eq("id", other).execute()
+
+
+async def test_a_run_past_the_organisations_cap_is_refused_through_the_real_schema(
+    db: AsyncClient, store: SupabaseRunStore, org: str, user_id: str, settings: Settings
+) -> None:
+    await insert_run(db, org, user_id, usage={"cost_usd": 3})
+    await (
+        db.table("organization_settings")
+        .insert({"organization_id": org, "monthly_cost_cap_usd": 2})
+        .execute()
+    )
+    run_id = await insert_run(db, org, user_id)
+
+    with pytest.raises(runner.CannotAdvance, match="monthly cap of"):
+        await runner.prepare(store, settings, run_id)
+
+    run = rows(await db.table("runs").select("*").eq("id", str(run_id)).execute())[0]
+    assert run["status"] == "failed"
+    assert run["error"].startswith("This organisation has reached its monthly cap of $2.00")
+    assert run["model"] is None
+
+
+async def test_a_key_stored_by_an_admin_is_readable_by_the_agent_only(
+    db: AsyncClient, store: SupabaseRunStore, user: tuple[str, str], org: str
+) -> None:
+    # Signed in as the admin, the way the web stores a key. A client created with the secret key
+    # but signed in sends the person's token, so the database sees the person, not the service
+    # (my_access below proves it); the gateway only needs some valid key as `apikey`.
+    _, email = user
+    person = await acreate_client(URL, KEY)
+    await person.auth.sign_in_with_password({"email": email, "password": PASSWORD})
+    access = cast(dict[str, Any], (await person.rpc("my_access").execute()).data)
+    assert [o["id"] for o in access["organizations"]] == [org]
+
+    api_key = f"sk-it-{uuid4().hex}"
+    try:
+        await person.rpc(
+            "set_provider_key", {"org": org, "key_provider": "openrouter", "api_key": api_key}
+        ).execute()
+
+        assert await store.provider_key(UUID(org), "openrouter") == api_key
+        assert await store.provider_key(UUID(org), "anthropic") is None
+
+        with pytest.raises(APIError) as denied:
+            await person.rpc(
+                "read_provider_key", {"org": org, "key_provider": "openrouter"}
+            ).execute()
+        assert denied.value.code == "42501"
+    finally:
+        # Deleting the organisation would leave the Vault secret behind; this removes both.
+        await person.rpc(
+            "delete_provider_key", {"org": org, "key_provider": "openrouter"}
+        ).execute()
+        await close(person)
+
+    assert await store.provider_key(UUID(org), "openrouter") is None
+
+
+async def test_users_are_created_once_and_passwords_set_through_real_auth(
+    db: AsyncClient, store: SupabaseRunStore
+) -> None:
+    email = f"it-{uuid4().hex[:12]}@example.test"
+    user_id, created = await store.create_user(email, "first-password-123")
+    try:
+        assert created is True
+
+        again, created_again = await store.create_user(email.upper(), "other-password-456")
+        assert (again, created_again) == (user_id, False)
+        # The existing user kept their password.
+        await _sign_in(email, "first-password-123")
+
+        assert await store.set_password(user_id, "second-password-789") is True
+        await _sign_in(email, "second-password-789")
+
+        assert await store.set_password(uuid4(), "second-password-789") is False
+    finally:
+        await db.auth.admin.delete_user(str(user_id))
+
+
+async def _sign_in(email: str, password: str) -> None:
+    client = await acreate_client(URL, KEY)
+    session = await client.auth.sign_in_with_password({"email": email, "password": password})
+    assert session.user is not None
+    await close(client)

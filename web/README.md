@@ -57,17 +57,54 @@ After a migration, regenerate the database types with `make types` from the repo
 | Route | Auth | What it does |
 | --- | --- | --- |
 | `/login` | public | Email and password sign-in. Signed-out visitors are sent here when deployed; on a developer's machine they are sent to `/setup` first. |
-| `/` | session | "New run" form and the list of runs, newest first, updated live. |
-| `/runs/[id]` | session | The live trace: task, status, events, pending approvals, result, error, model and usage. |
+| `/` | session | The current organisation's runs, newest first, updated live, and the "New run" form (admins and members only). |
+| `/runs/[id]` | session | The live trace: task, status, events, pending approvals, result, error, model and usage. Approve, Deny and Retry appear only for admins and members of the run's organisation. |
+| `/admin` | org admin or platform admin | Models and limits: provider and model (from the agent's live list, with prices), model requests per run, monthly cost cap. Empty means the deployment default. |
+| `/admin/providers` | org admin or platform admin | Anthropic, OpenAI, OpenRouter, DeepSeek: connected or not, last 4 characters, source, when, by whom. Paste (checked with the provider first), replace, remove; **Connect OpenRouter** (OAuth PKCE). |
+| `/admin/people` | org admin or platform admin | People with role, status and last sign-in. Add a person (email, role, initial password shown once), change role, suspend or reactivate, set a new password where allowed. |
+| `/admin/usage` | org admin or platform admin | Runs, tokens and recorded cost per month, against the cap. |
+| `/admin/audit` | org admin or platform admin | The last 100 changes to settings, keys and people, as sentences. |
+| `/admin/organizations` | platform admin | Every organisation; create one and add its first admin. |
 | `/setup` | public locally, session when deployed | The steps to a local or a production environment (`?env=local` or `?env=production`), with the ones it can observe checked. Works with nothing configured. Never asks for a secret. |
 | `GET /api/health` | public | `{ "status": "ok" }`. Used by the deploy smoke test; does not touch Supabase. |
-| `POST /api/runs` | session | Body `{ task }`. Inserts the run as the user, asks the agent to start it, returns `{ id }`, plus `warning` when the run was saved but the agent call failed. |
-| `POST /api/runs/[id]/advance` | session | Retry: asks the agent to pick the run up again. Passes the agent's `404` and `409` through; `502` when it cannot be reached. |
-| `POST /api/approvals/[id]` | session | Body `{ decision: "approved" \| "denied", note? }`. Updates the approval as the user (`409` if it was already decided), then resumes the run once nothing is pending. |
+| `POST /api/runs` | admin, member | Body `{ task, organization_id }`. Inserts the run as the user (`403` if RLS refuses: viewer, suspended, or not a member), asks the agent to start it, returns `{ id }`, plus `warning` when the run was saved but the agent call failed. |
+| `POST /api/runs/[id]/advance` | admin, member | Retry: asks the agent to pick the run up again. `403` for a viewer. Passes the agent's `404` and `409` through; `502` when it cannot be reached. |
+| `POST /api/approvals/[id]` | admin, member | Body `{ decision: "approved" \| "denied", note? }`. Updates the approval as the user (`403` for a viewer, `409` if it was already decided), then resumes the run once nothing is pending. |
+| `POST /api/admin/settings` | org admin | Body `{ org, model, max_model_requests, monthly_cost_cap_usd }`; empty or null stores null. A changed model must be in the provider's current list. |
+| `GET /api/admin/models` | org admin | `?org=&provider=`. The agent's `GET /providers/models`; `409` when a direct provider has no key. |
+| `POST`, `DELETE /api/admin/providers` | org admin | Paste or replace a key (`{ org, provider, api_key }`, checked with `POST /providers/check` first), or remove one (`{ org, provider }`). |
+| `GET /api/admin/providers/openrouter/start` | org admin | `?org=`. Sets a 10-minute httpOnly PKCE cookie scoped to the callback and redirects to openrouter.ai. |
+| `GET /api/admin/providers/openrouter/callback` | org admin | Checks cookie and state, exchanges the code for a key server to server, stores it, redirects to Providers with a result code. |
+| `POST`, `PATCH /api/admin/people` | org admin | Add a person (`{ org, email, role, password }`: agent `POST /admin/users`, then `set_member`), or change role and status (`{ org, user_id, role, status }`). |
+| `POST /api/admin/people/password` | org admin | `{ org, user_id, password }`. Only when `can_reset_password` says so; then agent `POST /admin/users/password`. |
+| `POST /api/admin/organizations` | platform admin | `{ name }` → `{ id }` through `create_organization`. |
 
 `proxy.ts` (what Next.js called `middleware.ts` before version 16) refreshes the Supabase session on
 every request and sends signed-out visitors to `/login`. Signed-out calls to `/api/*` get a `401`
 JSON response instead of a redirect.
+
+## Organisations and roles
+
+The model is in `../supabase/migrations/20261014120000_platform.sql` and the reasons in
+`../docs/adr/0004-platform-layer.md`.
+
+| Role | May |
+| --- | --- |
+| platform admin | See and manage every organisation, create organisations. Starts runs only where also a member. |
+| admin | Manage one organisation's people, settings and keys; start runs; decide approvals. |
+| member | Start runs and decide approvals. |
+| viewer | Read runs. |
+
+- **The current organisation** comes from the `org` cookie, honoured only for an organisation the
+  person may see (`my_access()`, read once per request in `lib/current-org.ts`); otherwise the first
+  one. The header shows a switcher only when there is more than one.
+- **Someone in no active organisation** (and not a platform admin) sees a page saying they have no
+  access yet. Each page decides this inside its own Suspense boundary, not the layout: a layout that
+  waits for the request before rendering its children drops every page out of the static shell.
+- **Hiding is courtesy, not protection.** `lib/access.ts` decides what to offer; every admin route
+  asks the database for the caller's role again (`lib/admin-route.ts`) before calling the agent, and
+  every write goes through a database function that checks the role and writes the audit row
+  itself. The web never inserts audit rows.
 
 ## Where things are
 
@@ -75,19 +112,31 @@ JSON response instead of a redirect.
 proxy.ts                    session refresh and the signed-in gate
 app/(app)/                  the pages that need a session (header + Sign out)
 app/login/                  the sign-in page
-app/api/                    the four route handlers
-components/                 run list, live trace, approval card, timeline
+app/(app)/admin/            the admin tabs, one route each
+app/api/                    the route handlers; app/api/admin/ for the admin area
+components/                 run list, live trace, approval card, timeline, org switcher
+components/admin/           the admin area's interactive parts
 components/ui/              shadcn/ui components (owned code: edit them freely)
 lib/config.ts               APP_NAME, the one place to rename the product
 lib/trace.ts                event payload types and every pure helper; unit-tested
 lib/validation.ts           request-body checks; unit-tested
-lib/agent.ts                the one HTTP call to the agent
+lib/agent.ts                the call that advances a run
+lib/agent-admin.ts          the agent's admin calls: users, passwords, key checks, model lists, health
+lib/access.ts               roles → what to offer; unit-tested
+lib/current-org.ts          my_access() once per request, the current organisation
+lib/admin.ts                providers, models, prices, admin request bodies, audit sentences; unit-tested
+lib/pkce.ts                 PKCE verifier and S256 challenge; tested against RFC 7636
 lib/runs.ts                 the database reads, shared by server and browser
 lib/supabase/               browser client, server client, proxy helper
 lib/database.types.ts       generated, do not edit
 ```
 
 ## Talking to the agent
+
+`lib/agent-admin.ts` makes the admin area's calls (`POST /admin/users`, `POST /admin/users/password`,
+`POST /providers/check`, `GET /providers/models`, `GET /health`), each with the shared secret and a
+15-second timeout, and turns failures into sentences. The agent holds the Supabase secret key and
+the provider keys; that is why creating a person or testing a key goes through it.
 
 `lib/agent.ts` sends `POST {AGENT_URL}/runs/{id}/advance` with the shared secret. The agent does the
 whole run inside that request and writes its progress to the database; the response body is only
@@ -118,14 +167,25 @@ The browser never calls the agent, and never needs the response of that call: it
 
 ## What this app does NOT do
 
-- **No sign-up, no magic link, no password reset.** Users are created by an administrator.
+- **No sign-up, no magic link, no self-service password reset.** People are added by an admin in
+  Admin, People, who chooses the initial password and hands it over.
+- **No email of any kind.** Adding a person or setting a password shows the password once on the
+  admin's screen; nothing is sent.
+- **No billing, plans or payments.** Usage shows the cost the agent recorded per run; it is not an
+  invoice, and the provider's bill is the one that counts.
+- **No "sign in with Claude" or "sign in with ChatGPT".** Anthropic does not allow third-party apps
+  to use Claude.ai plan logins, and OpenAI's ChatGPT sign-in for hosted apps is partner-only.
+  Connect OpenRouter instead: one key, billed to the OpenRouter account that approved it.
+- **No deleting or renaming organisations, no removing people** (suspend instead, which keeps
+  their history), and no making platform admins from a page (`scripts/create-user.sh --platform-admin`).
+- **Keys are never shown back.** After saving, only the provider, the last four characters, the
+  source, when and by whom.
 - **It never uses the Supabase secret key.** Every read and write goes through the signed-in
-  user's session, so the RLS policies in the migration are what protects the data.
+  user's session, so the RLS policies and the platform functions are what protect the data.
+  Creating auth users and setting passwords is the agent's job, asked for over HTTP.
 - **It never calls a model provider.** The agent service does; the web only asks it to advance.
-- **No per-user or per-team separation.** Every signed-in user sees and can approve every run.
-  That fits a team of two to four on one problem and nothing larger.
 - **It does not write events, statuses, results or approval requests.** The agent does. The web
-  inserts a run and decides an approval, nothing else.
+  inserts a run, decides an approval, and calls the platform functions from the admin area.
 - **No cancel, delete or edit of a run.** The schema grants the web no way to do it.
 - **No Markdown rendering.** The task, the agent's text and the result are shown as plain text.
 - **No dark mode, analytics, telemetry or i18n.**

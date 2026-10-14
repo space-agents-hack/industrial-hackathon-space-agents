@@ -18,23 +18,30 @@ test("isUuid accepts a uuid and rejects everything else", () => {
   assert.equal(isUuid(42), false);
 });
 
+const ORG = "3941c1f6-f67c-455e-b12b-92c9f7d2d944";
+
 test("parseNewRun trims the task and enforces the database limits", () => {
-  assert.deepEqual(parseNewRun({ task: "  Triage ECN-1001  " }), {
+  assert.deepEqual(parseNewRun({ task: "  Triage ECN-1001  ", organization_id: ORG }), {
     ok: true,
-    value: { task: "Triage ECN-1001" },
+    value: { task: "Triage ECN-1001", organizationId: ORG },
   });
-  assert.equal(parseNewRun({ task: "   " }).ok, false);
-  assert.equal(parseNewRun({ task: 5 }).ok, false);
+  assert.equal(parseNewRun({ task: "   ", organization_id: ORG }).ok, false);
+  assert.equal(parseNewRun({ task: 5, organization_id: ORG }).ok, false);
   assert.equal(parseNewRun(null).ok, false);
   assert.equal(parseNewRun(["task"]).ok, false);
-  assert.equal(parseNewRun({ task: "x".repeat(TASK_MAX_LENGTH) }).ok, true);
-  assert.equal(parseNewRun({ task: "x".repeat(TASK_MAX_LENGTH + 1) }).ok, false);
+  assert.equal(parseNewRun({ task: "x".repeat(TASK_MAX_LENGTH), organization_id: ORG }).ok, true);
+  assert.equal(parseNewRun({ task: "x".repeat(TASK_MAX_LENGTH + 1), organization_id: ORG }).ok, false);
+});
+
+test("parseNewRun needs the organisation the run belongs to", () => {
+  assert.equal(parseNewRun({ task: "Triage ECN-1001" }).ok, false);
+  assert.equal(parseNewRun({ task: "Triage ECN-1001", organization_id: "Default" }).ok, false);
 });
 
 test("parseNewRun counts characters, not UTF-16 units, as Postgres does", () => {
   const astral = "\u{1F527}";
   assert.equal(astral.length, 2);
-  assert.equal(parseNewRun({ task: astral.repeat(TASK_MAX_LENGTH) }).ok, true);
+  assert.equal(parseNewRun({ task: astral.repeat(TASK_MAX_LENGTH), organization_id: ORG }).ok, true);
 });
 
 test("parseDecision accepts the two decisions and normalises the note", () => {

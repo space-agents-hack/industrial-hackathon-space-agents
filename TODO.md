@@ -15,6 +15,8 @@ Open work on the template itself. Product work in a project made from this templ
 
 - [ ] No browser test of the full path (sign in, start a run, approve). See `docs/testing.md`.
 - [ ] A run cannot be cancelled from the web.
+- [ ] Per-person API keys (today keys belong to the organisation).
+- [ ] Purge hosted data after an event (`scripts/purge-challenge-data.sh --hosted`).
 - [ ] No follow-up message on a finished run (the saved conversation would allow it).
 
 ## Port back to the template

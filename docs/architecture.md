@@ -20,6 +20,24 @@ flowchart LR
 - **agent/** knows nothing about pages or users. It advances a run and writes down what happened.
 - **supabase/** is the contract between them. A change to a table is a change to both sides.
 
+## Who can do what
+
+Every run, setting and key belongs to an **organisation** (a client). The roles are in the
+database, checked by row-level security and by the functions that change things
+(`supabase/migrations/20261014120000_platform.sql`):
+
+- **Platform admin**: operates the deployment; manages every organisation and creates new ones.
+  A row in `private.platform_admins`, which no API can write (`scripts/create-user.sh
+  --platform-admin`, or setup for the first person).
+- **Admin** of an organisation: its people, settings (model, limits) and provider keys.
+- **Member**: starts runs and decides approvals.
+- **Viewer**: reads runs; changes nothing.
+
+Settings have their defaults in the agent's environment; an organisation's row stores only what
+it changed. Provider keys live in Supabase Vault; the browser sees provider and last four
+characters, only the agent reads a key back. Every change to settings, keys and people writes a
+row to `audit_events`.
+
 ## A run, step by step
 
 1. A person submits a task. The web inserts a `runs` row as that user (`queued`) and calls the
@@ -63,10 +81,11 @@ flowchart LR
 - **No queue and no background workers.** A run executes inside one HTTP request. A step longer
   than the function limit (300 s on Vercel Hobby, 800 s on Pro) does not fit; the way out is the
   container in `agent/Dockerfile`.
-- **No multi-tenancy.** Every signed-in user sees every run. Access is controlled by who has an
-  account.
-- **The approval is a pause, not a permission check.** Any signed-in user can approve. If a step
-  needs a specific person's consent, the tool has to check who decided.
+- **No emails.** Admins create people with an initial password and share it themselves.
+- **No subscription logins.** Keys are pasted, or obtained with OpenRouter's one-click login;
+  "sign in with Claude/ChatGPT" is prohibited or partner-only for hosted apps (ADR-0004).
+- **The approval is a pause, not a named sign-off.** Any admin or member of the organisation can
+  approve. If a step needs a specific person's consent, the tool has to check who decided.
 - **No streaming of the model's text token by token.** The trace updates per message and per tool
   call, which is what a reviewer needs.
 - **No tracing product.** The `run_events` table is the trace. Logfire or another OpenTelemetry

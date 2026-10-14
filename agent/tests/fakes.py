@@ -5,12 +5,26 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from agent_service.records import Approval, ApprovalRequest, EventKind, Run, RunStatus
+from agent_service.records import (
+    Approval,
+    ApprovalRequest,
+    EventKind,
+    OrganizationSettings,
+    Run,
+    RunStatus,
+)
+
+ORG = UUID("00000000-0000-4000-8000-000000000001")
 
 
 class InMemoryRunStore:
     def __init__(self) -> None:
         self.runs: dict[UUID, Run] = {}
+        self.settings: dict[UUID, OrganizationSettings] = {}
+        self.keys: dict[tuple[UUID, str], str] = {}
+        # Cost already spent this month per organisation, standing in for older runs' usage.
+        self.spent: dict[UUID, float] = {}
+        self.users: dict[UUID, tuple[str, str]] = {}
         self.outputs: dict[UUID, str | None] = {}
         self.errors: dict[UUID, str | None] = {}
         self.usage: dict[UUID, dict[str, Any]] = {}
@@ -22,9 +36,11 @@ class InMemoryRunStore:
 
     # Helpers the tests use to play the web's part.
 
-    def add_run(self, task: str, status: RunStatus = "queued") -> UUID:
+    def add_run(self, task: str, status: RunStatus = "queued", org: UUID = ORG) -> UUID:
         run_id = uuid4()
-        self.runs[run_id] = Run(id=run_id, task=task, status=status, updated_at=datetime.now(UTC))
+        self.runs[run_id] = Run(
+            id=run_id, organization_id=org, task=task, status=status, updated_at=datetime.now(UTC)
+        )
         return run_id
 
     def decide(self, run_id: UUID, status: str, note: str | None = None) -> None:
@@ -97,6 +113,34 @@ class InMemoryRunStore:
         self.errors[run_id] = error
         if usage is not None:
             self.usage[run_id] = usage
+        return True
+
+    async def organization_settings(self, org: UUID) -> OrganizationSettings | None:
+        return self.settings.get(org)
+
+    async def provider_key(self, org: UUID, provider: str) -> str | None:
+        return self.keys.get((org, provider))
+
+    async def month_cost(self, org: UUID) -> float:
+        recorded = sum(
+            float(self.usage[rid].get("cost_usd") or 0)
+            for rid, run in self.runs.items()
+            if run.organization_id == org and rid in self.usage
+        )
+        return self.spent.get(org, 0.0) + recorded
+
+    async def create_user(self, email: str, password: str) -> tuple[UUID, bool]:
+        for user_id, (existing, _) in self.users.items():
+            if existing.casefold() == email.casefold():
+                return user_id, False
+        user_id = uuid4()
+        self.users[user_id] = (email, password)
+        return user_id, True
+
+    async def set_password(self, user_id: UUID, password: str) -> bool:
+        if user_id not in self.users:
+            return False
+        self.users[user_id] = (self.users[user_id][0], password)
         return True
 
     async def aclose(self) -> None:

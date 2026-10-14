@@ -1,0 +1,241 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+
+import {
+  MAX_PASSWORD_BYTES,
+  PROVIDERS,
+  capShare,
+  describeDbError,
+  formatModelPrice,
+  formatMonth,
+  formatUsd,
+  formatUsdPerMtok,
+  generatePassword,
+  listNeedsKey,
+  modelName,
+  modelSourceOf,
+  parseAddPerson,
+  parseModelList,
+  parseOrganizationName,
+  parseProviderKey,
+  parseSetMember,
+  parseSetPassword,
+  parseSettings,
+  shortId,
+  summarizeAuditEvent,
+} from "./admin.ts";
+import { OPENROUTER_RESULTS, openRouterAuthUrl, openRouterResultMessage, requestOrigin } from "./openrouter-oauth.ts";
+
+const ORG = "11111111-1111-4111-8111-111111111111";
+const USER = "22222222-2222-4222-8222-222222222222";
+
+test("the providers are exactly the ones the database accepts", () => {
+  const migration = readFileSync(
+    new URL("../../supabase/migrations/20261014120000_platform.sql", import.meta.url),
+    "utf8",
+  );
+  const check = migration.match(/provider in \(([^)]+)\)/);
+  assert.ok(check);
+  const allowed = check[1].split(",").map((s) => s.trim().replace(/'/g, ""));
+  assert.deepEqual(PROVIDERS.map((p) => p.id).sort(), allowed.sort());
+});
+
+test("a stored model maps to its picker, including OpenAI's three prefixes", () => {
+  assert.equal(modelSourceOf("scripted"), "scripted");
+  assert.equal(modelSourceOf("anthropic:claude-opus-5-5"), "anthropic");
+  assert.equal(modelSourceOf("openai-responses:gpt-5"), "openai");
+  assert.equal(modelSourceOf("openai-chat:gpt-5"), "openai");
+  assert.equal(modelSourceOf("openrouter:anthropic/claude-opus-5-5"), "openrouter");
+  assert.equal(modelSourceOf("deepseek:deepseek-chat"), "deepseek");
+  assert.equal(modelSourceOf(null), null);
+  assert.equal(modelSourceOf("mistral:large"), null);
+  assert.equal(modelSourceOf(":nothing"), null);
+});
+
+test("only direct providers need a key to list models", () => {
+  assert.equal(listNeedsKey("scripted"), false);
+  assert.equal(listNeedsKey("openrouter"), false);
+  assert.equal(listNeedsKey("anthropic"), true);
+  assert.equal(listNeedsKey("deepseek"), true);
+});
+
+test("model ids and prices read the way someone choosing a model needs", () => {
+  assert.equal(modelName("openrouter:anthropic/claude-opus-5-5"), "anthropic/claude-opus-5-5");
+  assert.equal(modelName("scripted"), "scripted");
+  assert.equal(formatUsdPerMtok(15), "$15.00");
+  assert.equal(formatUsdPerMtok(3), "$3.00");
+  assert.equal(formatUsdPerMtok(0.075), "$0.075");
+  assert.equal(formatUsdPerMtok(0.5), "$0.50");
+  assert.equal(formatUsdPerMtok(0.00001), "$0.00");
+  assert.equal(formatUsdPerMtok(0), "free");
+  assert.equal(formatModelPrice({ promptUsdPerMtok: 3, completionUsdPerMtok: 15 }), "$3.00 in / $15.00 out per M tokens");
+  assert.equal(formatModelPrice({ promptUsdPerMtok: 0, completionUsdPerMtok: 0 }), "free");
+  assert.equal(formatModelPrice({ promptUsdPerMtok: null, completionUsdPerMtok: 15 }), "price not published");
+});
+
+test("parseModelList keeps well-formed entries once each", () => {
+  const models = parseModelList({
+    models: [
+      { id: "anthropic:claude-opus-5-5", label: "Claude Opus", prompt_usd_per_mtok: 5, completion_usd_per_mtok: 25 },
+      { id: "anthropic:claude-opus-5-5", label: "duplicate" },
+      { id: "no-prefix", label: "x" },
+      { id: "openai:gpt-5", label: "", prompt_usd_per_mtok: -1, completion_usd_per_mtok: "2" },
+      "junk",
+    ],
+  });
+  assert.deepEqual(models, [
+    { id: "anthropic:claude-opus-5-5", label: "Claude Opus", promptUsdPerMtok: 5, completionUsdPerMtok: 25 },
+    { id: "openai:gpt-5", label: "gpt-5", promptUsdPerMtok: null, completionUsdPerMtok: null },
+  ]);
+  assert.deepEqual(parseModelList(null), []);
+});
+
+test("settings: an empty field is null (the default), never zero", () => {
+  assert.deepEqual(parseSettings({ org: ORG, model: "", max_model_requests: "", monthly_cost_cap_usd: " " }), {
+    ok: true,
+    value: { org: ORG, model: null, maxModelRequests: null, monthlyCostCapUsd: null },
+  });
+  assert.deepEqual(parseSettings({ org: ORG, model: "scripted", max_model_requests: "30", monthly_cost_cap_usd: "12.345" }), {
+    ok: true,
+    value: { org: ORG, model: "scripted", maxModelRequests: 30, monthlyCostCapUsd: 12.35 },
+  });
+  assert.equal(parseSettings({ org: ORG, monthly_cost_cap_usd: "0" }).ok, true, "0 is a real cap");
+});
+
+test("settings: the database's bounds are enforced first", () => {
+  for (const bad of ["0", "201", "2.5", "-1", "ten"]) {
+    assert.equal(parseSettings({ org: ORG, max_model_requests: bad }).ok, false, bad);
+  }
+  assert.equal(parseSettings({ org: ORG, max_model_requests: 200 }).ok, true);
+  assert.equal(parseSettings({ org: ORG, monthly_cost_cap_usd: "-5" }).ok, false);
+  assert.equal(parseSettings({ org: ORG, monthly_cost_cap_usd: "1e3" }).ok, false);
+  assert.equal(parseSettings({ org: ORG, model: "has space" }).ok, false);
+  assert.equal(parseSettings({ org: "Default" }).ok, false);
+});
+
+test("people and keys: bodies are checked before anything is called", () => {
+  const person = { org: ORG, email: " Ana@Example.com ", role: "member", password: "twelve chars" };
+  assert.deepEqual(parseAddPerson(person), {
+    ok: true,
+    value: { org: ORG, email: "ana@example.com", role: "member", password: "twelve chars" },
+  });
+  assert.equal(parseAddPerson({ ...person, password: "short" }).ok, false);
+  assert.equal(parseAddPerson({ ...person, password: "x".repeat(MAX_PASSWORD_BYTES + 1) }).ok, false);
+  assert.equal(parseAddPerson({ ...person, role: "owner" }).ok, false);
+  assert.equal(parseAddPerson({ ...person, email: "Ana" }).ok, false);
+
+  assert.equal(parseSetMember({ org: ORG, user_id: USER, role: "viewer", status: "suspended" }).ok, true);
+  assert.equal(parseSetMember({ org: ORG, user_id: USER, role: "viewer", status: "deleted" }).ok, false);
+  assert.equal(parseSetPassword({ org: ORG, user_id: USER, password: "a long enough one" }).ok, true);
+  assert.equal(parseSetPassword({ org: ORG, user_id: "me", password: "a long enough one" }).ok, false);
+
+  assert.equal(parseProviderKey({ org: ORG, provider: "anthropic", api_key: "x".repeat(16) }).ok, true);
+  assert.equal(parseProviderKey({ org: ORG, provider: "anthropic", api_key: "too-short" }).ok, false);
+  assert.equal(parseProviderKey({ org: ORG, provider: "anthropic", api_key: "has a space in the middle" }).ok, false);
+  assert.equal(parseProviderKey({ org: ORG, provider: "mistral", api_key: "x".repeat(16) }).ok, false);
+
+  assert.deepEqual(parseOrganizationName({ name: "  Acme  " }), { ok: true, value: { name: "Acme" } });
+  assert.equal(parseOrganizationName({ name: " " }).ok, false);
+});
+
+test("generated passwords are long enough and avoid look-alike characters", () => {
+  const password = generatePassword();
+  assert.equal(password.length, 16);
+  assert.doesNotMatch(password, /[0O1lI]/);
+  assert.notEqual(generatePassword(), password);
+});
+
+test("the database's sentences reach the person; faults do not", () => {
+  assert.deepEqual(
+    describeDbError({ code: "23514", message: "this would leave the organisation without an admin" }, "x"),
+    { message: "This would leave the organisation without an admin.", status: 409 },
+  );
+  assert.equal(describeDbError({ code: "42501", message: "only an admin of this organisation manages its keys" }, "x").status, 403);
+  // What a table's own check constraint says (seen against the local database).
+  assert.deepEqual(
+    describeDbError(
+      {
+        code: "23514",
+        message:
+          'new row for relation "organization_settings" violates check constraint "organization_settings_max_model_requests_check"',
+      },
+      "x",
+    ),
+    { message: "The database refused that value.", status: 400 },
+  );
+  assert.deepEqual(describeDbError({ code: "XX000", message: "internal detail" }, "Could not save."), {
+    message: "Could not save.",
+    status: 500,
+  });
+});
+
+test("audit lines are readable sentences", () => {
+  const nameOf = (id: string) => (id === USER ? "ana@example.com" : shortId(id));
+  assert.equal(
+    summarizeAuditEvent({ action: "member.set", detail: { user_id: USER, role: "admin", status: "active" } }, nameOf),
+    "ana@example.com: admin, active.",
+  );
+  assert.equal(
+    summarizeAuditEvent({ action: "member.set", detail: { user_id: ORG, role: "viewer", status: "suspended" } }, nameOf),
+    "user 11111111: viewer, suspended.",
+  );
+  assert.equal(
+    summarizeAuditEvent(
+      { action: "provider.connected", detail: { provider: "openrouter", last4: "a1b2", source: "openrouter_oauth" } },
+      nameOf,
+    ),
+    "Connected OpenRouter (key ending a1b2, OpenRouter login).",
+  );
+  assert.equal(
+    summarizeAuditEvent({ action: "provider.rotated", detail: { provider: "anthropic", last4: "zz99", source: "pasted" } }, nameOf),
+    "Replaced the key of Anthropic (key ending zz99, pasted).",
+  );
+  assert.equal(summarizeAuditEvent({ action: "provider.deleted", detail: { provider: "deepseek" } }, nameOf), "Removed the DeepSeek key.");
+  assert.equal(
+    summarizeAuditEvent(
+      { action: "settings.updated", detail: { model: null, max_model_requests: 12, monthly_cost_cap_usd: 50 } },
+      nameOf,
+    ),
+    "Settings: model default, max model requests per run 12, monthly cap $50.00.",
+  );
+  assert.equal(
+    summarizeAuditEvent({ action: "organization.created", detail: { name: "Acme" } }, nameOf),
+    'Created the organisation "Acme".',
+  );
+  assert.equal(summarizeAuditEvent({ action: "run.purged", detail: { count: 3 } }, nameOf), 'run.purged {"count":3}');
+});
+
+test("money and months", () => {
+  assert.equal(formatUsd(1234.5), "$1,234.50");
+  assert.equal(formatMonth("2026-10-01"), "October 2026");
+  assert.equal(formatMonth("2026-01-01"), "January 2026", "UTC, not the local zone");
+  assert.equal(capShare(25, 100), "25% of the cap");
+  assert.equal(capShare(5, null), null);
+  assert.equal(capShare(1, 0), "over the cap");
+});
+
+test("OpenRouter: the auth URL carries the S256 challenge and the state; results are fixed codes", () => {
+  const url = new URL(openRouterAuthUrl("https://app.example.test", "CHALLENGE", "STATE"));
+  assert.equal(url.origin + url.pathname, "https://openrouter.ai/auth");
+  assert.equal(url.searchParams.get("callback_url"), "https://app.example.test/api/admin/providers/openrouter/callback");
+  assert.equal(url.searchParams.get("code_challenge"), "CHALLENGE");
+  assert.equal(url.searchParams.get("code_challenge_method"), "S256");
+  assert.equal(url.searchParams.get("state"), "STATE");
+  assert.deepEqual(openRouterResultMessage("connected"), { ok: true, message: OPENROUTER_RESULTS.connected });
+  assert.equal(openRouterResultMessage("denied")?.ok, false);
+  assert.equal(openRouterResultMessage("<script>"), null, "anything else in the URL prints nothing");
+  assert.equal(openRouterResultMessage("toString"), null);
+});
+
+test("the OAuth origin is the host the browser used, not Next.js's normalised one", () => {
+  // Seen under `next dev --hostname 127.0.0.1`: nextUrl said localhost, cookies live on 127.0.0.1.
+  const nextUrl = new URL("http://localhost:3020/api/admin/providers/openrouter/start");
+  assert.equal(requestOrigin(new Headers({ host: "127.0.0.1:3020" }), nextUrl), "http://127.0.0.1:3020");
+  assert.equal(
+    requestOrigin(new Headers({ host: "internal", "x-forwarded-host": "app.example.test", "x-forwarded-proto": "https" }), nextUrl),
+    "https://app.example.test",
+  );
+  assert.equal(requestOrigin(new Headers({ host: "evil.test/path?x" }), nextUrl), "http://localhost:3020");
+  assert.equal(requestOrigin(new Headers(), nextUrl), "http://localhost:3020");
+});

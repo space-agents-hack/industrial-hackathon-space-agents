@@ -21,6 +21,7 @@ EventKind = Literal[
 
 class Run(BaseModel):
     id: UUID
+    organization_id: UUID
     task: str
     status: RunStatus
     updated_at: datetime
@@ -37,3 +38,11 @@ class Approval(ApprovalRequest):
     run_id: UUID
     status: ApprovalStatus
     note: str | None = None
+
+
+class OrganizationSettings(BaseModel):
+    """What one organisation changed. None means "use the service's default" (settings.py)."""
+
+    model: str | None = None
+    max_model_requests: int | None = None
+    monthly_cost_cap_usd: float | None = None

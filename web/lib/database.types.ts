@@ -81,6 +81,167 @@ export type Database = {
           },
         ]
       }
+      audit_events: {
+        Row: {
+          action: string
+          actor: string | null
+          created_at: string
+          detail: Json
+          id: number
+          organization_id: string | null
+        }
+        Insert: {
+          action: string
+          actor?: string | null
+          created_at?: string
+          detail?: Json
+          id?: never
+          organization_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor?: string | null
+          created_at?: string
+          detail?: Json
+          id?: never
+          organization_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      memberships: {
+        Row: {
+          created_at: string
+          organization_id: string
+          role: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          organization_id: string
+          role: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          organization_id?: string
+          role?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "memberships_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_settings: {
+        Row: {
+          max_model_requests: number | null
+          model: string | null
+          monthly_cost_cap_usd: number | null
+          organization_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          max_model_requests?: number | null
+          model?: string | null
+          monthly_cost_cap_usd?: number | null
+          organization_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          max_model_requests?: number | null
+          model?: string | null
+          monthly_cost_cap_usd?: number | null
+          organization_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      provider_connections: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          last4: string
+          organization_id: string
+          provider: string
+          secret_id: string
+          source: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          last4: string
+          organization_id: string
+          provider: string
+          secret_id: string
+          source?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          last4?: string
+          organization_id?: string
+          provider?: string
+          secret_id?: string
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_connections_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       run_events: {
         Row: {
           created_at: string
@@ -146,6 +307,7 @@ export type Database = {
           error: string | null
           id: string
           model: string | null
+          organization_id: string
           output: string | null
           status: string
           task: string
@@ -158,6 +320,7 @@ export type Database = {
           error?: string | null
           id?: string
           model?: string | null
+          organization_id: string
           output?: string | null
           status?: string
           task: string
@@ -170,20 +333,93 @@ export type Database = {
           error?: string | null
           id?: string
           model?: string | null
+          organization_id?: string
           output?: string | null
           status?: string
           task?: string
           updated_at?: string
           usage?: Json
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "runs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      bootstrap_member: {
+        Args: {
+          make_platform_admin: boolean
+          member: string
+          member_role: string
+        }
+        Returns: string
+      }
+      can_reset_password: { Args: { member: string }; Returns: boolean }
+      create_organization: { Args: { org_name: string }; Returns: string }
+      delete_provider_key: {
+        Args: { key_provider: string; org: string }
+        Returns: undefined
+      }
+      my_access: { Args: never; Returns: Json }
+      organization_people: {
+        Args: { org: string }
+        Returns: {
+          email: string
+          last_sign_in_at: string
+          role: string
+          status: string
+          user_id: string
+        }[]
+      }
+      organization_usage: {
+        Args: { months?: number; org: string }
+        Returns: {
+          cost_usd: number
+          month: string
+          runs: number
+          tokens: number
+        }[]
+      }
+      read_provider_key: {
+        Args: { key_provider: string; org: string }
+        Returns: string
+      }
+      set_member: {
+        Args: {
+          member: string
+          member_role: string
+          member_status?: string
+          org: string
+        }
+        Returns: undefined
+      }
+      set_provider_key: {
+        Args: {
+          api_key: string
+          key_provider: string
+          key_source?: string
+          org: string
+        }
+        Returns: undefined
+      }
+      update_organization_settings: {
+        Args: {
+          new_max_model_requests: number
+          new_model: string
+          new_monthly_cost_cap_usd: number
+          org: string
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

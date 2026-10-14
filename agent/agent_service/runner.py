@@ -7,6 +7,9 @@ starts streaming:
   prepare()  checks the run can advance and claims it. Raises RunNotFound or CannotAdvance.
   execute()  runs the agent and records everything. Never raises; a failure is a run status.
 
+Which model, which key and which limits a run uses come from its organisation (organization_settings
+and provider_connections), falling back to this service's environment for anything it did not set.
+
 What this does NOT do: re-run anything after a crash. A run whose function died stays "running"
 until its heartbeat goes stale, and is then marked failed. Resuming it automatically could execute
 an already-approved write a second time, and only the domain knows whether that is safe.
@@ -16,6 +19,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import traceback
 from collections.abc import AsyncIterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -39,12 +43,14 @@ from pydantic_ai import (
     UsageLimitExceeded,
     UsageLimits,
 )
+from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
 from pydantic_core import to_jsonable_python
 
 from agent_service import domain
+from agent_service.providers import build_model, provider_of, scrub
 from agent_service.records import Approval, ApprovalRequest, Run, RunStatus
-from agent_service.settings import Settings
+from agent_service.settings import RunSettings, Settings, effective
 from agent_service.store import RunStore
 
 log = logging.getLogger(__name__)
@@ -65,6 +71,7 @@ class CannotAdvance(Exception):
 @dataclass
 class Plan:
     run: Run
+    config: RunSettings
     # None when starting; the saved conversation and the decisions when resuming.
     conversation: Conversation | None = None
     decisions: list[Approval] | None = None
@@ -76,9 +83,13 @@ async def prepare(store: RunStore, settings: Settings, run_id: UUID) -> Plan:
         raise RunNotFound(str(run_id))
 
     if run.status == "queued":
-        if not await store.claim(run_id, "queued", settings.agent_model):
+        config = await _config(store, settings, run)
+        if (refusal := await _over_cap(store, run, config)) is not None:
+            await _fail(store, run_id, refusal, expected="queued")
+            raise CannotAdvance(refusal)
+        if not await store.claim(run_id, "queued", config.model):
             raise CannotAdvance("Another request started this run first.")
-        return Plan(run)
+        return Plan(run, config)
 
     if run.status == "awaiting_approval":
         approvals = await store.list_approvals(run_id)
@@ -100,9 +111,13 @@ async def prepare(store: RunStore, settings: Settings, run_id: UUID) -> Plan:
             )
             await _fail(store, run_id, message, expected="awaiting_approval")
             raise CannotAdvance(message) from None
-        if not await store.claim(run_id, "awaiting_approval", settings.agent_model):
+        # No cap check here, on purpose: a person has already approved the next step, and
+        # stopping now would leave the approved write undone halfway through the task. A run
+        # that started under the cap is allowed to finish past it.
+        config = await _config(store, settings, run)
+        if not await store.claim(run_id, "awaiting_approval", config.model):
             raise CannotAdvance("Another request resumed this run first.")
-        return Plan(run, conversation, approvals)
+        return Plan(run, config, conversation, approvals)
 
     if run.status == "running":
         idle = (datetime.now(UTC) - run.updated_at).total_seconds()
@@ -116,6 +131,29 @@ async def prepare(store: RunStore, settings: Settings, run_id: UUID) -> Plan:
         raise CannotAdvance(message)
 
     raise CannotAdvance(f"The run is already {run.status}.")
+
+
+async def _config(store: RunStore, settings: Settings, run: Run) -> RunSettings:
+    return effective(settings, await store.organization_settings(run.organization_id))
+
+
+async def _over_cap(store: RunStore, run: Run, config: RunSettings) -> str | None:
+    """The reason to refuse a new run, or None.
+
+    Checked once, when a run starts. Runs already working are not counted until they record
+    their cost, so several started together can overshoot the cap by what they spend; the cap
+    stops the next run, not the current one.
+    """
+    cap = config.monthly_cost_cap_usd
+    if cap is None:
+        return None
+    spent = await store.month_cost(run.organization_id)
+    if spent < cap:
+        return None
+    return (
+        f"This organisation has reached its monthly cap of ${cap:,.2f} (${spent:,.2f} spent this "
+        "month). An admin can raise it in Admin, Models and limits."
+    )
 
 
 async def execute(store: RunStore, settings: Settings, plan: Plan) -> RunStatus:
@@ -141,22 +179,31 @@ async def _heartbeat(store: RunStore, run_id: UUID, every_s: float) -> None:
 
 async def _execute(store: RunStore, settings: Settings, plan: Plan) -> RunStatus:
     run_id = plan.run.id
+    # Read here, inside the handler, so every message below can be scrubbed of it.
+    key: str | None = None
     try:
         await store.add_event(run_id, "status", {"status": "running"})
+        provider = provider_of(plan.config.model)
+        if provider is not None:
+            key = await store.provider_key(plan.run.organization_id, provider)
+        model = build_model(plan.config.model, key)
         async with asyncio.timeout(settings.run_timeout_s):
-            return await _run_agent(store, settings, plan)
+            return await _run_agent(store, plan, model)
     except TimeoutError:
         return await _fail(
             store, run_id, f"Ran out of time (limit {settings.run_timeout_s:.0f} s)."
         )
     except UsageLimitExceeded as exc:
-        return await _fail(store, run_id, f"Stopped at a usage limit: {exc}")
+        return await _fail(store, run_id, scrub(f"Stopped at a usage limit: {exc}", key))
     except Exception as exc:
-        log.exception("run %s failed", run_id)
-        return await _fail(store, run_id, f"{type(exc).__name__}: {exc}"[:2000])
+        # Not log.exception: the traceback carries the exception's message, which is exactly
+        # what may quote the key.
+        trace = "".join(traceback.format_exception(exc))
+        log.error("run %s failed\n%s", run_id, scrub(trace, key))
+        return await _fail(store, run_id, scrub(f"{type(exc).__name__}: {exc}", key)[:2000])
 
 
-async def _run_agent(store: RunStore, settings: Settings, plan: Plan) -> RunStatus:
+async def _run_agent(store: RunStore, plan: Plan, model: Model | str) -> RunStatus:
     run_id = plan.run.id
     resumed_call_ids: set[str] = set()
     deferred_results: DeferredToolResults | None = None
@@ -206,9 +253,9 @@ async def _run_agent(store: RunStore, settings: Settings, plan: Plan) -> RunStat
         None if plan.conversation is not None else plan.run.task,
         conversation=plan.conversation,
         deferred_tool_results=deferred_results,
-        model=domain.resolve_model(settings.agent_model),
+        model=model,
         deps=domain.new_deps(),
-        usage_limits=UsageLimits(request_limit=settings.max_model_requests),
+        usage_limits=UsageLimits(request_limit=plan.config.max_model_requests),
         event_stream_handler=record,
     )
 

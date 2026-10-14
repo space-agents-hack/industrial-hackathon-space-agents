@@ -2,15 +2,28 @@
 tested against an in-memory fake (tests/fakes.py) and the Supabase version against a real local
 stack (tests/test_store_integration.py)."""
 
+from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import UUID
 
 from pydantic import TypeAdapter
 from supabase import AsyncClient, acreate_client
+from supabase_auth.errors import AuthApiError
 
-from agent_service.records import Approval, ApprovalRequest, EventKind, Run, RunStatus
+from agent_service.records import (
+    Approval,
+    ApprovalRequest,
+    EventKind,
+    OrganizationSettings,
+    Run,
+    RunStatus,
+)
 
 _approvals = TypeAdapter(list[Approval])
+
+# PostgREST returns at most this many rows per request (`max_rows` in supabase/config.toml and the
+# hosted default). A sum over one page would silently undercount a busy month.
+_PAGE = 1000
 
 
 class RunStore(Protocol):
@@ -50,6 +63,27 @@ class RunStore(Protocol):
         example a run marked failed as stale while its old request was still finishing."""
         ...
 
+    async def organization_settings(self, org: UUID) -> OrganizationSettings | None:
+        """Only what the organisation changed; None if it never changed anything."""
+        ...
+
+    async def provider_key(self, org: UUID, provider: str) -> str | None:
+        """The organisation's API key for this provider, or None if it has not connected one."""
+        ...
+
+    async def month_cost(self, org: UUID) -> float:
+        """USD recorded on the organisation's runs created since the start of this UTC month."""
+        ...
+
+    async def create_user(self, email: str, password: str) -> tuple[UUID, bool]:
+        """A confirmed user with this email: (id, True) if created now, (id, False) if it
+        already existed, in which case nothing about it is changed."""
+        ...
+
+    async def set_password(self, user_id: UUID, password: str) -> bool:
+        """False if there is no such user."""
+        ...
+
     async def aclose(self) -> None: ...
 
 
@@ -67,7 +101,7 @@ class SupabaseRunStore:
     async def get_run(self, run_id: UUID) -> Run | None:
         res = (
             await self._db.table("runs")
-            .select("id, task, status, updated_at")
+            .select("id, organization_id, task, status, updated_at")
             .eq("id", str(run_id))
             .limit(1)
             .execute()
@@ -161,5 +195,86 @@ class SupabaseRunStore:
         )
         return len(res.data) == 1
 
+    async def organization_settings(self, org: UUID) -> OrganizationSettings | None:
+        res = (
+            await self._db.table("organization_settings")
+            .select("model, max_model_requests, monthly_cost_cap_usd")
+            .eq("organization_id", str(org))
+            .limit(1)
+            .execute()
+        )
+        return OrganizationSettings.model_validate(res.data[0]) if res.data else None
+
+    async def provider_key(self, org: UUID, provider: str) -> str | None:
+        # The only function the secret key may call and a signed-in person may not: the key is
+        # decrypted from Vault here and nowhere else.
+        res = await self._db.rpc(
+            "read_provider_key", {"org": str(org), "key_provider": provider}
+        ).execute()
+        return res.data if isinstance(res.data, str) and res.data else None
+
+    async def month_cost(self, org: UUID) -> float:
+        # Same rule as the database's organization_usage(): by the run's created_at, so the cap
+        # and the usage page agree on which month a run belongs to. That function cannot be
+        # called with the secret key (it asks auth.uid()), hence the sum here.
+        start = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        total = 0.0
+        offset = 0
+        while True:
+            res = (
+                await self._db.table("runs")
+                .select("cost:usage->>cost_usd")
+                .eq("organization_id", str(org))
+                .gte("created_at", start.isoformat())
+                .order("id")
+                .range(offset, offset + _PAGE - 1)
+                .execute()
+            )
+            page: list[Any] = res.data
+            # A run on an unpriced model records no cost and counts as zero.
+            total += sum(float(r["cost"]) for r in page if r.get("cost") is not None)
+            if len(page) < _PAGE:
+                return total
+            offset += _PAGE
+
+    async def create_user(self, email: str, password: str) -> tuple[UUID, bool]:
+        try:
+            created = await self._db.auth.admin.create_user(
+                {"email": email, "password": password, "email_confirm": True}
+            )
+            return UUID(created.user.id), True
+        except AuthApiError as exc:
+            if exc.code != "email_exists":
+                raise
+        existing = await self._find_user(email)
+        if existing is None:
+            # Deleted between the two calls; rare enough to report rather than retry.
+            raise LookupError("The user existed a moment ago and is gone now.")
+        return existing, False
+
+    async def _find_user(self, email: str) -> UUID | None:
+        # The Auth admin API in this client has no lookup by email, only pages of users.
+        wanted = email.casefold()
+        page = 1
+        while True:
+            users = await self._db.auth.admin.list_users(page=page, per_page=_PAGE)
+            for user in users:
+                if (user.email or "").casefold() == wanted:
+                    return UUID(user.id)
+            if len(users) < _PAGE:
+                return None
+            page += 1
+
+    async def set_password(self, user_id: UUID, password: str) -> bool:
+        try:
+            await self._db.auth.admin.update_user_by_id(str(user_id), {"password": password})
+        except AuthApiError as exc:
+            if exc.code == "user_not_found":
+                return False
+            raise
+        return True
+
     async def aclose(self) -> None:
         await self._db.postgrest.aclose()
+        # Auth has its own connection pool (used by create_user and set_password).
+        await self._db.auth.close()
