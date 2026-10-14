@@ -30,19 +30,25 @@ if [[ "$url" == *127.0.0.1* || "$url" == *localhost* ]]; then
   local_stack=1
 else
   local_stack=0
+  # From a terminal this prompts; from the Setup page's form the password arrives on stdin.
   read -r -s -p "Password for $email on $url: " password
-  echo
+  [[ -t 0 ]] && echo
   if [[ ${#password} -lt 12 || "$password" == "$LOCAL_PASSWORD" ]]; then
     echo "Use a password of at least 12 characters that is not the local default." >&2
     exit 1
   fi
 fi
 
-body="$(python3 -c 'import json,sys; print(json.dumps({"email": sys.argv[1], "password": sys.argv[2], "email_confirm": True}))' "$email" "$password")"
+# Built from stdin, not from arguments: a password in a command line is visible to `ps`.
+body="$(printf '%s\n%s' "$email" "$password" | python3 -c '
+import json, sys
+email, password = sys.stdin.read().split("\n", 1)
+print(json.dumps({"email": email, "password": password, "email_confirm": True}))
+')"
 out="$(mktemp)"
 response="$(curl -sS -o "$out" -w '%{http_code}' -X POST "$url/auth/v1/admin/users" \
-  -H "apikey: $key" -H "Authorization: Bearer $key" -H "content-type: application/json" \
-  -d "$body")"
+  -H @<(printf 'apikey: %s\nAuthorization: Bearer %s\n' "$key" "$key") -H "content-type: application/json" \
+  --data-binary @<(printf '%s' "$body"))"
 detail="$(cat "$out")"
 rm -f "$out"
 
