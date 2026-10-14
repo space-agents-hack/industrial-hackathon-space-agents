@@ -6,7 +6,9 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { APP_NAME } from "@/lib/config";
 import { MIN_PASSWORD_LENGTH, needsProviderKey } from "@/lib/connect-answers";
+import { releasesTokenUrl } from "@/lib/releases";
 
 type CliStatus = { gh: boolean; vercel: boolean; supabase: boolean; repo: string | null };
 type Person = { email: string; password: string };
@@ -31,6 +33,7 @@ export function ConnectForm() {
   const [vercelToken, setVercelToken] = useState("");
   const [model, setModel] = useState("scripted");
   const [providerKey, setProviderKey] = useState("");
+  const [releasesToken, setReleasesToken] = useState("");
   const [people, setPeople] = useState<Person[]>([{ email: "", password: "" }]);
   const [applyMigrations, setApplyMigrations] = useState(true);
   const [remember, setRemember] = useState(true);
@@ -68,6 +71,7 @@ export function ConnectForm() {
         vercel_token: string;
         agent_model: string;
         provider_key: string;
+        releases_token: string;
         users: Person[];
       } = await response.json();
       setSaved(body.saved);
@@ -78,6 +82,7 @@ export function ConnectForm() {
       setVercelToken(body.vercel_token);
       setModel(body.agent_model || "scripted");
       setProviderKey(body.provider_key);
+      setReleasesToken(body.releases_token);
       if (body.users.length > 0) setPeople(body.users);
     } catch {
       // Nothing saved, or the server is not the local dev server: start with an empty form.
@@ -94,6 +99,7 @@ export function ConnectForm() {
     setSupabaseToken("");
     setVercelToken("");
     setProviderKey("");
+    setReleasesToken("");
     setPeople((current) => current.map((person) => ({ ...person, password: "" })));
   }
 
@@ -127,6 +133,7 @@ export function ConnectForm() {
           vercel_token: vercelToken,
           agent_model: model,
           provider_key: providerKey,
+          releases_token: releasesToken,
           apply_migrations: applyMigrations,
           users: people,
           name,
@@ -168,6 +175,7 @@ export function ConnectForm() {
         setSupabaseToken("");
         setVercelToken("");
         setProviderKey("");
+        setReleasesToken("");
         setPeople((current) => current.map((person) => ({ ...person, password: "" })));
       }
       router.refresh();
@@ -220,6 +228,17 @@ export function ConnectForm() {
               {(control) => <Secret {...control} value={providerKey} onChange={setProviderKey} />}
             </Field>
           ) : null}
+          <Field
+            label="GitHub token for releases (optional)"
+            hint={
+              <>
+                read-only; shows releases in production&apos;s Admin.{" "}
+                <Ext href={releasesTokenUrl(cli?.repo ?? "", APP_NAME)}>create one</Ext>
+              </>
+            }
+          >
+            {(control) => <Secret {...control} value={releasesToken} onChange={setReleasesToken} optional />}
+          </Field>
         </div>
 
         <fieldset className="grid gap-2">
@@ -448,8 +467,9 @@ function Field({
 function Secret({
   value,
   onChange,
+  optional = false,
   ...control
-}: Control & { value: string; onChange: (value: string) => void }) {
+}: Control & { value: string; onChange: (value: string) => void; optional?: boolean }) {
   const [visible, setVisible] = useState(false);
   const buttonId = useId();
   return (
@@ -465,7 +485,7 @@ function Secret({
         data-lpignore="true"
         spellCheck={false}
         className="font-mono"
-        required
+        required={!optional}
       />
       {/* Read as "Show Database password", not a bare "Show" next to four others. */}
       <Button

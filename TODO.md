@@ -22,7 +22,8 @@ Open work on the template itself. Product work in a project made from this templ
 
 ## Next (asked on 2026-10-14)
 
-- [ ] Show a release's real progress (each job and step, live) in the app, not only the last result.
+- [x] Show a release's real progress (each job and step, live) in the app: Setup page and
+      Admin › Releases (2026-10-15). Starting a release from production waits for the item below.
 - [ ] Manage the whole setup from production, not only from the local Setup page: change model
       keys, people, and the deployment's own credentials (Vercel, Supabase, GitHub) in the
       deployed admin area. Needs a decision first: where account-wide tokens may live in

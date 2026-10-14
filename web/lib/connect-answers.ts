@@ -15,6 +15,8 @@ export type ConnectAnswers = {
   apply_migrations: "y" | "n";
   agent_model: string;
   provider_key?: string;
+  // Optional: a read-only GitHub token so Admin › Releases works in production (lib/github.ts).
+  releases_token?: string;
   users: ConnectUser[];
   // Set by the server, never by the form: see app/api/setup/connect/route.ts.
   shared_secret?: string;
@@ -76,6 +78,11 @@ export function parseConnectAnswers(input: unknown): Parsed {
     return { ok: false, error: `The model ${agent_model} needs its provider's API key.` };
   }
 
+  const releases_token = text(body, "releases_token");
+  if (releases_token && !releases_token.startsWith("github_pat_")) {
+    return { ok: false, error: "The releases token is a fine-grained GitHub token; it starts with github_pat_." };
+  }
+
   const rawUsers = Array.isArray(body.users) ? body.users : [];
   const users: ConnectUser[] = [];
   for (const raw of rawUsers.slice(0, 20)) {
@@ -109,6 +116,7 @@ export function parseConnectAnswers(input: unknown): Parsed {
       apply_migrations: body.apply_migrations === false ? "n" : "y",
       agent_model,
       ...(provider_key ? { provider_key } : {}),
+      ...(releases_token ? { releases_token } : {}),
       users,
     },
   };

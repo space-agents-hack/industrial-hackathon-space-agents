@@ -44,9 +44,11 @@ function childEnv(): Record<string, string> {
   return env;
 }
 
-function run(command: string, args: string[], timeoutMs = 20_000): Promise<{ ok: boolean; stdout: string }> {
+export function runCli(command: string, args: string[], timeoutMs = 20_000): Promise<{ ok: boolean; stdout: string }> {
   return new Promise((resolve) => {
-    execFile(command, args, { cwd: repoRoot(), env: childEnv() as NodeJS.ProcessEnv, timeout: timeoutMs }, (error, stdout) => {
+    // A workflow job's log runs to megabytes; past the 1 MB default the call would fail.
+    const options = { cwd: repoRoot(), env: childEnv() as NodeJS.ProcessEnv, timeout: timeoutMs, maxBuffer: 32 << 20 };
+    execFile(command, args, options, (error, stdout) => {
       resolve({ ok: !error, stdout: String(stdout).trim() });
     });
   });
@@ -56,10 +58,10 @@ export type CliStatus = { gh: boolean; vercel: boolean; supabase: boolean; repo:
 
 export async function cliStatus(): Promise<CliStatus> {
   const [gh, vercel, supabase, repo] = await Promise.all([
-    run("gh", ["auth", "status"]),
-    run("vercel", ["whoami"]),
-    run("supabase", ["projects", "list"]),
-    run("gh", ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]),
+    runCli("gh", ["auth", "status"]),
+    runCli("vercel", ["whoami"]),
+    runCli("supabase", ["projects", "list"]),
+    runCli("gh", ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]),
   ]);
   return {
     gh: gh.ok,
@@ -119,14 +121,14 @@ export function runBootstrap(answers: ConnectAnswers, signal: AbortSignal): Read
 }
 
 export async function startRelease(): Promise<{ ok: boolean; url: string | null; detail: string }> {
-  const started = await run("gh", ["workflow", "run", "deploy.yml", "--ref", "main"]);
+  const started = await runCli("gh", ["workflow", "run", "deploy.yml", "--ref", "main"]);
   if (!started.ok) {
     return { ok: false, url: null, detail: "GitHub refused to start the Deploy workflow." };
   }
   // The run appears in the list a moment after it is requested.
   for (let attempt = 0; attempt < 5; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, 2000));
-    const listed = await run("gh", [
+    const listed = await runCli("gh", [
       "run", "list", "--workflow", "deploy.yml", "--event", "workflow_dispatch",
       "--limit", "1", "--json", "url", "--jq", ".[0].url",
     ]);
@@ -161,7 +163,7 @@ export async function forgetSaved(): Promise<void> {
 }
 
 // Production as seen from this machine: the two production addresses (asked of Vercel through
-// its CLI, signed in as you), whether each answers, and the latest run of the Deploy workflow.
+// its CLI, signed in as you) and whether each answers. Releases are in lib/github.ts.
 
 // The Vercel CLI version CI uses, read from the workflow so there is one place to change it. Run
 // through npx because `vercel api` needs a newer CLI than many machines have installed.
@@ -172,18 +174,10 @@ async function vercelCli(): Promise<string> {
 }
 
 export type Endpoint = { url: string | null; healthy: boolean; detail: string; model?: string };
-export type ReleaseRun = {
-  status: string;
-  conclusion: string | null;
-  url: string;
-  createdAt: string;
-  title: string;
-};
 export type ProductionStatus = {
   linked: boolean;
   web: Endpoint | null;
   agent: Endpoint | null;
-  release: ReleaseRun | null;
 };
 
 async function readLink(unit: "web" | "agent"): Promise<{ orgId: string; projectId: string } | null> {
@@ -199,7 +193,7 @@ async function readLink(unit: "web" | "agent"): Promise<{ orgId: string; project
 
 async function productionDomain(link: { orgId: string; projectId: string }): Promise<string | null> {
   const team = link.orgId.startsWith("team_") ? `?teamId=${link.orgId}` : "";
-  const result = await run(
+  const result = await runCli(
     "npx",
     ["--yes", await vercelCli(), "api", `/v9/projects/${link.projectId}/domains${team}`],
     90_000,
@@ -235,37 +229,10 @@ async function probe(domain: string | null, healthPath: string): Promise<Endpoin
   }
 }
 
-async function latestRelease(): Promise<ReleaseRun | null> {
-  const result = await run("gh", [
-    "run", "list", "--workflow", "deploy.yml", "--branch", "main", "--limit", "1",
-    "--json", "status,conclusion,url,createdAt,displayTitle",
-  ]);
-  if (!result.ok) return null;
-  try {
-    const [latest] = JSON.parse(result.stdout) as {
-      status: string;
-      conclusion: string;
-      url: string;
-      createdAt: string;
-      displayTitle: string;
-    }[];
-    if (!latest) return null;
-    return {
-      status: latest.status,
-      conclusion: latest.conclusion || null,
-      url: latest.url,
-      createdAt: latest.createdAt,
-      title: latest.displayTitle,
-    };
-  } catch {
-    return null;
-  }
-}
-
 export async function productionStatus(): Promise<ProductionStatus> {
-  const [webLink, agentLink, release] = await Promise.all([readLink("web"), readLink("agent"), latestRelease()]);
-  if (!webLink || !agentLink) return { linked: false, web: null, agent: null, release };
+  const [webLink, agentLink] = await Promise.all([readLink("web"), readLink("agent")]);
+  if (!webLink || !agentLink) return { linked: false, web: null, agent: null };
   const [webDomain, agentDomain] = await Promise.all([productionDomain(webLink), productionDomain(agentLink)]);
   const [web, agent] = await Promise.all([probe(webDomain, "/api/health"), probe(agentDomain, "/health")]);
-  return { linked: true, web, agent, release };
+  return { linked: true, web, agent };
 }

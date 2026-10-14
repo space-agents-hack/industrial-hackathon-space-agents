@@ -6,6 +6,7 @@ import { test } from "node:test";
 
 import { LOCAL_DEMO_USER } from "./config.ts";
 import { MIN_PASSWORD_LENGTH, needsProviderKey, parseConnectAnswers } from "./connect-answers.ts";
+import { LAST_RELEASE_STEP, RELEASE_JOB } from "./releases.ts";
 
 const script = (name: string) => readFileSync(new URL(`../../scripts/${name}`, import.meta.url), "utf8");
 const bootstrap = script("bootstrap.sh");
@@ -24,6 +25,7 @@ test("every answer the form sends is one the bootstrap script asks for", () => {
     name: "my-project",
     agent_domain: "my-project-agent.vercel.app",
     secret_key: "sb_secret_abc",
+    releases_token: "github_pat_abc",
     users: [{ email: "a@b.co", password: "twelve chars" }],
   });
   assert.ok(parsed.ok);
@@ -53,4 +55,18 @@ test("the minimum password length and the local demo user are the same everywher
 test("the setup page reads the Vercel CLI version CI pins", () => {
   const workflow = readFileSync(new URL("../../.github/workflows/deploy.yml", import.meta.url), "utf8");
   assert.match(workflow, /VERCEL_CLI_VERSION:\s*"\d+\.\d+\.\d+"/);
+});
+
+// lib/releases.ts tells "released" from "checks passed, nothing deployed" by these names.
+test("the release view knows the workflow's job and step names", () => {
+  const workflow = readFileSync(new URL("../../.github/workflows/deploy.yml", import.meta.url), "utf8");
+  for (const name of [
+    RELEASE_JOB,
+    LAST_RELEASE_STEP,
+    "Is this commit still the head of main",
+    "Apply migrations",
+    "Deploy agent (not yet live)",
+  ]) {
+    assert.match(workflow, new RegExp(`name: ${name.replace(/[()]/g, "\\$&")}\n`), `deploy.yml has no "${name}"`);
+  }
 });

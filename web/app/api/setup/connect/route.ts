@@ -48,6 +48,7 @@ export async function POST(request: Request) {
         vercel_token: answers.vercel_token,
         agent_model: answers.agent_model,
         provider_key: answers.provider_key ?? "",
+        releases_token: answers.releases_token ?? "",
         shared_secret: sharedSecret,
         users: answers.users,
       });
