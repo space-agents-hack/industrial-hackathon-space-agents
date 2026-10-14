@@ -23,9 +23,8 @@ Open work on the template itself. Product work in a project made from this templ
 ## Next (asked on 2026-10-14)
 
 - [x] Show a release's real progress (each job and step, live) in the app: Setup page and
-      Admin › Releases (2026-10-15). Starting a release from production waits for the item below.
-- [ ] Manage the whole setup from production, not only from the local Setup page: change model
-      keys, people, and the deployment's own credentials (Vercel, Supabase, GitHub) in the
-      deployed admin area. Needs a decision first: where account-wide tokens may live in
-      production (a stolen admin session must not become control of the Vercel and GitHub
-      accounts). The local Setup page as it is was judged not useful.
+      Admin › Releases (2026-10-15), where a platform admin can also start one.
+- [x] Manage the deployment from production (ADR-0005, 2026-10-15): Admin › Deployment stores new
+      values in GitHub and re-runs the Bootstrap workflow; first setup from GitHub alone.
+- [ ] Prove the Bootstrap workflow on a fresh repository from the template, end to end (written
+      and checked, never run on a real empty project).

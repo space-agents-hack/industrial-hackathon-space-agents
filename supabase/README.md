@@ -37,7 +37,7 @@ so this project does not collide with another one running on the same machine:
 
 ## Hosted project
 
-Created once from the Setup page (or `scripts/bootstrap.sh`), which also turns new sign-ups off
+Created once by the Bootstrap workflow (`scripts/bootstrap.sh`), which also turns new sign-ups off
 and sets the site address through the Supabase API. If it reports it could not, do it in the
 dashboard: Authentication, Sign In / Providers, "Allow new users to sign up" off; Authentication,
 URL Configuration, Site URL set to the web's production address. Sign-ups must stay off: every

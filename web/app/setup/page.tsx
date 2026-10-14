@@ -4,11 +4,11 @@ import { Suspense } from "react";
 
 import { NavLinks, NavLinksFallback } from "@/components/nav-links";
 import { SignOutButton } from "@/components/sign-out-button";
-import { ConnectForm } from "@/components/connect-form";
 import { ProductionStatus } from "@/components/production-status";
 import { ReleaseProgress } from "@/components/release-progress";
 import { ToneBadge } from "@/components/status-badge";
 import { APP_NAME, LOCAL_DEMO_USER } from "@/lib/config";
+import { CONTROL_TOKEN_PERMISSIONS, controlTokenUrl } from "@/lib/deployment";
 import {
   type Database,
   type Step,
@@ -41,9 +41,8 @@ export default function SetupPage(props: PageProps<"/setup">) {
           <Guide searchParams={props.searchParams} />
         </Suspense>
         <p className="text-xs text-muted-foreground">
-          What you type here goes to this machine only, and from there to GitHub, Vercel and
-          Supabase. Nothing is saved in a file of the repository. The form only works while{" "}
-          <code className="font-mono">make dev</code> runs on this machine, never on the deployed app.
+          This page asks for nothing secret. Production values go into GitHub, where only the
+          workflows can read them; this page sees only their names.
         </p>
       </main>
     </>
@@ -147,6 +146,7 @@ async function Guide({ searchParams }: { searchParams: PageProps<"/setup">["sear
             number={index + 1}
             database={facts.database}
             commands={commands}
+            repo={facts.repo}
           />
         ))}
       </ol>
@@ -184,10 +184,12 @@ const TITLES: Record<StepId, string> = {
   "try-local": "Try it",
   customise: "Make it yours",
   "supabase-project": "Create the Supabase project",
-  tokens: "Create two access tokens",
-  bootstrap: "Connect GitHub, Vercel and Supabase",
-  push: "Start the first release",
+  tokens: "Create three tokens",
+  secrets: "Put them in GitHub",
+  bootstrap: "Run the Bootstrap workflow",
+  push: "Watch the release",
   "try-production": "Try it in production",
+  manage: "Change things later",
   model: "Choose a model",
 };
 
@@ -196,11 +198,13 @@ function StepItem({
   number,
   database,
   commands,
+  repo,
 }: {
   step: Step;
   number: number;
   database: Database;
   commands: boolean;
+  repo: string | null;
 }) {
   const meta = STATE_META[step.state];
   return (
@@ -215,16 +219,8 @@ function StepItem({
       <p className="mt-1 text-muted-foreground">{step.summary}</p>
       {step.state !== "done" ? (
         <div className="mt-2 grid gap-2 border-t pt-2">
-          <Instructions id={step.id} database={database} commands={commands} />
+          <Instructions id={step.id} database={database} commands={commands} repo={repo} />
         </div>
-      ) : step.id === "bootstrap" && commands ? (
-        <details className="mt-2 border-t pt-2">
-          <summary className="cursor-pointer text-sm">Check, change or rotate credentials</summary>
-          <div className="mt-2 grid gap-2">
-            <Rotation />
-            <ConnectForm />
-          </div>
-        </details>
       ) : null}
     </li>
   );
@@ -234,11 +230,15 @@ function Instructions({
   id,
   database,
   commands,
+  repo,
 }: {
   id: StepId;
   database: Database;
   commands: boolean;
+  repo: string | null;
 }) {
+  // Links into this repository's GitHub settings; without a known repository, the plain path.
+  const github = (path: string) => (repo ? `https://github.com/${repo}/${path}` : null);
   switch (id) {
     case "tools":
       return (
@@ -334,54 +334,64 @@ function Instructions({
       return (
         <ul className="list-disc pl-5">
           <li>
-            Supabase:{" "}
-            <Ext href="https://supabase.com/dashboard/account/tokens">
-              supabase.com/dashboard/account/tokens
-            </Ext>
+            Vercel: <Ext href="https://vercel.com/account/tokens">vercel.com/account/tokens</Ext>,
+            scoped to the team that will own the projects.
           </li>
           <li>
-            Vercel: <Ext href="https://vercel.com/account/tokens">vercel.com/account/tokens</Ext>,
-            scoped to the team that will own the projects
+            Supabase:{" "}
+            <Ext href="https://supabase.com/dashboard/account/tokens">supabase.com/dashboard/account/tokens</Ext>.
+          </li>
+          <li>
+            GitHub: <Ext href={controlTokenUrl(repo ?? "", APP_NAME)}>a fine-grained token</Ext> for this
+            repository only, with {CONTROL_TOKEN_PERMISSIONS}. The app keeps it to change these
+            values later; it cannot read them back or change code.
           </li>
         </ul>
       );
-    case "bootstrap":
-      return commands ? (
+    case "secrets":
+      return (
         <>
-          <ConnectForm />
-          <p className="text-xs text-muted-foreground">
-            The form runs <Cmd>scripts/bootstrap.sh</Cmd> on this machine with your answers. The
-            same script also works on its own in a terminal.
-          </p>
-        </>
-      ) : (
-        <>
-          {process.env.NODE_ENV === "development" ? (
-            <p>
-              To fill this in on this page instead, stop the server (Ctrl-C) and start it with{" "}
-              <Cmd>make dev</Cmd>. Until then, run the script in a terminal:
-            </p>
-          ) : null}
-          <Block>scripts/bootstrap.sh</Block>
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">It asks</th>
-                <th className="py-1 font-medium">You answer</th>
-              </tr>
-            </thead>
-            <tbody className="align-top [&_td]:border-t [&_td]:py-1 [&_td:first-child]:pr-3">
-              {BOOTSTRAP_ANSWERS.map(([question, answer]) => (
-                <tr key={question}>
-                  <td>{question}</td>
-                  <td>{answer}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
           <p>
-            Nothing appears on screen when you paste a token or password. Needs the <Cmd>gh</Cmd>,{" "}
-            <Cmd>vercel</Cmd> and <Cmd>supabase</Cmd> CLIs signed in. Safe to run again.
+            In GitHub, open{" "}
+            {github("settings/environments") ? (
+              <Ext href={github("settings/environments")!}>Settings, Environments</Ext>
+            ) : (
+              "Settings, Environments"
+            )}
+            , then <strong>production</strong> (create it with that name if it is not there), and add
+            these environment secrets:
+          </p>
+          <ul className="list-disc pl-5">
+            <li>
+              <Cmd>VERCEL_TOKEN</Cmd>, <Cmd>SUPABASE_ACCESS_TOKEN</Cmd>, <Cmd>GH_CONTROL_TOKEN</Cmd>: the
+              three tokens
+            </li>
+            <li>
+              <Cmd>SUPABASE_DB_PASSWORD</Cmd>: the database password
+            </li>
+            <li>
+              <Cmd>ADMIN_PASSWORD</Cmd>: the password you will sign in with, 12+ characters. The
+              workflow deletes it from GitHub once your account exists.
+            </li>
+          </ul>
+        </>
+      );
+    case "bootstrap":
+      return (
+        <>
+          <p>
+            Open{" "}
+            {github("actions/workflows/bootstrap.yml") ? (
+              <Ext href={github("actions/workflows/bootstrap.yml")!}>Actions, Bootstrap</Ext>
+            ) : (
+              "Actions, Bootstrap"
+            )}
+            , press <strong>Run workflow</strong>, and fill in the Supabase <strong>Project ID</strong>{" "}
+            and <strong>your email</strong>. Leave the rest empty.
+          </p>
+          <p>
+            It creates the two Vercel projects, the database tables and your account (platform
+            admin), then starts a release. Safe to run again.
           </p>
         </>
       );
@@ -414,8 +424,17 @@ function Instructions({
         <ProductionStatus />
       ) : (
         <p>
-          Open the web project&apos;s domain from Vercel, sign in with a user you created in the
-          bootstrap script, start the first example run and approve the step.
+          Open the web project&apos;s domain from Vercel, sign in with the email and password you
+          gave the workflow, start the first example run and approve the step.
+        </p>
+      );
+    case "manage":
+      return (
+        <p>
+          In the deployed app, <strong>Admin, Deployment</strong> replaces any token, the database
+          password or the default model, and applies it; <strong>Admin, Releases</strong> follows
+          and starts releases; <strong>Admin, People</strong> and <strong>Providers</strong> handle
+          accounts and model keys. Nothing needs this machine.
         </p>
       );
     case "model":
@@ -429,48 +448,6 @@ function Instructions({
       );
   }
 }
-
-// Where a new value comes from. The form below is prefilled from .env.setup.local; change a field,
-// press Connect, then start a release: environment changes reach only new deployments.
-function Rotation() {
-  return (
-    <div className="grid gap-1 text-sm">
-      <p>
-        Press <strong>Show</strong> in a field to check a value. To change one, edit it, press <strong>Connect</strong>, then{" "}
-        <strong>Start the release</strong>.
-      </p>
-      <ul className="list-disc pl-5 text-muted-foreground">
-        <li>
-          Vercel or Supabase token: create a new one (links in the form), paste it, Connect, then
-          delete the old one where you created it.
-        </li>
-        <li>
-          Database password: reset it in Supabase, Project Settings, Database, then paste it here.
-        </li>
-        <li>
-          Supabase API keys: create a new secret key in Supabase, Project Settings, API Keys. Connect
-          reads the keys itself; delete the old key after the release.
-        </li>
-        <li>A person&apos;s password: type the new one next to their email.</li>
-        <li>
-          The secret between the web and the agent is kept between runs; tick Renew to replace it.
-        </li>
-      </ul>
-    </div>
-  );
-}
-
-const BOOTSTRAP_ANSWERS: [string, string][] = [
-  ["Name for the Vercel projects", "Enter"],
-  ["Vercel token", "paste it"],
-  ["Production domain of the agent", "Enter"],
-  ["Project reference", "paste the Project ID"],
-  ["Database password", "paste it"],
-  ["Supabase access token", "paste it"],
-  ["Apply the migrations now?", "y"],
-  ["AGENT_MODEL", "Enter (scripted model for the first deploy)"],
-  ["Email of a user to create", "an email, then a password of 12+ characters; empty to finish"],
-];
 
 function Cmd({ children }: { children: React.ReactNode }) {
   return <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{children}</code>;

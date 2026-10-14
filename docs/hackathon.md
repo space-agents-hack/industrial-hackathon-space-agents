@@ -20,12 +20,11 @@ day. Everything else is our own plan and can change.
 - [ ] One full drill from an empty repository to a deployed run with an approval, timed. Fix what
       was slow in the template, not in the drill.
 - [ ] Everyone has `uv`, Node 24 and the Supabase CLI installed, and has run `make setup` once on
-      the laptop they will bring. Whoever runs `scripts/bootstrap.sh` also needs `gh` and the
-      Vercel CLI, signed in.
+      the laptop they will bring. Deploying needs none of it: it happens in GitHub.
 - [ ] Per person: local database in Docker (pull the images at home), or `make setup DB=hosted`
       with no Docker (needs an invitation to the Supabase organisation).
-- [ ] Decide who owns the Vercel and Supabase accounts for the weekend. That person runs
-      `scripts/bootstrap.sh` and their git identity becomes the deploy author.
+- [ ] Decide who owns the Vercel and Supabase accounts for the weekend. Their tokens go into
+      GitHub, and the Vercel token's owner becomes the deploy author.
 - [ ] Decide roles for the first three hours: who talks to the challenge owner, who wires the
       systems, who owns the demo story.
 
@@ -36,10 +35,11 @@ pipeline is broken we want to know at 12:15, not at 14:45 on Sunday.
 
 1. `gh repo create <name> --private --template clemenjuan/industrial-agent-template --clone`
 2. `make setup`, then `make dev`: the example run works locally.
-3. Create the Supabase project, run `scripts/bootstrap.sh`, push. Wait for green.
+3. Create the Supabase project, put the values in GitHub, run the Bootstrap workflow (the Setup
+   page lists them). Wait for green.
 4. Open the production URL, run the example, approve the step.
-5. Set `AGENT_MODEL` to the event's model and its key in the agent's Vercel project, re-run the
-   workflow, run the example again with the real model.
+5. Admin › Deployment: set the event's model and its key, apply, run the example again with the
+   real model.
 
 Only then start on the challenge.
 

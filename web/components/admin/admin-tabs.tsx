@@ -16,6 +16,7 @@ const TABS = [
 const PLATFORM_TABS = [
   { href: "/admin/organizations", label: "Organisations" },
   { href: "/admin/releases", label: "Releases" },
+  { href: "/admin/deployment", label: "Deployment" },
 ];
 
 export function AdminTabs({ platformAdmin }: { platformAdmin: boolean }) {
