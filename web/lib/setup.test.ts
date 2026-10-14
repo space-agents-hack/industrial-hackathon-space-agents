@@ -6,6 +6,7 @@ import {
   type StepId,
   type StepState,
   type Target,
+  type Via,
   buildSteps,
   databaseOf,
   describeWhere,
@@ -24,8 +25,8 @@ const fresh: SetupFacts = {
   productionSecrets: [],
 };
 
-function states(target: Target, facts: SetupFacts): Partial<Record<StepId, StepState>> {
-  return Object.fromEntries(buildSteps(target, facts).map((step) => [step.id, step.state]));
+function states(target: Target, facts: SetupFacts, via: Via = "form"): Partial<Record<StepId, StepState>> {
+  return Object.fromEntries(buildSteps(target, facts, via).map((step) => [step.id, step.state]));
 }
 
 test("databaseOf: none without configuration, local for a loopback address, hosted otherwise", () => {
@@ -68,50 +69,52 @@ test("after setup, a silent agent is a problem; a running one adds the model ste
   });
 });
 
-test("a fresh clone, production target: GitHub has nothing yet", () => {
+test("a fresh clone with gh signed in: tokens, one form, then the release", () => {
   assert.deepEqual(states("production", fresh), {
-    "supabase-project": "todo",
     tokens: "manual",
-    secrets: "todo",
-    bootstrap: "todo",
+    create: "todo",
     push: "manual",
     "try-production": "manual",
     manage: "manual",
   });
-  const secrets = buildSteps("production", fresh).find((step) => step.id === "secrets");
-  assert.match(secrets?.summary ?? "", /VERCEL_TOKEN, SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD, GH_CONTROL_TOKEN/);
+  const done = states("production", { ...fresh, productionSecrets: ["VERCEL_TOKEN", "VERCEL_WEB_PROJECT_ID"] });
+  assert.equal(done.create, "done");
+  assert.equal(done.tokens, "done");
+  // A release cannot be judged from the secret names.
+  assert.equal(done.push, "manual");
 });
 
-test("the steps follow the secret names GitHub holds", () => {
-  const pasted = states("production", {
-    ...fresh,
-    productionSecrets: ["VERCEL_TOKEN", "SUPABASE_ACCESS_TOKEN", "SUPABASE_DB_PASSWORD", "GH_CONTROL_TOKEN"],
-  });
-  assert.equal(pasted["supabase-project"], "done");
-  assert.equal(pasted.tokens, "done");
+test("without gh, the form cannot write to GitHub: say so first", () => {
+  const steps = buildSteps("production", { ...fresh, repo: null, productionSecrets: null });
+  assert.equal(steps[0].id, "gh");
+  assert.equal(steps[0].state, "todo");
+});
+
+test("the GitHub path follows the secret names GitHub holds", () => {
+  const empty = buildSteps("production", fresh, "github");
+  assert.deepEqual(
+    empty.map((step) => [step.id, step.state]),
+    [["tokens", "manual"], ["secrets", "todo"], ["bootstrap", "todo"], ["push", "manual"], ["try-production", "manual"], ["manage", "manual"]],
+  );
+  assert.match(empty[1].summary, /VERCEL_TOKEN, SUPABASE_ACCESS_TOKEN, GH_CONTROL_TOKEN/);
+
+  const pasted = states(
+    "production",
+    { ...fresh, productionSecrets: ["VERCEL_TOKEN", "SUPABASE_ACCESS_TOKEN", "GH_CONTROL_TOKEN"] },
+    "github",
+  );
   assert.equal(pasted.secrets, "done");
   assert.equal(pasted.bootstrap, "todo");
-
-  const ran = states("production", {
-    ...fresh,
-    productionSecrets: ["VERCEL_TOKEN", "SUPABASE_ACCESS_TOKEN", "SUPABASE_DB_PASSWORD", "GH_CONTROL_TOKEN", "VERCEL_WEB_PROJECT_ID"],
-  });
-  assert.equal(ran.bootstrap, "done");
-  // A release cannot be judged from the secret names.
-  assert.equal(ran.push, "manual");
 });
 
-test("when GitHub could not be asked, nothing is claimed either way", () => {
-  const unknown = states("production", { ...fresh, productionSecrets: null });
+test("when GitHub could not be asked, the GitHub path claims nothing either way", () => {
+  const unknown = states("production", { ...fresh, productionSecrets: null }, "github");
   assert.equal(unknown.secrets, "manual");
   assert.equal(unknown.bootstrap, "manual");
-  assert.equal(unknown["supabase-project"], "manual");
 });
 
-test("a laptop on the hosted database: the project exists, and the page says who sees its runs", () => {
-  const hosted = { ...fresh, database: "hosted" as const };
-  assert.equal(states("production", hosted)["supabase-project"], "done");
-  assert.match(describeWhere(hosted), /visible to everyone/);
+test("a laptop on the hosted database: the page says who sees its runs", () => {
+  assert.match(describeWhere({ ...fresh, database: "hosted" }), /visible to everyone/);
 });
 
 test("deployed: production steps are done by definition and a dead agent goes to the top", () => {
@@ -123,10 +126,8 @@ test("deployed: production steps are done by definition and a dead agent goes to
     productionSecrets: null,
   };
   assert.deepEqual(states("production", live), {
-    "supabase-project": "done",
     tokens: "done",
-    secrets: "done",
-    bootstrap: "done",
+    create: "done",
     push: "done",
     "try-production": "manual",
     manage: "manual",

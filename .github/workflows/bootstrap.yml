@@ -1,27 +1,32 @@
 name: Bootstrap
 
-# Connects this repository to its own Vercel and Supabase projects from GitHub alone: no laptop,
-# no CLIs, no Docker. It runs scripts/bootstrap.sh with the values below, then starts a release.
+# Connects this repository to its own Vercel and Supabase projects from GitHub alone, for a
+# machine without the CLIs (with them, the local Setup page does the same from one form). It runs
+# scripts/bootstrap.sh with the values below, then starts a release.
 #
-# First time: create the Supabase project, then in Settings > Environments > production (create
-# the environment with that name if it is not there yet) add these secrets:
+# First time: in Settings > Environments > production (create the environment with that name if
+# it is not there yet) add these secrets:
 #   VERCEL_TOKEN           vercel.com/account/tokens
 #   SUPABASE_ACCESS_TOKEN  supabase.com/dashboard/account/tokens
-#   SUPABASE_DB_PASSWORD   the database password you chose for the project
 #   GH_CONTROL_TOKEN       a fine-grained token for this repository only (docs/deploy.md lists
-#                          the permissions); production uses it to change these values later
+#                          the permissions); production uses it to change settings later
 #   ADMIN_PASSWORD         the first admin's password (12+ characters); deleted after use
-# and run this workflow with the project ID and your email.
-#
-# Afterwards: Admin > Deployment in the app changes any of these values and runs this workflow
-# again. Every run is safe to repeat; empty inputs keep what the last run chose.
+# and run this workflow with your email. It creates the Supabase project unless you give one
+# (then add its SUPABASE_DB_PASSWORD too). Safe to repeat; empty inputs keep the last choice.
 
 on:
   workflow_dispatch:
     inputs:
       project_ref:
-        description: "Supabase project ID (20 letters, Project Settings > General). Empty: the one from the last run."
+        description: "Existing Supabase project ID. Empty: the one from the last run, or a new project."
         required: false
+      supabase_org:
+        description: "Supabase organisation slug for a new project. Only needed if the token reaches several."
+        required: false
+      region:
+        description: "Region of a new Supabase project"
+        required: false
+        default: eu-central-1
       admin_email:
         description: "Email of the first admin; the password is the ADMIN_PASSWORD secret. Empty: create nobody."
         required: false
@@ -67,22 +72,21 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           GH_CONTROL_TOKEN: ${{ secrets.GH_CONTROL_TOKEN }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           PROJECT_REF: ${{ inputs.project_ref || secrets.SUPABASE_PROJECT_REF }}
           ADMIN_EMAIL: ${{ inputs.admin_email }}
         run: |
           missing=()
-          for name in VERCEL_TOKEN SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD GH_CONTROL_TOKEN; do
+          for name in VERCEL_TOKEN SUPABASE_ACCESS_TOKEN GH_CONTROL_TOKEN; do
             [[ -n "${!name}" ]] || missing+=("$name")
           done
           if (( ${#missing[@]} > 0 )); then
             echo "::error::Missing secrets in Settings > Environments > production: ${missing[*]}."
             exit 1
           fi
-          if [[ ! "$PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]; then
-            echo "::error::Give the Supabase project ID (20 lowercase letters, Project Settings > General) in the project_ref input."
+          if [[ -n "$PROJECT_REF" && ! "$PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]; then
+            echo "::error::A Supabase project ID is 20 lowercase letters and digits (Project Settings > General)."
             exit 1
           fi
           if [[ -n "$ADMIN_EMAIL" && ${#ADMIN_PASSWORD} -lt 12 ]]; then
@@ -112,6 +116,8 @@ jobs:
           ADMIN_EMAIL: ${{ inputs.admin_email }}
           AGENT_MODEL: ${{ inputs.agent_model || vars.AGENT_MODEL || 'scripted' }}
           VERCEL_TEAM: ${{ inputs.vercel_team }}
+          SUPABASE_ORG: ${{ inputs.supabase_org }}
+          REGION: ${{ inputs.region }}
         # The answers go to the script on standard input, as the Setup page used to send them.
         run: |
           python3 - <<'PY' | bash scripts/bootstrap.sh --from-json
@@ -122,9 +128,10 @@ jobs:
               "vercel_token": e("VERCEL_TOKEN"),
               "vercel_team": e("VERCEL_TEAM"),
               "project_ref": e("PROJECT_REF"),
+              "supabase_org": e("SUPABASE_ORG"),
+              "region": e("REGION"),
               "db_password": e("DB_PASSWORD"),
               "supabase_token": e("SUPABASE_ACCESS_TOKEN"),
-              "apply_migrations": "y",
               "agent_model": e("AGENT_MODEL"),
               "provider_key": e("PROVIDER_KEY"),
               "shared_secret": e("SHARED_SECRET"),

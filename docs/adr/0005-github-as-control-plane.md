@@ -26,12 +26,9 @@ project of the account. Whatever the app holds, a stolen admin session or a bug 
    environment, as before. The app holds one fine-grained token for this repository only
    (`GITHUB_CONTROL_TOKEN`: Actions, Environments, Secrets, Variables), which can *write* a
    secret but never read one back, and start workflows. Admin › Deployment seals a new value to
-   the environment's public key, stores it, and starts the Bootstrap workflow, which carries it
-   to Vercel and Supabase and releases. Platform admins only, password typed again, audit row
+   the environment's public key, stores it, and starts a release that copies it to Vercel first. Platform admins only, password typed again, audit row
    with the names of what changed.
-2. **The first deployment happens in GitHub too.** Paste five values into the environment, run
-   the Bootstrap workflow. The local Connect form is removed; `scripts/bootstrap.sh` remains, as
-   the workflow's engine and for a terminal.
+2. **The first deployment needs three pasted tokens and nothing else** (amended 2026-10-15, below).
 
 ## Options considered
 
@@ -49,9 +46,31 @@ project of the account. Whatever the app holds, a stolen admin session or a bug 
 - No read-back: the page shows which secrets exist and when each changed, never a value.
 - The Supabase API keys are not editable: the workflow reads them from the project.
 
+## Amendment, 2026-10-15: automate everything an API allows
+
+The owner asked for every step an API or CLI can do to be automated. Checked:
+
+- Vercel: a CLI sign-in (`vercel login`) creates projects, links and sets variables, but
+  `POST /v3/user/tokens` answers 403 "Cannot create tokens for this app". The CI token is copied
+  once from vercel.com/account/tokens.
+- Supabase: no endpoint creates access tokens. The token does create the project
+  (`POST /v1/projects`), its API keys and its auth settings, so the dashboard is not needed.
+- GitHub: a fine-grained token cannot be created by API. `gh` writes every secret, variable and
+  the branch rule.
+- MCP servers (Vercel, Supabase) act for the person inside an AI session; neither the deployed
+  app nor a workflow can use them, so they do not change this (not tested further).
+
+So the usual path is one form on the local Setup page (`gh` signed in): three tokens, an email
+and a password; `scripts/bootstrap.sh` does the rest and releases. The GitHub-alone path stays for
+machines without the CLIs. The Supabase token is no longer stored for releases: GitHub keeps
+the database password and its address (`SUPABASE_POOLER_URL`), which reach one project instead
+of the whole account. Admin › Deployment applies changes by starting a release that copies them
+to Vercel, instead of re-running Bootstrap.
+
 ## Consequences
 
-- Easier: every credential change from the deployed app; a new project needs no CLI or Docker.
+- Easier: every credential change from the deployed app; a new project needs three tokens and
+  `gh`, or GitHub alone, and no dashboard otherwise.
 - Harder: a change takes minutes (workflow, then release) instead of seconds; the control token
   has to be renewed before it expires.
 - Revisit if GitHub lets a token read environments without Administration, or if Vercel offers

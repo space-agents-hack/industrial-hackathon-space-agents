@@ -28,22 +28,24 @@ has already been promoted. Both must therefore work with the web that is live.
 
 ## One-time setup
 
-From GitHub alone (ADR-0005); the local Setup page under "Deploy to production" walks through it
-with links:
+Three tokens are the only things copied by hand (ADR-0005): Vercel refuses to let a signed-in CLI
+create a token ("Cannot create tokens for this app", checked 2026-10-15) and Supabase has no API
+for it. Everything else is automated by `scripts/bootstrap.sh`, run one of two ways:
 
-1. Create the Supabase project in its dashboard.
-2. Create three tokens: Vercel, Supabase, and a fine-grained GitHub token for this repository only
-   with Actions, Environments, Secrets and Variables set to read and write (no Administration).
-3. In Settings, Environments, `production`, add `VERCEL_TOKEN`, `SUPABASE_ACCESS_TOKEN`,
-   `SUPABASE_DB_PASSWORD`, `GH_CONTROL_TOKEN` and `ADMIN_PASSWORD` (yours, 12+ characters).
-4. Actions, **Bootstrap**, Run workflow, with the Supabase project ID and your email. It runs
-   `scripts/bootstrap.sh`, creates your account, deletes `ADMIN_PASSWORD`, and starts a release.
-5. Once: Settings, Environments, `production`, Deployment branches, add `main`. The token cannot
-   (that needs Administration, which could also delete the repository).
+- **One form** (usual): `make dev`, Setup, "Deploy to production", with `gh` signed in. Paste the
+  Vercel, Supabase and GitHub tokens, pick the Supabase organisation (or an existing project),
+  give your email and password. It creates the Supabase project and waits for it, both Vercel
+  projects, every secret and variable, the rule that only `main` may deploy, and your account,
+  then starts a release. The Supabase token is used there and not stored.
+- **From GitHub alone**, for a machine without the CLIs: put `VERCEL_TOKEN`,
+  `SUPABASE_ACCESS_TOKEN`, `GH_CONTROL_TOKEN` and `ADMIN_PASSWORD` in Settings, Environments,
+  `production`; run Actions, **Bootstrap** with your email. Then add `main` under Deployment
+  branches yourself: the token cannot (that needs Administration, which could also delete the
+  repository).
 
-Afterwards **Admin › Deployment** in the app replaces any of these values and re-runs Bootstrap.
-The same script still runs in a terminal (`scripts/bootstrap.sh`, with `gh`, `vercel` and
-`supabase` signed in). What it sets, so you can check:
+The GitHub token: fine-grained, this repository only, Actions, Environments, Secrets and
+Variables set to read and write. Afterwards **Admin › Deployment** replaces any value and starts
+a release that copies them to Vercel first. What setup writes, so you can check:
 
 GitHub, environment `production`, secrets:
 
@@ -53,15 +55,17 @@ GitHub, environment `production`, secrets:
 | `VERCEL_ORG_ID` | The Vercel team or user id (written by Bootstrap) |
 | `VERCEL_WEB_PROJECT_ID` | The project that serves `web/` (written by Bootstrap) |
 | `VERCEL_AGENT_PROJECT_ID` | The project that serves `agent/` (written by Bootstrap) |
-| `SUPABASE_ACCESS_TOKEN` | A Supabase personal access token |
 | `SUPABASE_PROJECT_REF` | The project reference (the subdomain of its URL) |
-| `SUPABASE_DB_PASSWORD` | The database password |
+| `SUPABASE_DB_PASSWORD` | The database password (generated when setup creates the project) |
+| `SUPABASE_ACCESS_TOKEN` | Only with the GitHub-alone path; releases do not need it |
 | `AGENT_SHARED_SECRET` | Between web and agent; kept so a re-run does not change it |
 | `GH_CONTROL_TOKEN` | The GitHub token above; Bootstrap also gives it to the web |
 | `PROVIDER_API_KEY` | Optional: the key of the default model's provider |
 
 GitHub repository variables: `VERCEL_AUTHOR_NAME`, `VERCEL_AUTHOR_EMAIL` (the Vercel token
-owner's identity, so a teammate's push deploys), `PRODUCTION_URL`, `AGENT_MODEL`.
+owner's identity, so a teammate's push deploys), `PRODUCTION_URL`, `AGENT_MODEL`, and
+`SUPABASE_POOLER_URL` (the database address without the password: with it, migrations need only
+`SUPABASE_DB_PASSWORD`, not an account-wide Supabase token).
 
 Vercel, Production environment variables:
 

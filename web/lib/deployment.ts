@@ -1,24 +1,33 @@
-// Admin › Deployment: the values the Bootstrap workflow reads from GitHub, which a platform admin
-// changes from production (ADR-0005). Pure: what may be set and how it is checked. Talking to
-// GitHub is in lib/github.ts.
+// Admin › Deployment: the values the workflows read from GitHub, which a platform admin changes
+// from production (ADR-0005). Pure: what may be set and how it is checked. Talking to GitHub is
+// in lib/github.ts.
 
 // Secrets of the `production` environment that a person may replace. GitHub never gives a value
 // back, so the page shows only when each was last changed. AGENT_SHARED_SECRET is not listed:
-// it is renewed with a random value, never typed. The Vercel project IDs are written by the
-// workflow itself.
+// it is renewed with a random value, never typed. The project IDs are written by setup; pointing
+// production at another database is a new setup, not a settings change.
 export const EDITABLE_SECRETS = [
   { name: "VERCEL_TOKEN", label: "Vercel token", hint: "vercel.com/account/tokens, scoped to the team" },
-  { name: "SUPABASE_ACCESS_TOKEN", label: "Supabase access token", hint: "supabase.com/dashboard/account/tokens" },
   { name: "SUPABASE_DB_PASSWORD", label: "Database password", hint: "after resetting it in Supabase, Database settings" },
-  { name: "SUPABASE_PROJECT_REF", label: "Supabase project ID", hint: "20 letters; a different one points production at another database" },
   { name: "PROVIDER_API_KEY", label: "Default model's API key", hint: "for the model below; organisations can add their own in Providers" },
-  { name: "GH_CONTROL_TOKEN", label: "GitHub control token", hint: "the token this page uses; reaches the app after the next release" },
+  { name: "GH_CONTROL_TOKEN", label: "GitHub control token", hint: "the token this page uses; reaches the app with the release" },
+  { name: "SUPABASE_ACCESS_TOKEN", label: "Supabase access token", hint: "only for the Bootstrap workflow; releases do not use it" },
 ] as const;
 
 export type SecretName = (typeof EDITABLE_SECRETS)[number]["name"];
 
 // What the Bootstrap workflow refuses to run without (bootstrap.yml, "What is set").
-export const REQUIRED_SECRETS: SecretName[] = ["VERCEL_TOKEN", "SUPABASE_ACCESS_TOKEN", "SUPABASE_DB_PASSWORD", "GH_CONTROL_TOKEN"];
+export const BOOTSTRAP_SECRETS: SecretName[] = ["VERCEL_TOKEN", "SUPABASE_ACCESS_TOKEN", "GH_CONTROL_TOKEN"];
+
+// What a release needs from GitHub to deploy and to apply migrations (deploy.yml).
+export const RELEASE_SECRETS = [
+  "VERCEL_TOKEN",
+  "VERCEL_ORG_ID",
+  "VERCEL_WEB_PROJECT_ID",
+  "VERCEL_AGENT_PROJECT_ID",
+  "SUPABASE_PROJECT_REF",
+  "SUPABASE_DB_PASSWORD",
+];
 
 export const ENVIRONMENT = "production";
 
@@ -55,9 +64,6 @@ export function parseDeploymentChange(body: unknown): Parsed {
     const value = name === "SUPABASE_DB_PASSWORD" ? raw : raw.trim();
     if (name !== "SUPABASE_DB_PASSWORD" && /\s/.test(value)) return { ok: false, error: `${label} has spaces in it.` };
     if (/[\n\r]/.test(value)) return { ok: false, error: `${label} must be on one line.` };
-    if (name === "SUPABASE_PROJECT_REF" && !/^[a-z0-9]{20}$/.test(value)) {
-      return { ok: false, error: "The Supabase project ID is 20 lowercase letters and digits." };
-    }
     if (name === "GH_CONTROL_TOKEN" && !value.startsWith("github_pat_")) {
       return { ok: false, error: "The GitHub control token is a fine-grained token; it starts with github_pat_." };
     }

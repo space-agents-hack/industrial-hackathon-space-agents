@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { NavLinks, NavLinksFallback } from "@/components/nav-links";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ProductionStatus } from "@/components/production-status";
+import { CreateProductionForm } from "@/components/create-production-form";
 import { ReleaseProgress } from "@/components/release-progress";
 import { ToneBadge } from "@/components/status-badge";
 import { APP_NAME, LOCAL_DEMO_USER } from "@/lib/config";
@@ -15,11 +16,14 @@ import {
   type StepId,
   type StepState,
   type Target,
+  type Via,
   buildSteps,
   describeWhere,
   parseTarget,
+  parseVia,
 } from "@/lib/setup";
 import { setupCommandsAvailable } from "@/lib/local-request";
+import { gitEmail } from "@/lib/setup-commands";
 import { gatherSetupFacts } from "@/lib/setup-facts";
 import { showsAdmin } from "@/lib/access";
 import { getCurrentOrg } from "@/lib/current-org";
@@ -113,13 +117,20 @@ async function Guide({ searchParams }: { searchParams: PageProps<"/setup">["sear
   const [params, facts] = await Promise.all([searchParams, gatherSetupFacts()]);
   // The deployed app has only one story to tell.
   const target: Target = facts.onVercel ? "production" : parseTarget(params.env);
-  const steps = buildSteps(target, facts);
-  // The form and the release button run local commands; they exist only under `next dev`.
+  // The form and the release button run local commands; they exist only under `make dev`.
   const commands = setupCommandsAvailable(
     facts.onVercel,
     process.env.NODE_ENV,
     process.env.SETUP_LOOPBACK_ONLY === "1",
   );
+  const via: Via = commands ? parseVia(params.via) : "github";
+  const steps = buildSteps(target, facts, via);
+  const context: Context = {
+    database: facts.database,
+    commands,
+    repo: facts.repo,
+    defaultEmail: commands && target === "production" ? await gitEmail() : "",
+  };
 
   return (
     <>
@@ -140,16 +151,26 @@ async function Guide({ searchParams }: { searchParams: PageProps<"/setup">["sear
       )}
       <ol className="grid gap-2">
         {steps.map((step, index) => (
-          <StepItem
-            key={step.id}
-            step={step}
-            number={index + 1}
-            database={facts.database}
-            commands={commands}
-            repo={facts.repo}
-          />
+          <StepItem key={step.id} step={step} number={index + 1} context={context} />
         ))}
       </ol>
+      {target === "production" && commands && !facts.onVercel ? (
+        <p className="text-sm text-muted-foreground">
+          {via === "form" ? (
+            <>
+              No CLIs on this machine?{" "}
+              <Link href="/setup?env=production&via=github" className="text-primary underline underline-offset-2">
+                Set it up from GitHub instead
+              </Link>
+              : the same steps, with the values pasted into GitHub and one workflow run.
+            </>
+          ) : (
+            <Link href="/setup?env=production" className="text-primary underline underline-offset-2">
+              Back to the one-form setup
+            </Link>
+          )}
+        </p>
+      ) : null}
     </>
   );
 }
@@ -183,8 +204,9 @@ const TITLES: Record<StepId, string> = {
   dev: "Start the app",
   "try-local": "Try it",
   customise: "Make it yours",
-  "supabase-project": "Create the Supabase project",
+  gh: "Sign in to GitHub on this machine",
   tokens: "Create three tokens",
+  create: "Create production",
   secrets: "Put them in GitHub",
   bootstrap: "Run the Bootstrap workflow",
   push: "Watch the release",
@@ -193,19 +215,9 @@ const TITLES: Record<StepId, string> = {
   model: "Choose a model",
 };
 
-function StepItem({
-  step,
-  number,
-  database,
-  commands,
-  repo,
-}: {
-  step: Step;
-  number: number;
-  database: Database;
-  commands: boolean;
-  repo: string | null;
-}) {
+type Context = { database: Database; commands: boolean; repo: string | null; defaultEmail: string };
+
+function StepItem({ step, number, context }: { step: Step; number: number; context: Context }) {
   const meta = STATE_META[step.state];
   return (
     <li className="rounded-md border bg-card px-3 py-2.5">
@@ -219,24 +231,23 @@ function StepItem({
       <p className="mt-1 text-muted-foreground">{step.summary}</p>
       {step.state !== "done" ? (
         <div className="mt-2 grid gap-2 border-t pt-2">
-          <Instructions id={step.id} database={database} commands={commands} repo={repo} />
+          <Instructions id={step.id} context={context} />
         </div>
+      ) : step.id === "create" && context.commands ? (
+        // Run again to add the GitHub token to an older setup, or to replace a token.
+        <details className="mt-2 border-t pt-2">
+          <summary className="cursor-pointer text-sm">Run it again</summary>
+          <div className="mt-2">
+            <Instructions id="create" context={context} />
+          </div>
+        </details>
       ) : null}
     </li>
   );
 }
 
-function Instructions({
-  id,
-  database,
-  commands,
-  repo,
-}: {
-  id: StepId;
-  database: Database;
-  commands: boolean;
-  repo: string | null;
-}) {
+function Instructions({ id, context }: { id: StepId; context: Context }) {
+  const { database, commands, repo } = context;
   // Links into this repository's GitHub settings; without a known repository, the plain path.
   const github = (path: string) => (repo ? `https://github.com/${repo}/${path}` : null);
   switch (id) {
@@ -314,23 +325,30 @@ function Instructions({
           </p>
         </>
       );
-    case "supabase-project":
+    case "gh":
       return (
-        <ul className="list-disc pl-5">
-          <li>
-            Go to <Ext href="https://supabase.com/dashboard/new">supabase.com/dashboard/new</Ext>.
-            Not through Vercel&apos;s Supabase integration.
-          </li>
-          <li>Name it like the repository and pick the region closest to you.</li>
-          <li>
-            Click <strong>Generate a password</strong> and copy it.
-          </li>
-          <li>
-            When the project is ready, copy its <strong>Project ID</strong>: the code after{" "}
-            <Cmd>/project/</Cmd> in the dashboard&apos;s address, also under Project Settings, General.
-            It is a Supabase value; Vercel needs only the token.
-          </li>
-        </ul>
+        <>
+          <Block>gh auth login</Block>
+          <p>
+            In a terminal, then reload this page. It writes the secrets to GitHub with your sign-in,
+            including the rule that only main may deploy.
+          </p>
+        </>
+      );
+    case "create":
+      return commands ? (
+        <CreateProductionForm
+          defaultEmail={context.defaultEmail}
+          tokenUrls={{
+            vercel: "https://vercel.com/account/tokens",
+            supabase: "https://supabase.com/dashboard/account/tokens",
+            github: controlTokenUrl(repo ?? "", APP_NAME),
+          }}
+        />
+      ) : (
+        <p>
+          Run <Cmd>make dev</Cmd> on a machine with <Cmd>gh</Cmd> signed in and open this page there.
+        </p>
       );
     case "tokens":
       return (
@@ -345,8 +363,12 @@ function Instructions({
           </li>
           <li>
             GitHub: <Ext href={controlTokenUrl(repo ?? "", APP_NAME)}>a fine-grained token</Ext> for this
-            repository only, with {CONTROL_TOKEN_PERMISSIONS}. The app keeps it to change these
-            values later; it cannot read them back or change code.
+            repository only, with {CONTROL_TOKEN_PERMISSIONS}. The app keeps it to change its settings
+            later; it cannot read them back or change code.
+          </li>
+          <li className="list-none text-muted-foreground">
+            Vercel does not let a signed-in CLI create tokens, and Supabase has no API for it: these
+            are the only things to copy by hand.
           </li>
         </ul>
       );
@@ -369,9 +391,6 @@ function Instructions({
               three tokens
             </li>
             <li>
-              <Cmd>SUPABASE_DB_PASSWORD</Cmd>: the database password
-            </li>
-            <li>
               <Cmd>ADMIN_PASSWORD</Cmd>: the password you will sign in with, 12+ characters. The
               workflow deletes it from GitHub once your account exists.
             </li>
@@ -388,12 +407,14 @@ function Instructions({
             ) : (
               "Actions, Bootstrap"
             )}
-            , press <strong>Run workflow</strong>, and fill in the Supabase <strong>Project ID</strong>{" "}
-            and <strong>your email</strong>. Leave the rest empty.
+            , press <strong>Run workflow</strong> and fill in <strong>your email</strong>; if the
+            Supabase token reaches several organisations, also the one for the project. Leave the
+            rest empty.
           </p>
           <p>
-            It creates the two Vercel projects, the database tables and your account (platform
-            admin), then starts a release. Safe to run again.
+            It creates the Supabase project, the two Vercel projects and your account (platform
+            admin), then starts a release. Safe to run again. Afterwards, once: Settings,
+            Environments, production, Deployment branches, add <Cmd>main</Cmd> (the token cannot).
           </p>
         </>
       );

@@ -26,5 +26,7 @@ Open work on the template itself. Product work in a project made from this templ
       Admin › Releases (2026-10-15), where a platform admin can also start one.
 - [x] Manage the deployment from production (ADR-0005, 2026-10-15): Admin › Deployment stores new
       values in GitHub and re-runs the Bootstrap workflow; first setup from GitHub alone.
-- [ ] Prove the Bootstrap workflow on a fresh repository from the template, end to end (written
-      and checked, never run on a real empty project).
+- [ ] Prove "Create production" on a fresh repository from the template, end to end (written and
+      checked, never run against a real empty Supabase organisation), and the Bootstrap workflow.
+- [ ] Zero copies for GitHub: a GitHub App made with the manifest flow (two clicks, no expiry)
+      instead of the fine-grained token.

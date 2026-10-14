@@ -6,7 +6,8 @@ import { test } from "node:test";
 
 import { LOCAL_DEMO_USER } from "./config.ts";
 import { MIN_PASSWORD_LENGTH } from "./admin.ts";
-import { REQUIRED_SECRETS, needsProviderKey } from "./deployment.ts";
+import { BOOTSTRAP_SECRETS, needsProviderKey } from "./deployment.ts";
+import { parseProductionAnswers } from "./production-answers.ts";
 import { LAST_RELEASE_STEP, RELEASE_JOB } from "./releases.ts";
 
 const script = (name: string) => readFileSync(new URL(`../../scripts/${name}`, import.meta.url), "utf8");
@@ -27,9 +28,35 @@ test("every answer the Bootstrap workflow sends is one the script asks for", () 
   assert.match(bootstrap, /\.get\("users"\)/);
 });
 
-test("the workflow refuses to start without what Admin › Deployment calls required", () => {
+test("every answer the Setup page's form sends is one the script asks for", () => {
+  const asked = new Set([...bootstrap.matchAll(/\b(?:ask(?:_secret)?|given) ([a-z_]+)\b/g)].map((m) => m[1]));
+  for (const extra of [
+    { supabase_org: "org", region: "eu-west-1" },
+    { project_ref: "abcdefghijklmnopqrst", db_password: "pw" },
+  ]) {
+    const parsed = parseProductionAnswers({
+      vercel_token: "vercel_abcdefgh",
+      supabase_token: "sbp_abcdefgh",
+      github_token: "github_pat_abc",
+      vercel_team: "team",
+      name: "my-project",
+      agent_model: "anthropic:claude-opus-5-5",
+      provider_key: "k",
+      email: "a@b.co",
+      password: "twelve chars",
+      ...extra,
+    });
+    assert.ok(parsed.ok);
+    if (!parsed.ok) return;
+    for (const key of Object.keys(parsed.value).filter((k) => k !== "users")) {
+      assert.ok(asked.has(key), `bootstrap.sh never asks for "${key}"`);
+    }
+  }
+});
+
+test("the Bootstrap workflow checks for the secrets the setup steps list", () => {
   const check = /for name in ([A-Z_ ]+); do/.exec(bootstrapWorkflow)?.[1].trim().split(" ") ?? [];
-  assert.deepEqual([...check].sort(), [...REQUIRED_SECRETS].sort());
+  assert.deepEqual([...check].sort(), [...BOOTSTRAP_SECRETS].sort());
 });
 
 test("both workflows use the same Supabase CLI", () => {

@@ -18,6 +18,11 @@ on:
   pull_request:
   # To release again without a new commit, for example after setting a missing variable.
   workflow_dispatch:
+    inputs:
+      apply_settings:
+        description: "Copy the settings kept in GitHub to Vercel before deploying (Admin > Deployment does this)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -194,6 +199,9 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      # The database's connection address without the password (scripts/bootstrap.sh stores it).
+      # With it, migrations need only the password, not an account-wide Supabase token.
+      SUPABASE_POOLER_URL: ${{ vars.SUPABASE_POOLER_URL }}
     steps:
       - uses: actions/checkout@v7
 
@@ -205,11 +213,15 @@ jobs:
           for name in VERCEL_TOKEN VERCEL_ORG_ID WEB_PROJECT_ID AGENT_PROJECT_ID; do
             [[ -n "${!name}" ]] || missing_vercel+=("$name")
           done
+          # Migrations need the project and its password, and a way in: the connection address
+          # (SUPABASE_POOLER_URL) or an access token to look it up.
           missing_db=()
-          for name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF; do
+          for name in SUPABASE_PROJECT_REF SUPABASE_DB_PASSWORD; do
             [[ -n "${!name}" ]] || missing_db+=("$name")
           done
-
+          if [[ -z "$SUPABASE_POOLER_URL" && -z "$SUPABASE_ACCESS_TOKEN" ]]; then
+            missing_db+=("SUPABASE_POOLER_URL or SUPABASE_ACCESS_TOKEN")
+          fi
           if (( ${#missing_vercel[@]} == 4 )); then
             echo "deploy=false" >> "$GITHUB_OUTPUT"
             echo "database=false" >> "$GITHUB_OUTPUT"
@@ -229,7 +241,7 @@ jobs:
 
           if (( ${#missing_db[@]} == 0 )); then
             echo "database=true" >> "$GITHUB_OUTPUT"
-          elif (( ${#missing_db[@]} == 3 )); then
+          elif [[ -z "$SUPABASE_PROJECT_REF$SUPABASE_DB_PASSWORD$SUPABASE_POOLER_URL$SUPABASE_ACCESS_TOKEN" ]]; then
             echo "database=false" >> "$GITHUB_OUTPUT"
             echo "::warning::Supabase secrets are not set: migrations are NOT applied by this workflow. Apply them by hand before code that needs them (supabase/README.md)."
           else
@@ -269,9 +281,17 @@ jobs:
 
       - name: Apply migrations
         if: steps.head.outputs.current == 'true' && steps.config.outputs.database == 'true'
+        shell: bash
         run: |
-          supabase link --project-ref "$SUPABASE_PROJECT_REF"
-          supabase db push
+          if [[ -n "$SUPABASE_POOLER_URL" ]]; then
+            # The password goes into the address here, URL-encoded, and only into this process.
+            db_url="$(python3 -c 'import os, urllib.parse as u; a = os.environ["SUPABASE_POOLER_URL"]; print(a.replace("@", ":" + u.quote(os.environ["SUPABASE_DB_PASSWORD"], safe="") + "@", 1))')"
+            echo "::add-mask::$db_url"
+            supabase db push --db-url "$db_url"
+          else
+            supabase link --project-ref "$SUPABASE_PROJECT_REF"
+            supabase db push
+          fi
 
       # Vercel can refuse a deployment whose commit author is not a member of the team that owns
       # the project. The amend exists only on this runner: it is never pushed and does not change
@@ -297,6 +317,36 @@ jobs:
       - name: Install Vercel CLI
         if: steps.head.outputs.current == 'true'
         run: npm install --global "vercel@${VERCEL_CLI_VERSION}"
+
+      # Admin > Deployment stores new values in GitHub and starts this workflow with
+      # apply_settings: the values the two projects read at run time are copied to Vercel here, so
+      # the deployments below start with them. Only values GitHub has; the rest stay as they are.
+      - name: Carry settings to Vercel
+        if: steps.head.outputs.current == 'true' && inputs.apply_settings
+        shell: bash
+        env:
+          SHARED_SECRET: ${{ secrets.AGENT_SHARED_SECRET }}
+          AGENT_MODEL: ${{ vars.AGENT_MODEL }}
+          PROVIDER_API_KEY: ${{ secrets.PROVIDER_API_KEY }}
+          GH_CONTROL_TOKEN: ${{ secrets.GH_CONTROL_TOKEN }}
+        run: |
+          set_env() { # project id, name, value
+            [[ -n "$3" ]] || return 0
+            printf '%s' "$3" | VERCEL_PROJECT_ID="$1" vercel env add "$2" production --force --yes >/dev/null
+            echo "  $2"
+          }
+          set_env "$WEB_PROJECT_ID" AGENT_SHARED_SECRET "$SHARED_SECRET"
+          set_env "$AGENT_PROJECT_ID" AGENT_SHARED_SECRET "$SHARED_SECRET"
+          set_env "$WEB_PROJECT_ID" GITHUB_CONTROL_TOKEN "$GH_CONTROL_TOKEN"
+          set_env "$AGENT_PROJECT_ID" AGENT_MODEL "$AGENT_MODEL"
+          case "$AGENT_MODEL" in
+            anthropic:*) key_name=ANTHROPIC_API_KEY ;;
+            openai:*|openai-chat:*|openai-responses:*) key_name=OPENAI_API_KEY ;;
+            openrouter:*) key_name=OPENROUTER_API_KEY ;;
+            deepseek:*) key_name=DEEPSEEK_API_KEY ;;
+            *) key_name="" ;;
+          esac
+          [[ -z "$key_name" ]] || set_env "$AGENT_PROJECT_ID" "$key_name" "$PROVIDER_API_KEY"
 
       # The agent is built by Vercel from source, not prebuilt here: its compiled Python packages
       # have to match the machine they run on (docs/adr/0003-deploy-topology.md).

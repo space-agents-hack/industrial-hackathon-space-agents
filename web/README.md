@@ -66,7 +66,7 @@ After a migration, regenerate the database types with `make types` from the repo
 | `/admin/audit` | org admin or platform admin | The last 100 changes to settings, keys and people, as sentences. |
 | `/admin/organizations` | platform admin | Every organisation; create one and add its first admin. |
 | `/admin/releases` | platform admin | The Deploy workflow's runs on main, job by job and step by step, live, with why a step failed; start a release. Needs `GITHUB_CONTROL_TOKEN`. |
-| `/admin/deployment` | platform admin | Which secrets GitHub holds (names and dates, never values); replace any of them or the default model, with your password, then re-run the Bootstrap workflow. Changes go to the audit log by name. |
+| `/admin/deployment` | platform admin | Which secrets GitHub holds (names and dates, never values); replace any of them or the default model, with your password, then apply: a release copies them to Vercel. Changes go to the audit log by name. |
 | `/setup` | public locally, session when deployed | The steps to a local or a production environment (`?env=local` or `?env=production`), with the ones it can observe checked. Works with nothing configured. Never asks for a secret. |
 | `GET /api/health` | public | `{ "status": "ok" }`. Used by the deploy smoke test; does not touch Supabase. |
 | `POST /api/runs` | admin, member | Body `{ task, organization_id }`. Inserts the run as the user (`403` if RLS refuses: viewer, suspended, or not a member), asks the agent to start it, returns `{ id }`, plus `warning` when the run was saved but the agent call failed. |
@@ -81,7 +81,9 @@ After a migration, regenerate the database types with `make types` from the repo
 | `POST /api/admin/people/password` | org admin | `{ org, user_id, password }`. Only when `can_reset_password` says so; then agent `POST /admin/users/password`. |
 | `POST /api/admin/organizations` | platform admin | `{ name }` → `{ id }` through `create_organization`. |
 | `GET`, `POST /api/admin/releases` | platform admin | Runs of `deploy.yml` (`?workflow=bootstrap` for `bootstrap.yml`, `?run=` for one run); `POST` starts a release of main. |
-| `POST /api/admin/deployment` | platform admin + password | `{ secrets, agent_model, renew_shared_secret, apply, password }`. Seals each value to the environment's key and stores it in GitHub; with `apply`, starts the Bootstrap workflow. |
+| `POST /api/admin/deployment` | platform admin + password | `{ secrets, agent_model, renew_shared_secret, apply, password }`. Seals each value to the environment's key and stores it in GitHub; with `apply`, starts a release that copies them to Vercel first. |
+| `POST /api/setup/connect` | `make dev` only | "Create production": runs `scripts/bootstrap.sh` with the form's answers, streams its output. |
+| `POST /api/setup/supabase` | `make dev` only | `{ token }` → the organisations and projects that Supabase token reaches, for the form. |
 
 `proxy.ts` (what Next.js called `middleware.ts` before version 16) refreshes the Supabase session on
 every request and sends signed-out visitors to `/login`. Signed-out calls to `/api/*` get a `401`
