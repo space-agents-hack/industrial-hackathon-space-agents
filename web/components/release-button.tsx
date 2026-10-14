@@ -47,7 +47,7 @@ export function ReleaseButton() {
         </span>
       ) : null}
       {state.kind === "failed" ? (
-        <span role="alert" className="text-red-700">
+        <span role="alert" className="text-danger">
           {state.detail}
         </span>
       ) : null}

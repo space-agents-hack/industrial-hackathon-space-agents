@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -183,32 +183,37 @@ export function ConnectForm() {
             label="Supabase Project ID"
             hint="in Supabase, not Vercel: the code after /project/ in the dashboard URL"
           >
-            <Input
-              value={projectRef}
-              onChange={(e) => setProjectRef(e.target.value)}
-              placeholder="20 lowercase letters"
-              spellCheck={false}
-              required
-            />
+            {(control) => (
+              <Input
+                {...control}
+                value={projectRef}
+                onChange={(e) => setProjectRef(e.target.value)}
+                placeholder="20 lowercase letters"
+                spellCheck={false}
+                required
+              />
+            )}
           </Field>
           <Field label="Database password" hint="the one you generated">
-            <Secret value={dbPassword} onChange={setDbPassword} />
+            {(control) => <Secret {...control} value={dbPassword} onChange={setDbPassword} />}
           </Field>
           <Field
             label="Supabase access token"
             hint={<Ext href="https://supabase.com/dashboard/account/tokens">create one</Ext>}
           >
-            <Secret value={supabaseToken} onChange={setSupabaseToken} />
+            {(control) => <Secret {...control} value={supabaseToken} onChange={setSupabaseToken} />}
           </Field>
           <Field label="Vercel token" hint={<Ext href="https://vercel.com/account/tokens">create one</Ext>}>
-            <Secret value={vercelToken} onChange={setVercelToken} />
+            {(control) => <Secret {...control} value={vercelToken} onChange={setVercelToken} />}
           </Field>
           <Field label="Model" hint="scripted needs no key">
-            <Input value={model} onChange={(e) => setModel(e.target.value)} spellCheck={false} required />
+            {(control) => (
+              <Input {...control} value={model} onChange={(e) => setModel(e.target.value)} spellCheck={false} required />
+            )}
           </Field>
           {needsProviderKey(model) ? (
             <Field label="Provider API key" hint={model.split(":")[0]}>
-              <Secret value={providerKey} onChange={setProviderKey} />
+              {(control) => <Secret {...control} value={providerKey} onChange={setProviderKey} />}
             </Field>
           ) : null}
         </div>
@@ -280,10 +285,19 @@ export function ConnectForm() {
           <summary className="cursor-pointer text-muted-foreground">Advanced</summary>
           <div className="mt-2 grid gap-3 sm:grid-cols-2">
             <Field label="Vercel project name" hint="empty: the repository name">
-              <Input value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} />
+              {(control) => (
+                <Input {...control} value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} />
+              )}
             </Field>
             <Field label="Agent domain" hint="empty: the one Vercel assigns">
-              <Input value={agentDomain} onChange={(e) => setAgentDomain(e.target.value)} spellCheck={false} />
+              {(control) => (
+                <Input
+                  {...control}
+                  value={agentDomain}
+                  onChange={(e) => setAgentDomain(e.target.value)}
+                  spellCheck={false}
+                />
+              )}
             </Field>
           </div>
         </details>
@@ -299,7 +313,7 @@ export function ConnectForm() {
       </form>
 
       {error ? (
-        <p role="alert" className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-red-800">
+        <p role="alert" className="rounded-md border border-danger-border bg-danger-surface px-3 py-2 text-danger">
           {error}
         </p>
       ) : null}
@@ -312,7 +326,7 @@ export function ConnectForm() {
         </pre>
       ) : null}
       {phase === "done" ? (
-        <p className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2">
+        <p className="rounded-md border border-success-border bg-success-surface px-3 py-2">
           Connected. Next: start the first release, below.
         </p>
       ) : null}
@@ -330,7 +344,21 @@ function CliLine({
   onCheck: () => void;
 }) {
   if (checking) return <p className="text-muted-foreground">Checking the GitHub, Vercel and Supabase CLIs…</p>;
-  if (!cli) return <p className="text-red-700">Could not check the CLIs.</p>;
+  if (!cli) {
+    return (
+      <div className="grid gap-1">
+        <p className="text-danger">
+          Could not check the CLIs: the local server did not answer. Is <code className="font-mono">make dev</code>{" "}
+          still running?
+        </p>
+        <div>
+          <Button type="button" variant="outline" size="sm" onClick={onCheck}>
+            Check again
+          </Button>
+        </div>
+      </div>
+    );
+  }
   const missing = (["gh", "vercel", "supabase"] as const).filter((key) => !cli[key]);
   return (
     <div className="grid gap-1">
@@ -362,6 +390,10 @@ function CliLine({
   );
 }
 
+// What a Field hands its input so that a screen reader announces the label and the hint. A bare
+// <label> next to an input names nothing: the input was read as "secure text field" alone.
+type Control = { id: string; "aria-describedby"?: string };
+
 function Field({
   label,
   hint,
@@ -369,24 +401,37 @@ function Field({
 }: {
   label: string;
   hint?: React.ReactNode;
-  children: React.ReactNode;
+  children: (control: Control) => React.ReactNode;
 }) {
+  const id = useId();
+  const hintId = `${id}-hint`;
   return (
     <div className="grid gap-1">
-      <Label className="flex items-baseline gap-2">
-        {label}
-        {hint ? <span className="text-xs font-normal text-muted-foreground">{hint}</span> : null}
-      </Label>
-      {children}
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <Label htmlFor={id} className="shrink-0">
+          {label}
+        </Label>
+        {hint ? (
+          <span id={hintId} className="text-xs text-muted-foreground">
+            {hint}
+          </span>
+        ) : null}
+      </div>
+      {children({ id, "aria-describedby": hint ? hintId : undefined })}
     </div>
   );
 }
 
-function Secret({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function Secret({
+  value,
+  onChange,
+  ...control
+}: Control & { value: string; onChange: (value: string) => void }) {
   const [visible, setVisible] = useState(false);
   return (
     <div className="flex gap-1.5">
       <Input
+        {...control}
         type={visible ? "text" : "password"}
         value={value}
         onChange={(e) => onChange(e.target.value)}

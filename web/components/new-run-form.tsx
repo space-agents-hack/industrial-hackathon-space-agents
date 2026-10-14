@@ -94,7 +94,7 @@ export function NewRunForm() {
             key={example.label}
             type="button"
             variant="outline"
-            size="xs"
+            size="sm"
             title={example.task}
             onClick={() => setTask(example.task)}
           >
@@ -106,7 +106,7 @@ export function NewRunForm() {
         </Button>
       </div>
       {error ? (
-        <p role="alert" className="text-sm text-red-700">
+        <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       ) : null}

@@ -75,9 +75,9 @@ function ToolRow({
       {step.approval ? (
         <p className="text-xs">
           {step.approval.state === "requested" ? (
-            <span className="text-amber-900">Needs a person&apos;s approval before it runs.</span>
+            <span className="text-attention">Needs a person&apos;s approval before it runs.</span>
           ) : (
-            <span className={step.approval.state === "approved" ? "text-emerald-800" : "text-red-800"}>
+            <span className={step.approval.state === "approved" ? "text-success" : "text-danger"}>
               {step.approval.state === "approved" ? "Approved" : "Denied"} by a person
               {step.approval.note ? <>: &ldquo;{step.approval.note}&rdquo;</> : "."}
             </span>
@@ -119,8 +119,8 @@ function EventRow({ step }: { step: EventStep }) {
     case "error":
       return (
         <div className="grid gap-0.5">
-          <span className="text-xs font-medium text-red-800">Error</span>
-          <p className="break-words whitespace-pre-wrap text-red-800">{event.payload.message}</p>
+          <span className="text-xs font-medium text-danger">Error</span>
+          <p className="break-words whitespace-pre-wrap text-danger">{event.payload.message}</p>
         </div>
       );
     case "unknown":

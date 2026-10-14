@@ -22,6 +22,7 @@ import {
   isRunRow,
   isStalled,
   mergeEvents,
+  statusLabel,
   pendingApprovals,
   upsertById,
 } from "@/lib/trace";
@@ -202,6 +203,11 @@ export function RunTrace({
 
   return (
     <div className="grid gap-4">
+      {/* Only the status: the timestamps beside the badge tick every 20 seconds and would be
+          read out each time. */}
+      <p role="status" className="sr-only">
+        {`Status: ${statusLabel(run.status)}.`}
+      </p>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <StatusBadge status={run.status} />
         {run.model ? <code className="font-mono text-xs">{run.model}</code> : null}
@@ -215,7 +221,7 @@ export function RunTrace({
         ))}
         {finished ? null : (
           <span
-            className={`ml-auto text-xs ${connection === "offline" ? "text-amber-800" : "text-muted-foreground"}`}
+            className={`ml-auto text-xs ${connection === "offline" ? "text-attention" : "text-muted-foreground"}`}
           >
             {connection === "live"
               ? "Live"
@@ -234,7 +240,7 @@ export function RunTrace({
       </section>
 
       {notice ? (
-        <p role="alert" className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-red-800">
+        <p role="alert" className="rounded-md border border-danger-border bg-danger-surface px-3 py-2 text-danger">
           {notice}
         </p>
       ) : null}
@@ -255,7 +261,7 @@ export function RunTrace({
       ) : null}
 
       {stalled ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-attention-border bg-attention-surface px-3 py-2 text-attention">
           <p className="min-w-0 flex-1 basis-64">
             The agent has not reported for over a minute. It probably stopped mid-run. Closing the
             run marks it failed; nothing is re-run.
@@ -272,8 +278,8 @@ export function RunTrace({
 
       {run.error ? (
         <section className="grid gap-1">
-          <h2 className="text-xs font-medium text-red-800">Error</h2>
-          <p className="rounded-md border border-red-300 bg-red-50 px-3 py-2 font-mono text-xs break-words whitespace-pre-wrap text-red-900">
+          <h2 className="text-xs font-medium text-danger">Error</h2>
+          <p className="rounded-md border border-danger-border bg-danger-surface px-3 py-2 font-mono text-xs break-words whitespace-pre-wrap text-danger">
             {run.error}
           </p>
         </section>
@@ -282,7 +288,7 @@ export function RunTrace({
       {run.output ? (
         <section className="grid gap-1">
           <h2 className="text-xs font-medium text-muted-foreground">Result</h2>
-          <p className="rounded-md border border-emerald-300 bg-card px-3 py-2 break-words whitespace-pre-wrap">
+          <p className="rounded-md border border-success-border bg-card px-3 py-2 break-words whitespace-pre-wrap">
             {run.output}
           </p>
         </section>

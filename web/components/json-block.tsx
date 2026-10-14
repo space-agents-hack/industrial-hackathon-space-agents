@@ -17,7 +17,7 @@ export function JsonBlock({
   tone?: "neutral" | "red";
 }) {
   const text = formatJson(value);
-  const box = cn(BOX, tone === "red" && "border-red-200 bg-red-50 text-red-900");
+  const box = cn(BOX, tone === "red" && "border-danger-border bg-danger-surface text-danger");
   const oneLine = typeof value === "string" ? value : JSON.stringify(value);
 
   if (typeof oneLine === "string" && oneLine.length <= INLINE_LIMIT && !oneLine.includes("\n")) {

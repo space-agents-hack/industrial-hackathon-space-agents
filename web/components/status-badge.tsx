@@ -2,14 +2,14 @@ import { Badge } from "@/components/ui/badge";
 import { type Tone, statusLabel, statusTone } from "@/lib/trace";
 import { cn } from "@/lib/utils";
 
-// The only place status colours are defined: neutral queued, blue running, amber awaiting
-// approval, green succeeded, red failed.
+// Neutral queued, blue running, amber awaiting approval, green succeeded, red failed. The colours
+// themselves are tokens in app/globals.css, with their dark values.
 const TONE_CLASSES: Record<Tone, string> = {
-  neutral: "border-zinc-300 bg-zinc-100 text-zinc-700",
-  blue: "border-blue-300 bg-blue-50 text-blue-800",
-  amber: "border-amber-400 bg-amber-50 text-amber-900",
-  green: "border-emerald-300 bg-emerald-50 text-emerald-800",
-  red: "border-red-300 bg-red-50 text-red-800",
+  neutral: "border-border bg-muted text-secondary-foreground",
+  blue: "border-progress-border bg-progress-surface text-progress",
+  amber: "border-attention-border bg-attention-surface text-attention",
+  green: "border-success-border bg-success-surface text-success",
+  red: "border-danger-border bg-danger-surface text-danger",
 };
 
 export function ToneBadge({

@@ -12,7 +12,11 @@ export const metadata: Metadata = { title: "Run" };
 export default function RunPage({ params, searchParams }: PageProps<"/runs/[id]">) {
   return (
     <div className="grid gap-3">
-      <Link href="/" className="w-fit text-xs text-muted-foreground hover:text-foreground">
+      <h1 className="sr-only">Run</h1>
+      <Link
+        href="/"
+        className="-ml-1 inline-flex h-7 w-fit items-center rounded-md px-1 text-xs text-muted-foreground hover:text-foreground"
+      >
         ← All runs
       </Link>
       {/* The run id and the session are only known at request time, so everything that depends
