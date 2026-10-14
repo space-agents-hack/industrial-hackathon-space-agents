@@ -19,3 +19,12 @@ Open work on the template itself. Product work in a project made from this templ
 - [ ] Purge hosted data after an event (`scripts/purge-challenge-data.sh --hosted`).
 - [ ] One real OpenRouter one-click connection, end to end (tested only up to the redirect).
 - [ ] No follow-up message on a finished run (the saved conversation would allow it).
+
+## Next (asked on 2026-10-14)
+
+- [ ] Show a release's real progress (each job and step, live) in the app, not only the last result.
+- [ ] Manage the whole setup from production, not only from the local Setup page: change model
+      keys, people, and the deployment's own credentials (Vercel, Supabase, GitHub) in the
+      deployed admin area. Needs a decision first: where account-wide tokens may live in
+      production (a stolen admin session must not become control of the Vercel and GitHub
+      accounts). The local Setup page as it is was judged not useful.
