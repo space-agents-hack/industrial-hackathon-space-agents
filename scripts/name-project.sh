@@ -16,3 +16,11 @@ if [[ "$current" == "$template_id" && "$wanted" != "$template_id" ]]; then
   rm -f supabase/config.toml.bak
   echo "Local Supabase project renamed to '$wanted' (supabase/config.toml). Commit this change."
 fi
+
+# For .gitattributes: TODO.md and supabase/config.toml stay this project's own when the template is
+# pulled. The driver is local git configuration, so each clone sets it once.
+git config merge.ours.driver true
+if ! git remote get-url template >/dev/null 2>&1 && [[ "$wanted" != "$template_id" ]]; then
+  git remote add template https://github.com/clemenjuan/industrial-agent-template.git
+  echo "Added the 'template' remote: 'git pull --no-rebase template main' brings template fixes."
+fi
