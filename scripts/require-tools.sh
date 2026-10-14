@@ -23,8 +23,9 @@ need openssl "comes with macOS and most Linux"
 
 if command -v uv >/dev/null 2>&1; then
   uv_version="$(uv --version | awk '{print $2}')"
-  if [[ "$(printf '%s\n0.13.0\n' "$uv_version" | sort -V | head -1)" != "0.13.0" ]]; then
-    echo "uv $uv_version found; 0.13 or newer is required. Run: uv self update"
+  # The same floor as agent/pyproject.toml, which Vercel's own uv must also meet.
+  if [[ "$(printf '%s\n0.10.0\n' "$uv_version" | sort -V | head -1)" != "0.10.0" ]]; then
+    echo "uv $uv_version found; 0.10 or newer is required. Run: uv self update"
     missing=1
   fi
 fi
