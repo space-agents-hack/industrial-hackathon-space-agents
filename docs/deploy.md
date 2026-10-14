@@ -108,24 +108,19 @@ workflow. Never edit a migration that has reached `main`; write a new one.
 
 To apply by hand instead, leave the three Supabase secrets unset and follow `supabase/README.md`.
 
-## Verified locally, not yet on a real deployment
+## Verified on a real deployment
 
-Checked on 2026-10-13 by running `vercel build --prod` (CLI 63.1.2) on copies of both folders with
-placeholder project settings:
+First confirmed on 2026-10-14 with hackathon-prep (Vercel Pro, Supabase in Frankfurt):
 
-- `web/` builds as Next.js 16, with the session proxy as middleware.
-- `agent/` is detected as FastAPI on Python 3.13, installs from `uv.lock`, takes the 300 s limit
-  from `agent/vercel.json`, and supports streamed responses. The function holds the service, the
-  prompt and the fixtures; tests, evals and development tools are left out. Its environment is
-  about 100 MB against a 500 MB limit.
-- A local `vercel build` of the agent needs `uv` 0.9.25 or newer. The workflow does not build the
-  agent locally (Vercel builds it), so this only matters if you try it on your machine.
+- The setup form (and `scripts/bootstrap.sh` behind it) connects a fresh repository end to end.
+- Migrations applied by the workflow; Vercel builds `agent/` from `uv.lock` as FastAPI on Python
+  3.13; the web deploys prebuilt; both smoke tests pass; both are promoted.
+- Production: the web redirects signed-out visitors to `/login`, the setup endpoints are closed,
+  the agent answers `/health` and refuses a request without the shared secret.
 
-Still to confirm on the first release, then delete this section:
+Two things the first releases taught, now fixed: a project created by `vercel project add` has no
+framework, so both `vercel.json` files declare it; and `vercel curl` hands unknown options such as
+`--cwd` to curl, so the smoke steps run from each project's folder.
 
-- That the remote build of `agent/` behaves like the local one.
-- That `vercel curl` reaches both deployments from the workflow with these arguments.
-- That the web server can reach the agent's production domain (deployment protection settings).
-- How long a run may take before the platform ends the request, on the plan in use, and that the
-  web's `after()` keeps the connection open for that long.
-- That `scripts/bootstrap.sh` works from start to finish.
+Still to confirm: a full run in production (sign in, start the example, approve), which is also
+the test that the web holds its connection to the agent for the length of a run on Vercel.

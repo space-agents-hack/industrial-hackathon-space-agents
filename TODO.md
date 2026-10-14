@@ -4,8 +4,8 @@ Open work on the template itself. Product work in a project made from this templ
 
 ## Before it can be trusted at an event
 
-- [ ] First real deployment: run `scripts/bootstrap.sh`, push, and work through "Still to confirm"
-      in `docs/deploy.md`. `make setup DB=hosted` has only been tested against a fake CLI.
+- [x] First real deployment (hackathon-prep, 2026-10-14). See `docs/deploy.md`.
+- [ ] A full run with approval in production, and `make setup DB=hosted` against a real project.
 - [ ] Run the example task once with each provider we intend to use (`make eval` with a real
       `AGENT_MODEL`) and note any difference in behaviour.
 - [ ] One timed drill: from `gh repo create --template` to a deployed run with an approval. Write
