@@ -33,10 +33,13 @@ export default function SetupPage(props: PageProps<"/setup">) {
       <header className="border-b bg-card">
         <div className="mx-auto flex h-11 w-full max-w-5xl items-center gap-3 px-4">
           <span className="font-semibold tracking-tight">{APP_NAME}</span>
-          <span className="text-xs text-muted-foreground">Setup</span>
+          <h1 className="text-xs text-muted-foreground">Setup</h1>
           {/* /login, not /: signed out, / comes straight back here. Signed in, /login goes on to
               the app. */}
-          <Link href="/login" className="ml-auto text-xs text-muted-foreground hover:text-foreground">
+          <Link
+            href="/login"
+            className="ml-auto inline-flex h-8 items-center rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
             Sign in
           </Link>
         </div>

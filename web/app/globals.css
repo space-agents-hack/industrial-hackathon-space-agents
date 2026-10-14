@@ -2,10 +2,9 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-/* The shadcn components carry `dark:` classes. Without this line Tailwind would apply them on any
-   machine set to dark mode, on top of the light tokens below. This app is light only: nothing
-   ever adds the `.dark` class. */
-@custom-variant dark (&:is(.dark *));
+/* Dark follows the system setting, with no switch in the app (HIG, Dark Mode: "Avoid offering an
+   app-specific appearance setting"). The shadcn components' `dark:` classes use the same query. */
+@custom-variant dark (@media (prefers-color-scheme: dark));
 
 @theme inline {
   --font-sans:
@@ -30,6 +29,19 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-attention: var(--attention);
+  --color-attention-surface: var(--attention-surface);
+  --color-attention-border: var(--attention-border);
+  --color-attention-muted: var(--attention-muted);
+  --color-danger: var(--danger);
+  --color-danger-surface: var(--danger-surface);
+  --color-danger-border: var(--danger-border);
+  --color-success: var(--success);
+  --color-success-surface: var(--success-surface);
+  --color-success-border: var(--success-border);
+  --color-progress: var(--progress);
+  --color-progress-surface: var(--progress-surface);
+  --color-progress-border: var(--progress-border);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -39,9 +51,14 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Neutral greys plus one accent (--primary, a steel blue). Status colours are not tokens: they
-   live next to the status badge in components/status-badge.tsx. */
+/* Neutral greys, one accent (--primary, a steel blue) and four status colours, each with one
+   meaning: attention (a person has to act), danger (failed, error, deny), success, progress
+   (running). Use them through the status badge or their utilities (text-danger,
+   bg-attention-surface…), never as raw palette classes, or the dark values below miss them.
+   Every text pair is at least 4.5:1 in both appearances; --input is 3:1 against the card so a
+   field's edge is visible (WCAG 1.4.11). The light values are Tailwind's amber/red/emerald/blue. */
 :root {
+  color-scheme: light dark;
   --background: oklch(0.985 0.002 250);
   --foreground: oklch(0.21 0.01 255);
   --card: oklch(1 0 0);
@@ -58,9 +75,73 @@
   --accent-foreground: oklch(0.25 0.01 255);
   --destructive: oklch(0.52 0.2 27);
   --border: oklch(0.9 0.004 250);
-  --input: oklch(0.85 0.005 250);
+  --input: oklch(0.64 0.008 250);
   --ring: oklch(0.45 0.12 250);
   --radius: 0.25rem;
+  --attention: oklch(0.414 0.112 45.904);
+  --attention-surface: oklch(0.987 0.022 95.277);
+  --attention-border: oklch(0.828 0.189 84.429);
+  --attention-muted: oklch(0.962 0.059 95.617);
+  --danger: oklch(0.444 0.177 26.899);
+  --danger-surface: oklch(0.971 0.013 17.38);
+  --danger-border: oklch(0.808 0.114 19.571);
+  --success: oklch(0.432 0.095 166.913);
+  --success-surface: oklch(0.979 0.021 166.113);
+  --success-border: oklch(0.845 0.143 164.978);
+  --progress: oklch(0.424 0.199 265.638);
+  --progress-surface: oklch(0.97 0.014 254.604);
+  --progress-border: oklch(0.809 0.105 251.813);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.17 0.008 255);
+    --foreground: oklch(0.94 0.004 255);
+    --card: oklch(0.205 0.01 255);
+    --card-foreground: oklch(0.94 0.004 255);
+    --popover: oklch(0.205 0.01 255);
+    --popover-foreground: oklch(0.94 0.004 255);
+    --primary: oklch(0.72 0.11 250);
+    --primary-foreground: oklch(0.17 0.008 255);
+    --secondary: oklch(0.26 0.01 255);
+    --secondary-foreground: oklch(0.9 0.005 255);
+    --muted: oklch(0.26 0.01 255);
+    --muted-foreground: oklch(0.72 0.01 255);
+    --accent: oklch(0.26 0.01 255);
+    --accent-foreground: oklch(0.9 0.005 255);
+    --destructive: oklch(0.7 0.18 25);
+    --border: oklch(0.3 0.01 255);
+    --input: oklch(0.52 0.01 255);
+    --ring: oklch(0.72 0.11 250);
+    --attention: oklch(0.86 0.13 85);
+    --attention-surface: oklch(0.26 0.05 65);
+    --attention-border: oklch(0.68 0.15 75);
+    --attention-muted: oklch(0.33 0.07 70);
+    --danger: oklch(0.8 0.1 20);
+    --danger-surface: oklch(0.26 0.06 25);
+    --danger-border: oklch(0.58 0.16 25);
+    --success: oklch(0.82 0.11 165);
+    --success-surface: oklch(0.25 0.04 165);
+    --success-border: oklch(0.58 0.12 165);
+    --progress: oklch(0.82 0.08 255);
+    --progress-surface: oklch(0.26 0.05 260);
+    --progress-border: oklch(0.6 0.12 258);
+  }
+}
+
+/* Increase Contrast (macOS) and its equivalents: secondary text and hairlines move toward the
+   foreground. */
+@media (prefers-contrast: more) {
+  :root {
+    --muted-foreground: oklch(0.36 0.01 255);
+    --border: oklch(0.7 0.008 250);
+  }
+}
+@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+  :root {
+    --muted-foreground: oklch(0.84 0.008 255);
+    --border: oklch(0.5 0.01 255);
+  }
 }
 
 @layer base {
@@ -72,5 +153,20 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  input[type="checkbox"] {
+    accent-color: var(--primary);
+  }
+}
+
+/* Reduce Motion: the running pulse and the button press stop. Nothing on these pages carries
+   meaning only through motion; the status is always written next to the dot. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

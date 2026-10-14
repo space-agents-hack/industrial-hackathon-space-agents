@@ -44,7 +44,7 @@ export function ProductionStatus() {
     <div className="grid gap-2">
       {checking && !status ? <p className="text-muted-foreground">Asking Vercel and GitHub…</p> : null}
       {!checking && !status ? (
-        <p className="text-red-700">
+        <p className="text-danger">
           Could not check production
           {failed ? ` (the local server answered ${failed})` : ""}. After pulling new code the
           local server sometimes keeps an old copy: stop <code className="font-mono">make dev</code>{" "}
@@ -60,7 +60,7 @@ export function ProductionStatus() {
           <p
             className={
               up
-                ? "rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2"
+                ? "rounded-md border border-success-border bg-success-surface px-3 py-2"
                 : "rounded-md border bg-card px-3 py-2"
             }
           >
