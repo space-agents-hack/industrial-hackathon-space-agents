@@ -1,0 +1,4 @@
+# Files every project keeps its own version of when it pulls the template (git pull template main).
+# Needs `git config merge.ours.driver true`, which `make setup` sets (scripts/name-project.sh).
+TODO.md merge=ours
+supabase/config.toml merge=ours
