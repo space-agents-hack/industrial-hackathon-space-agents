@@ -2,3 +2,6 @@
 # Needs `git config merge.ours.driver true`, which `make setup` sets (scripts/name-project.sh).
 TODO.md merge=ours
 supabase/config.toml merge=ours
+
+# LF everywhere, also when cloned on Windows: bash cannot run a script with CRLF endings.
+* text=auto eol=lf
