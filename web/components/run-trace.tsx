@@ -259,7 +259,7 @@ export function RunTrace({
               : "Every approval has been decided, but the agent has not resumed this run."}
           </p>
           <Button variant="outline" onClick={retry} disabled={retrying}>
-            {retrying ? "Calling the agent…" : "Retry"}
+            {retrying ? "Calling the agent…" : run.status === "queued" ? "Send to agent" : "Resume run"}
           </Button>
         </div>
       ) : null}

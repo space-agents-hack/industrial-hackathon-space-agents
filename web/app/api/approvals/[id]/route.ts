@@ -58,7 +58,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/approvals/[
       status: decision,
       run_id: runId,
       resumed: false,
-      warning: "The decision was saved, but the run was not resumed. Use Retry.",
+      warning: "The decision was saved, but the run was not resumed. Use Resume run on the run page.",
     });
   }
   if ((count ?? 0) > 0) return Response.json({ status: decision, run_id: runId, resumed: false });
@@ -89,7 +89,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/approvals/[
       return Response.json({ status: decision, run_id: runId, resumed: true });
     }
     console.error(`POST /api/approvals/${id}: decision saved but run ${runId} not resumed`, agentError);
-    // The decision stands. The run page shows Retry while the run waits with nothing pending.
+    // The decision stands. The run page shows Resume run while the run waits with nothing pending.
     return Response.json({
       status: decision,
       run_id: runId,
