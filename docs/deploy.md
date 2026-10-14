@@ -17,8 +17,7 @@ off in both Vercel projects, so the only path is `.github/workflows/deploy.yml`.
 
 To follow a release job by job and step by step, with the reason when one fails: the Setup page
 under `make dev` (read with your `gh` sign-in), or **Admin › Releases** in production for platform
-admins. Production needs the optional `RELEASES_GITHUB_TOKEN` below; the page links to GitHub's
-form, filled in.
+admins, who can also start one there. Production needs `GITHUB_CONTROL_TOKEN` (below).
 
 A scheduled workflow (`watchdog.yml`) runs the same deep check against production every 30
 minutes and keeps a GitHub issue open while it fails.
@@ -29,30 +28,46 @@ has already been promoted. Both must therefore work with the web that is live.
 
 ## One-time setup
 
-The local Setup page (`make dev`, then "Deploy to production") does this from a form; it runs
-`scripts/bootstrap.sh`, which also works on its own in a terminal. What it sets, so you can check
-or do it by hand:
+From GitHub alone (ADR-0005); the local Setup page under "Deploy to production" walks through it
+with links:
+
+1. Create the Supabase project in its dashboard.
+2. Create three tokens: Vercel, Supabase, and a fine-grained GitHub token for this repository only
+   with Actions, Environments, Secrets and Variables set to read and write (no Administration).
+3. In Settings, Environments, `production`, add `VERCEL_TOKEN`, `SUPABASE_ACCESS_TOKEN`,
+   `SUPABASE_DB_PASSWORD`, `GH_CONTROL_TOKEN` and `ADMIN_PASSWORD` (yours, 12+ characters).
+4. Actions, **Bootstrap**, Run workflow, with the Supabase project ID and your email. It runs
+   `scripts/bootstrap.sh`, creates your account, deletes `ADMIN_PASSWORD`, and starts a release.
+5. Once: Settings, Environments, `production`, Deployment branches, add `main`. The token cannot
+   (that needs Administration, which could also delete the repository).
+
+Afterwards **Admin › Deployment** in the app replaces any of these values and re-runs Bootstrap.
+The same script still runs in a terminal (`scripts/bootstrap.sh`, with `gh`, `vercel` and
+`supabase` signed in). What it sets, so you can check:
 
 GitHub, environment `production`, secrets:
 
 | Secret | What it is |
 |---|---|
 | `VERCEL_TOKEN` | A Vercel access token |
-| `VERCEL_ORG_ID` | The Vercel team or user id |
-| `VERCEL_WEB_PROJECT_ID` | The project that serves `web/` |
-| `VERCEL_AGENT_PROJECT_ID` | The project that serves `agent/` |
+| `VERCEL_ORG_ID` | The Vercel team or user id (written by Bootstrap) |
+| `VERCEL_WEB_PROJECT_ID` | The project that serves `web/` (written by Bootstrap) |
+| `VERCEL_AGENT_PROJECT_ID` | The project that serves `agent/` (written by Bootstrap) |
 | `SUPABASE_ACCESS_TOKEN` | A Supabase personal access token |
 | `SUPABASE_PROJECT_REF` | The project reference (the subdomain of its URL) |
 | `SUPABASE_DB_PASSWORD` | The database password |
+| `AGENT_SHARED_SECRET` | Between web and agent; kept so a re-run does not change it |
+| `GH_CONTROL_TOKEN` | The GitHub token above; Bootstrap also gives it to the web |
+| `PROVIDER_API_KEY` | Optional: the key of the default model's provider |
 
-GitHub repository variables: `VERCEL_AUTHOR_NAME`, `VERCEL_AUTHOR_EMAIL` (the Vercel owner's git
-identity, so a teammate's push deploys).
+GitHub repository variables: `VERCEL_AUTHOR_NAME`, `VERCEL_AUTHOR_EMAIL` (the Vercel token
+owner's identity, so a teammate's push deploys), `PRODUCTION_URL`, `AGENT_MODEL`.
 
 Vercel, Production environment variables:
 
 | Project | Variables |
 |---|---|
-| web | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `AGENT_URL`, `AGENT_SHARED_SECRET`; optional `RELEASES_GITHUB_TOKEN` (fine-grained, this repository only, Actions read-only) |
+| web | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `AGENT_URL`, `AGENT_SHARED_SECRET`, `GITHUB_CONTROL_TOKEN` |
 | agent | `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `AGENT_SHARED_SECRET`, `AGENT_MODEL`, and the API key of that model's provider |
 
 Both `vercel.json` files pin the functions to `fra1` (Frankfurt). Keep that next to the database's
@@ -124,7 +139,8 @@ To apply by hand instead, leave the three Supabase secrets unset and follow `sup
 
 First confirmed on 2026-10-14 with hackathon-prep (Vercel Pro, Supabase in Frankfurt):
 
-- The setup form (and `scripts/bootstrap.sh` behind it) connects a fresh repository end to end.
+- `scripts/bootstrap.sh`, then driven by a local form, connects a fresh repository end to end. The
+  same script inside the Bootstrap workflow is not yet proven on a fresh repository (TODO.md).
 - Migrations applied by the workflow; Vercel builds `agent/` from `uv.lock` as FastAPI on Python
   3.13; the web deploys prebuilt; both smoke tests pass; both are promoted.
 - Production: the web redirects signed-out visitors to `/login`, the setup endpoints are closed,

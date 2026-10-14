@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { RelativeTime } from "@/components/relative-time";
 import { ToneBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import type { Releases } from "@/lib/github";
+import type { Runs } from "@/lib/github";
 import {
   OUTCOME_META,
   PHASE_TONE,
@@ -22,8 +22,8 @@ import {
 import type { Tone } from "@/lib/trace";
 import { cn } from "@/lib/utils";
 
-// The Deploy workflow, job by job and step by step, refreshed while it runs. Used by the local
-// Setup page (read with `gh`) and by Admin › Releases (read with a read-only token).
+// A workflow run, job by job and step by step, refreshed while it runs. Used by the local Setup
+// page (read with `gh`), Admin › Releases and Admin › Deployment (read with the control token).
 
 const LIVE_MS = 3_000;
 const IDLE_MS = 20_000;
@@ -51,24 +51,28 @@ export function ReleaseProgress({
   notConfigured,
 }: {
   endpoint: string;
-  // Only on `make dev`: starting a run needs more than the read-only token production has.
+  // Where a POST starts a release; absent when this viewer cannot start one.
   startUrl?: string;
   notConfigured: React.ReactNode;
 }) {
-  const [data, setData] = useState<Releases | null>(null);
+  const [data, setData] = useState<Runs | null>(null);
   const [failed, setFailed] = useState<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [start, setStart] = useState<{ kind: "idle" | "starting" } | { kind: "failed"; detail: string }>({ kind: "idle" });
   const [now, setNow] = useState(0);
+  // GitHub lists a started run a few seconds after it was asked for: poll fast meanwhile.
+  const [justStarted, setJustStarted] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const live = data?.ok
+  const running = data?.ok
     ? data.selected?.outcome === "running" || data.runs.some((run) => run.phase === "running" || run.phase === "waiting")
     : false;
+  const live = running || justStarted;
 
   const load = useCallback(async () => {
     try {
-      const url = selected ? `${endpoint}?run=${selected}` : endpoint;
+      const url = new URL(endpoint, window.location.origin);
+      if (selected) url.searchParams.set("run", String(selected));
       const response = await fetch(url, { cache: "no-store" });
       if (!response.ok) {
         setFailed(response.status);
@@ -122,16 +126,18 @@ export function ReleaseProgress({
         headers: { "content-type": "application/json" },
         body: "{}",
       });
-      const body: { detail?: string } = await response.json().catch(() => ({}));
+      const body: { detail?: string; error?: string } = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setStart({ kind: "failed", detail: body.detail ?? `The request failed (${response.status}).` });
+        setStart({ kind: "failed", detail: body.detail ?? body.error ?? `The request failed (${response.status}).` });
         return;
       }
       setStart({ kind: "idle" });
       setSelected(null);
+      setJustStarted(true);
+      setTimeout(() => setJustStarted(false), 30_000);
       await load();
     } catch {
-      setStart({ kind: "failed", detail: "The local server did not answer." });
+      setStart({ kind: "failed", detail: "The server did not answer." });
     }
   }
 
@@ -140,7 +146,7 @@ export function ReleaseProgress({
       {startUrl ? (
         <div className="flex flex-wrap items-center gap-3">
           <Button onClick={startRelease} disabled={start.kind === "starting" || live}>
-            {start.kind === "starting" ? "Starting…" : live ? "A release is running" : "Start a release"}
+            {start.kind === "starting" ? "Starting…" : running ? "A release is running" : justStarted ? "Started" : "Start a release"}
           </Button>
           {start.kind === "failed" ? (
             <span role="alert" className="text-danger">
@@ -168,7 +174,7 @@ export function ReleaseProgress({
         )
       ) : null}
 
-      {data?.ok && !data.selected ? <p className="text-muted-foreground">No release has run on main yet.</p> : null}
+      {data?.ok && !data.selected ? <p className="text-muted-foreground">Nothing has run on main yet.</p> : null}
       {data?.ok && data.selected ? <SelectedRelease release={data.selected} now={now} /> : null}
       {data?.ok && data.runs.length > 1 ? (
         <OlderRuns runs={data.runs} selected={data.selected?.id ?? null} onSelect={setSelected} />

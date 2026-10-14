@@ -1,47 +1,37 @@
 import "server-only";
 
-import { access } from "node:fs/promises";
-import path from "node:path";
-
 import { connection } from "next/server";
 
 import { type AgentHealth, type SetupFacts, databaseOf } from "@/lib/setup";
+import { runCli } from "@/lib/setup-commands";
 
 // What the Setup page can observe: the configuration of this server, the agent's health over
-// HTTP and, on a developer's machine, the link files the CLIs leave behind. It reads no secret,
-// writes nothing, and must work on a clone where nothing has been set up.
+// HTTP and, under `make dev`, which secrets the repository's production environment holds (names
+// only, through your `gh` sign-in). It reads no secret, writes nothing, and must work on a clone
+// where nothing has been set up.
 export async function gatherSetupFacts(): Promise<SetupFacts> {
   // Request-time only: a prerendered answer would show the state of the build machine.
   await connection();
 
   const onVercel = Boolean(process.env.VERCEL);
-  // On Vercel there is no checkout to look at. The steps logic treats production as linked.
-  const [agent, supabaseLinked, vercelWebLinked, vercelAgentLinked] = await Promise.all([
-    agentHealth(),
-    onVercel ? null : exists("..", "supabase", ".temp", "project-ref"),
-    onVercel ? null : exists(".vercel", "project.json"),
-    onVercel ? null : exists("..", "agent", ".vercel", "project.json"),
-  ]);
+  const local = !onVercel && process.env.SETUP_LOOPBACK_ONLY === "1";
+  const [agent, github] = await Promise.all([agentHealth(), local ? productionSecrets() : null]);
   return {
     onVercel,
     database: databaseOf(process.env.NEXT_PUBLIC_SUPABASE_URL),
     agent,
-    supabaseLinked,
-    vercelWebLinked,
-    vercelAgentLinked,
+    repo: github?.repo ?? null,
+    productionSecrets: github?.names ?? null,
   };
 }
 
-// Relative to web/, which is where `next dev` runs. The ignore comment stops the bundler from
-// packing the whole checkout into the deployed function "in case" this path points anywhere in
-// it; in production the function is never called.
-async function exists(...segments: string[]): Promise<boolean> {
-  try {
-    await access(path.join(/* turbopackIgnore: true */ process.cwd(), ...segments));
-    return true;
-  } catch {
-    return false;
-  }
+// A repository whose Deploy workflow never ran has no production environment, and GitHub answers
+// 404: that is "nothing there yet", not "could not ask".
+async function productionSecrets(): Promise<{ repo: string; names: string[] } | null> {
+  const repo = await runCli("gh", ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
+  if (!repo.ok || !repo.stdout) return null;
+  const listed = await runCli("gh", ["api", "repos/{owner}/{repo}/environments/production/secrets", "--jq", ".secrets[].name"]);
+  return { repo: repo.stdout, names: listed.ok ? listed.stdout.split("\n").filter(Boolean) : [] };
 }
 
 async function agentHealth(): Promise<AgentHealth> {

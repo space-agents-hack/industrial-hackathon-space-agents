@@ -393,6 +393,10 @@ export type Database = {
         Args: { key_provider: string; org: string }
         Returns: string
       }
+      record_deployment_change: {
+        Args: { change: string; detail: Json }
+        Returns: undefined
+      }
       set_member: {
         Args: {
           member: string

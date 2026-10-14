@@ -1,6 +1,8 @@
 // Pure logic for the Setup page: given what could be observed, which steps are done.
 // No React, no Next.js and no file or network access, so `node --test` can run the tests.
 
+import { REQUIRED_SECRETS } from "./deployment.ts";
+
 // What the person wants to end up with. The page shows one list of steps per target.
 export type Target = "local" | "production";
 
@@ -16,9 +18,10 @@ export type SetupFacts = {
   onVercel: boolean;
   database: Database;
   agent: AgentHealth;
-  supabaseLinked: boolean | null;
-  vercelWebLinked: boolean | null;
-  vercelAgentLinked: boolean | null;
+  // The GitHub repository and the names of the secrets in its production environment, read
+  // with `gh` on a developer's machine. Names only; GitHub never gives a value back.
+  repo: string | null;
+  productionSecrets: string[] | null;
 };
 
 export type StepState = "done" | "todo" | "problem" | "manual";
@@ -31,9 +34,11 @@ export type StepId =
   | "customise"
   | "supabase-project"
   | "tokens"
+  | "secrets"
   | "bootstrap"
   | "push"
   | "try-production"
+  | "manage"
   | "model";
 
 export type Step = { id: StepId; state: StepState; summary: string };
@@ -116,51 +121,68 @@ function localSteps(facts: SetupFacts): Step[] {
   return steps;
 }
 
+// The production path runs in GitHub (ADR-0005): values go into the repository's production
+// environment, the Bootstrap workflow does the rest. What this page can see is which secret names
+// exist there, which is enough to tell how far someone got.
 function productionSteps(facts: SetupFacts): Step[] {
   // On Vercel every step has necessarily happened: this page is served by the result of them.
   const live = facts.onVercel;
-  const supabaseDone = live || facts.database === "hosted" || facts.supabaseLinked === true;
-  const bootstrapDone =
-    live ||
-    (facts.supabaseLinked === true &&
-      facts.vercelWebLinked === true &&
-      facts.vercelAgentLinked === true);
+  const names = facts.productionSecrets;
+  const has = (name: string) => live || (names?.includes(name) ?? false);
+  const unknown = !live && names === null;
+  const missing = REQUIRED_SECRETS.filter((name) => !has(name));
+  const tokens = ["VERCEL_TOKEN", "SUPABASE_ACCESS_TOKEN", "GH_CONTROL_TOKEN"];
+  // The workflow writes the project IDs; their presence means it ran to that point.
+  const bootstrapped = has("VERCEL_WEB_PROJECT_ID");
+  // A laptop already pointed at the hosted database proves the project exists.
+  const supabaseDone = has("SUPABASE_DB_PASSWORD") || facts.database === "hosted";
 
   const steps: Step[] = [
     {
       id: "supabase-project",
-      state: supabaseDone ? "done" : "todo",
+      state: supabaseDone ? "done" : unknown ? "manual" : "todo",
       summary: supabaseDone
-        ? "A hosted Supabase project is connected to this repository."
-        : "No hosted Supabase project is connected to this repository yet.",
+        ? "The hosted Supabase project exists."
+        : "Create it in the Supabase dashboard; the workflow cannot.",
     },
     {
       id: "tokens",
-      // Tokens live where they were issued and in GitHub's secret store. Neither can be read
-      // back, so after bootstrap this is inferred and before it is on trust.
-      state: bootstrapDone ? "done" : "manual",
-      summary: bootstrapDone
-        ? "The tokens were handed to GitHub when the bootstrap script ran."
-        : "This page cannot see whether you have created them.",
+      state: tokens.every(has) ? "done" : "manual",
+      summary: tokens.every(has)
+        ? "GitHub has all three."
+        : "Tokens stay where they were issued; this page sees them once they are in GitHub.",
+    },
+    {
+      id: "secrets",
+      state: missing.length === 0 ? "done" : unknown ? "manual" : "todo",
+      summary:
+        missing.length === 0
+          ? "Everything the Bootstrap workflow needs is in GitHub."
+          : unknown
+            ? "Could not ask GitHub (is gh signed in?)."
+            : `Missing in the production environment: ${missing.join(", ")}.`,
     },
     {
       id: "bootstrap",
-      state: bootstrapDone ? "done" : "todo",
-      summary: bootstrapDone
-        ? "Both Vercel projects and the Supabase project are linked."
-        : describeMissingLinks(facts),
+      state: bootstrapped ? "done" : unknown ? "manual" : "todo",
+      summary: bootstrapped
+        ? "The workflow has connected Vercel and Supabase."
+        : "One run creates the Vercel projects, the tables and your account, then releases.",
     },
     {
       id: "push",
       state: live ? "done" : "manual",
-      summary: live
-        ? "This page is served by a released deployment."
-        : "Start one here, or push to main. The next step shows how the latest one went.",
+      summary: live ? "This page is served by a released deployment." : "Bootstrap starts one; every push to main starts another.",
     },
     {
       id: "try-production",
       state: "manual",
       summary: "Sign in on the production site, start the example run and approve the step.",
+    },
+    {
+      id: "manage",
+      state: "manual",
+      summary: "From then on, change tokens, passwords and the model in the deployed app.",
     },
   ];
   if (live && facts.agent.reachable) steps.push(modelStep(facts.agent.model));
@@ -178,12 +200,4 @@ function modelStep(model: string): Step {
         summary: "Running the scripted model: no provider, no cost, a fixed example.",
       }
     : { id: "model", state: "done", summary: `Running ${model}.` };
-}
-
-function describeMissingLinks(facts: SetupFacts): string {
-  const missing: string[] = [];
-  if (facts.supabaseLinked !== true) missing.push("the Supabase project");
-  if (facts.vercelWebLinked !== true) missing.push("the Vercel project for web/");
-  if (facts.vercelAgentLinked !== true) missing.push("the Vercel project for agent/");
-  return `Not linked yet: ${missing.join(", ")}.`;
 }

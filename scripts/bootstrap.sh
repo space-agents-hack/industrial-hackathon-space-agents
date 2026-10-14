@@ -3,15 +3,17 @@
 # After it finishes, pushing to main deploys.
 #
 # Two ways to run it, same steps:
-#   scripts/bootstrap.sh               asks each question in the terminal
-#   scripts/bootstrap.sh --from-json   reads every answer from one JSON object on standard input;
-#                                      this is what the form on the local Setup page uses
+#   the Bootstrap workflow (.github/workflows/bootstrap.yml), from GitHub alone: the usual way.
+#                                      It runs this script with --from-json.
+#   scripts/bootstrap.sh               asks each question in the terminal (needs the gh, vercel and
+#                                      supabase CLIs signed in)
 #
 # What it does:
 #   1. creates two Vercel projects (<name>-web, <name>-agent) and links web/ and agent/ to them
 #   2. links the Supabase project you give it and, if you agree, applies the migrations
 #   3. sets the production environment variables of both Vercel projects
-#   4. sets the secrets and variables the GitHub workflow reads
+#   4. sets the secrets and variables the GitHub workflows read, including the ones that let a
+#      re-run keep what the last run chose (the web-agent secret, the model)
 #   5. turns new sign-ups off in the Supabase project and creates the users you name
 #
 # What it does NOT do: create the Supabase project (do that in the dashboard first) or push.
@@ -63,6 +65,19 @@ ask_secret() { # key, prompt -> answer on stdout, never echoed
 json_field() { # file, field
   python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$1" "$2"
 }
+
+# In the Bootstrap workflow the CLIs sign in with tokens from the environment (GH_TOKEN,
+# VERCEL_TOKEN, SUPABASE_ACCESS_TOKEN). A Vercel token can reach several teams; the workflow's
+# input names one, otherwise the only team the token reaches is used.
+if [[ -n "$answers" && -n "${VERCEL_TOKEN:-}" && -z "${VERCEL_SCOPE:-}" ]]; then
+  VERCEL_SCOPE="$(given vercel_team)"
+  if [[ -z "$VERCEL_SCOPE" ]]; then
+    VERCEL_SCOPE="$(curl -fsS -H @<(printf 'Authorization: Bearer %s' "$VERCEL_TOKEN") https://api.vercel.com/v2/teams \
+      | python3 -c 'import json,sys; t=json.load(sys.stdin).get("teams", []); print(t[0]["slug"] if len(t) == 1 else "")' || true)"
+  fi
+  export VERCEL_SCOPE
+  [[ -z "$VERCEL_SCOPE" ]] || echo "Vercel team: $VERCEL_SCOPE"
+fi
 
 say "Checking that the three CLIs are signed in"
 gh auth status >/dev/null 2>&1 || { echo "Run: gh auth login" >&2; exit 1; }
@@ -167,13 +182,14 @@ esac
 [[ -z "$provider_key_name" ]] || provider_key="$(ask_secret provider_key "$provider_key_name")"
 echo "Model: $agent_model"
 
-# Kept between runs (the Setup page passes the saved one): a new secret on every run would make
-# the old web and the new agent disagree between their promotions.
+# Kept between runs (the workflow passes the one stored in GitHub): a new secret on every run
+# would make the old web and the new agent disagree between their promotions.
 shared_secret="$(given shared_secret)"
-if [[ -z "$shared_secret" && -f .env.setup.local ]]; then
-  shared_secret="$(grep -E '^AGENT_SHARED_SECRET=' .env.setup.local | head -1 | cut -d= -f2- || true)"
-fi
 [[ -n "$shared_secret" ]] || shared_secret="$(openssl rand -hex 32)"
+
+# The token Admin > Deployment uses to change these values from production (ADR-0005). Optional
+# on a laptop; the Bootstrap workflow always has it.
+github_token="$(given github_token)"
 
 say "Vercel: setting production environment variables"
 set_env() { # unit, name, value
@@ -189,18 +205,24 @@ set_env agent SUPABASE_SECRET_KEY "$secret_key"
 set_env agent AGENT_SHARED_SECRET "$shared_secret"
 set_env agent AGENT_MODEL "$agent_model"
 [[ -z "$provider_key_name" ]] || set_env agent "$provider_key_name" "$provider_key"
-# Optional, read-only (Actions: read on this repository): Admin > Releases in production.
-releases_token="$(given releases_token)"
-[[ -z "$releases_token" ]] || set_env web RELEASES_GITHUB_TOKEN "$releases_token"
+[[ -z "$github_token" ]] || set_env web GITHUB_CONTROL_TOKEN "$github_token"
 
 say "GitHub: setting secrets and variables for the workflow"
 # Only main may deploy: the environment holds account-wide tokens, and without a branch rule any
 # branch's workflow could ask for them.
-gh api -X PUT "repos/$repo/environments/production" --input - >/dev/null <<'JSON'
+# Setting that rule needs the Administration permission, which the Bootstrap workflow's token
+# deliberately lacks: then it says where to click instead.
+if gh api -X PUT "repos/$repo/environments/production" --input - >/dev/null 2>&1 <<'JSON'
 {"deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
 JSON
-gh api -X POST "repos/$repo/environments/production/deployment-branch-policies" \
-  -f name=main -f type=branch >/dev/null 2>&1 || true
+then
+  gh api -X POST "repos/$repo/environments/production/deployment-branch-policies" \
+    -f name=main -f type=branch >/dev/null 2>&1 || true
+  echo "  environment production: only main may use it"
+else
+  echo "  Could not restrict the production environment to main (the token lacks Administration)."
+  echo "  Do it once: Settings, Environments, production, Deployment branches and tags, add 'main'."
+fi
 set_secret() { # name, value
   printf '%s' "$2" | gh secret set "$1" --repo "$repo" --env production
   echo "  secret $1"
@@ -212,12 +234,22 @@ set_secret VERCEL_AGENT_PROJECT_ID "$agent_id"
 set_secret SUPABASE_ACCESS_TOKEN "$supabase_token"
 set_secret SUPABASE_PROJECT_REF "$project_ref"
 set_secret SUPABASE_DB_PASSWORD "$db_password"
-# The identity Vercel accepts as the author of a deployment: whoever owns the projects, which is
-# whoever is running this script.
-gh variable set VERCEL_AUTHOR_NAME --repo "$repo" --body "$(git config user.name)"
-gh variable set VERCEL_AUTHOR_EMAIL --repo "$repo" --body "$(git config user.email)"
+set_secret AGENT_SHARED_SECRET "$shared_secret"
+[[ -z "$github_token" ]] || set_secret GH_CONTROL_TOKEN "$github_token"
+[[ -z "$provider_key_name" ]] || set_secret PROVIDER_API_KEY "$provider_key"
+# The identity Vercel accepts as the author of a deployment: whoever owns the Vercel token. Read
+# from Vercel, since a workflow runner has no git identity of its own.
+author="$(curl -fsS -H @<(printf 'Authorization: Bearer %s' "$vercel_token") https://api.vercel.com/v2/user \
+  | python3 -c 'import json,sys; u=json.load(sys.stdin)["user"]; print((u.get("name") or u.get("username") or "") + "\t" + (u.get("email") or ""))' || true)"
+author_name="${author%%$'\t'*}"
+author_email="${author#*$'\t'}"
+[[ -n "$author_name" ]] || author_name="$(git config user.name || true)"
+[[ -n "$author_email" ]] || author_email="$(git config user.email || true)"
+gh variable set VERCEL_AUTHOR_NAME --repo "$repo" --body "$author_name"
+gh variable set VERCEL_AUTHOR_EMAIL --repo "$repo" --body "$author_email"
 gh variable set PRODUCTION_URL --repo "$repo" --body "https://${web_domain:-$name-web.vercel.app}"
-echo "  variables VERCEL_AUTHOR_NAME, VERCEL_AUTHOR_EMAIL, PRODUCTION_URL"
+gh variable set AGENT_MODEL --repo "$repo" --body "$agent_model"
+echo "  variables VERCEL_AUTHOR_NAME, VERCEL_AUTHOR_EMAIL, PRODUCTION_URL, AGENT_MODEL"
 
 say "Supabase: closing sign-ups, setting the site address"
 # Every signed-in user can see every run and spend model credits, so an open sign-up page is an

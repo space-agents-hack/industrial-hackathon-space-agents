@@ -1,14 +1,11 @@
 import "server-only";
 
-import { execFile, spawn } from "node:child_process";
-import { chmod, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import path from "node:path";
 
-import type { ConnectAnswers } from "@/lib/connect-answers";
 import { type RequestFacts, refuseUnlessLocal } from "@/lib/local-request";
-import { EMPTY_SETUP, type SavedSetup, parseSetup, serializeSetup } from "@/lib/saved-setup";
 
-// Runs the repository's own scripts and CLIs for the local Setup page. Every route that uses this
+// Runs CLIs on this machine for the local Setup page. Every route that uses this
 // calls `guard()` first; see lib/local-request.ts for who is allowed and why.
 
 export function guard(request: Request): Response | null {
@@ -54,72 +51,6 @@ export function runCli(command: string, args: string[], timeoutMs = 20_000): Pro
   });
 }
 
-export type CliStatus = { gh: boolean; vercel: boolean; supabase: boolean; repo: string | null };
-
-export async function cliStatus(): Promise<CliStatus> {
-  const [gh, vercel, supabase, repo] = await Promise.all([
-    runCli("gh", ["auth", "status"]),
-    runCli("vercel", ["whoami"]),
-    runCli("supabase", ["projects", "list"]),
-    runCli("gh", ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]),
-  ]);
-  return {
-    gh: gh.ok,
-    vercel: vercel.ok,
-    supabase: supabase.ok,
-    repo: repo.ok && repo.stdout ? repo.stdout : null,
-  };
-}
-
-// One at a time: two runs would race on the same Vercel projects and GitHub secrets. Claimed in
-// one synchronous step, before any await, so two quick submits cannot both get it.
-let bootstrapRunning = false;
-
-export function claimBootstrap(): boolean {
-  if (bootstrapRunning) return false;
-  bootstrapRunning = true;
-  return true;
-}
-
-export function releaseBootstrap(): void {
-  bootstrapRunning = false;
-}
-
-// The bootstrap script with the answers on stdin, its output streamed back line by line. The last
-// line is `exit <code>`, which the form reads to know how it ended.
-export function runBootstrap(answers: ConnectAnswers, signal: AbortSignal): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  const child = spawn("bash", ["scripts/bootstrap.sh", "--from-json"], {
-    cwd: repoRoot(),
-    env: childEnv() as NodeJS.ProcessEnv,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  child.stdin.end(JSON.stringify(answers));
-  // Closing the page stops the run. The script is safe to run again from the start.
-  signal.addEventListener("abort", () => child.kill("SIGTERM"), { once: true });
-
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      const send = (chunk: Buffer) => controller.enqueue(new Uint8Array(chunk));
-      child.stdout.on("data", send);
-      child.stderr.on("data", send);
-      child.on("close", (code) => {
-        bootstrapRunning = false;
-        controller.enqueue(encoder.encode(`\nexit ${code ?? 1}\n`));
-        controller.close();
-      });
-      child.on("error", (error) => {
-        bootstrapRunning = false;
-        controller.enqueue(encoder.encode(`\nCould not start bash: ${error.message}\nexit 1\n`));
-        controller.close();
-      });
-    },
-    cancel() {
-      child.kill("SIGTERM");
-    },
-  });
-}
-
 export async function startRelease(): Promise<{ ok: boolean; url: string | null; detail: string }> {
   const started = await runCli("gh", ["workflow", "run", "deploy.yml", "--ref", "main"]);
   if (!started.ok) {
@@ -137,102 +68,26 @@ export async function startRelease(): Promise<{ ok: boolean; url: string | null;
   return { ok: true, url: null, detail: "Started; open the repository's Actions tab to follow it." };
 }
 
-// `.env.setup.local` at the repository root: ignored by git (`.env.*`), outside both Vercel
-// project folders so no deploy uploads it, and readable by the owner only.
-function savedPath(): string {
-  return path.join(repoRoot(), ".env.setup.local");
-}
-
-export async function readSaved(): Promise<SavedSetup & { saved: boolean }> {
-  try {
-    return { ...parseSetup(await readFile(savedPath(), "utf8")), saved: true };
-  } catch {
-    return { ...EMPTY_SETUP, saved: false };
-  }
-}
-
-export async function writeSaved(setup: SavedSetup): Promise<void> {
-  const file = savedPath();
-  await writeFile(file, serializeSetup(setup), { mode: 0o600 });
-  // `mode` only applies when the file is created; an existing file keeps its old permissions.
-  await chmod(file, 0o600);
-}
-
-export async function forgetSaved(): Promise<void> {
-  await rm(savedPath(), { force: true });
-}
-
-// Production as seen from this machine: the two production addresses (asked of Vercel through
-// its CLI, signed in as you) and whether each answers. Releases are in lib/github.ts.
-
-// The Vercel CLI version CI uses, read from the workflow so there is one place to change it. Run
-// through npx because `vercel api` needs a newer CLI than many machines have installed.
-async function vercelCli(): Promise<string> {
-  const workflow = await readFile(path.join(repoRoot(), ".github", "workflows", "deploy.yml"), "utf8");
-  const version = /VERCEL_CLI_VERSION:\s*"([^"]+)"/.exec(workflow)?.[1];
-  return version ? `vercel@${version}` : "vercel@latest";
-}
-
-export type Endpoint = { url: string | null; healthy: boolean; detail: string; model?: string };
-export type ProductionStatus = {
-  linked: boolean;
-  web: Endpoint | null;
-  agent: Endpoint | null;
-};
-
-async function readLink(unit: "web" | "agent"): Promise<{ orgId: string; projectId: string } | null> {
-  try {
-    const raw: unknown = JSON.parse(await readFile(path.join(repoRoot(), unit, ".vercel", "project.json"), "utf8"));
-    if (typeof raw !== "object" || raw === null) return null;
-    const { orgId, projectId } = raw as Record<string, unknown>;
-    return typeof orgId === "string" && typeof projectId === "string" ? { orgId, projectId } : null;
-  } catch {
-    return null;
-  }
-}
-
-async function productionDomain(link: { orgId: string; projectId: string }): Promise<string | null> {
-  const team = link.orgId.startsWith("team_") ? `?teamId=${link.orgId}` : "";
-  const result = await runCli(
-    "npx",
-    ["--yes", await vercelCli(), "api", `/v9/projects/${link.projectId}/domains${team}`],
-    90_000,
-  );
-  if (!result.ok) return null;
-  try {
-    const body: unknown = JSON.parse(result.stdout);
-    const domains =
-      typeof body === "object" && body !== null && Array.isArray((body as { domains?: unknown }).domains)
-        ? ((body as { domains: { name?: unknown }[] }).domains)
-        : [];
-    const name = domains.find((domain) => typeof domain.name === "string")?.name;
-    return typeof name === "string" ? name : null;
-  } catch {
-    return null;
-  }
-}
-
-async function probe(domain: string | null, healthPath: string): Promise<Endpoint> {
-  if (!domain) return { url: null, healthy: false, detail: "Vercel did not report a production address." };
-  const url = `https://${domain}`;
-  try {
-    const response = await fetch(`${url}${healthPath}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
-    if (!response.ok) return { url, healthy: false, detail: `Answers ${response.status}.` };
-    const body: unknown = await response.json().catch(() => null);
-    const model =
-      typeof body === "object" && body !== null && typeof (body as { model?: unknown }).model === "string"
-        ? (body as { model: string }).model
-        : undefined;
-    return { url, healthy: true, detail: "Answering.", ...(model ? { model } : {}) };
-  } catch {
-    return { url, healthy: false, detail: "Does not answer yet." };
-  }
-}
+// Production as seen from this machine: the address the Bootstrap workflow stored in GitHub
+// (PRODUCTION_URL) and its deep health check, which covers web, agent and Supabase Auth in one
+// request. Reads only.
+export type ProductionStatus =
+  | { known: false }
+  | { known: true; url: string; checks: Record<string, string> | null; detail: string };
 
 export async function productionStatus(): Promise<ProductionStatus> {
-  const [webLink, agentLink] = await Promise.all([readLink("web"), readLink("agent")]);
-  if (!webLink || !agentLink) return { linked: false, web: null, agent: null };
-  const [webDomain, agentDomain] = await Promise.all([productionDomain(webLink), productionDomain(agentLink)]);
-  const [web, agent] = await Promise.all([probe(webDomain, "/api/health"), probe(agentDomain, "/health")]);
-  return { linked: true, web, agent };
+  const variable = await runCli("gh", ["variable", "get", "PRODUCTION_URL"]);
+  const url = variable.ok ? variable.stdout.replace(/\/+$/, "") : "";
+  if (!/^https:\/\/[\w.-]+$/.test(url)) return { known: false };
+  try {
+    const response = await fetch(`${url}/api/health/deep`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
+    const body: unknown = await response.json().catch(() => null);
+    const checks =
+      typeof body === "object" && body !== null
+        ? Object.fromEntries(Object.entries(body as Record<string, unknown>).map(([k, v]) => [k, String(v)]))
+        : null;
+    return { known: true, url, checks, detail: response.ok ? "Answering." : `Answers ${response.status}.` };
+  } catch {
+    return { known: true, url, checks: null, detail: "Does not answer yet." };
+  }
 }

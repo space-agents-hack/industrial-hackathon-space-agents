@@ -20,9 +20,8 @@ const fresh: SetupFacts = {
   onVercel: false,
   database: "none",
   agent: down,
-  supabaseLinked: false,
-  vercelWebLinked: false,
-  vercelAgentLinked: false,
+  repo: "o/r",
+  productionSecrets: [],
 };
 
 function states(target: Target, facts: SetupFacts): Partial<Record<StepId, StepState>> {
@@ -69,44 +68,44 @@ test("after setup, a silent agent is a problem; a running one adds the model ste
   });
 });
 
-test("a fresh clone, production target: the steps do not depend on anything being installed", () => {
+test("a fresh clone, production target: GitHub has nothing yet", () => {
   assert.deepEqual(states("production", fresh), {
     "supabase-project": "todo",
     tokens: "manual",
+    secrets: "todo",
     bootstrap: "todo",
     push: "manual",
     "try-production": "manual",
+    manage: "manual",
   });
+  const secrets = buildSteps("production", fresh).find((step) => step.id === "secrets");
+  assert.match(secrets?.summary ?? "", /VERCEL_TOKEN, SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD, GH_CONTROL_TOKEN/);
 });
 
-test("bootstrap is done only when all three links exist, and names what is missing", () => {
-  const partly = buildSteps("production", { ...fresh, supabaseLinked: true, vercelWebLinked: true });
-  const bootstrap = partly.find((step) => step.id === "bootstrap");
-  assert.equal(bootstrap?.state, "todo");
-  assert.equal(bootstrap?.summary, "Not linked yet: the Vercel project for agent/.");
-  assert.equal(partly.find((step) => step.id === "supabase-project")?.state, "done");
-
-  const all = states("production", {
+test("the steps follow the secret names GitHub holds", () => {
+  const pasted = states("production", {
     ...fresh,
-    supabaseLinked: true,
-    vercelWebLinked: true,
-    vercelAgentLinked: true,
+    productionSecrets: ["VERCEL_TOKEN", "SUPABASE_ACCESS_TOKEN", "SUPABASE_DB_PASSWORD", "GH_CONTROL_TOKEN"],
   });
-  assert.equal(all.bootstrap, "done");
-  assert.equal(all.tokens, "done");
-  // A release cannot be seen from a laptop, linked or not.
-  assert.equal(all.push, "manual");
+  assert.equal(pasted["supabase-project"], "done");
+  assert.equal(pasted.tokens, "done");
+  assert.equal(pasted.secrets, "done");
+  assert.equal(pasted.bootstrap, "todo");
+
+  const ran = states("production", {
+    ...fresh,
+    productionSecrets: ["VERCEL_TOKEN", "SUPABASE_ACCESS_TOKEN", "SUPABASE_DB_PASSWORD", "GH_CONTROL_TOKEN", "VERCEL_WEB_PROJECT_ID"],
+  });
+  assert.equal(ran.bootstrap, "done");
+  // A release cannot be judged from the secret names.
+  assert.equal(ran.push, "manual");
 });
 
-test("links that could not be observed count as not done, never as done", () => {
-  const unknown = states("production", {
-    ...fresh,
-    supabaseLinked: null,
-    vercelWebLinked: null,
-    vercelAgentLinked: null,
-  });
-  assert.equal(unknown.bootstrap, "todo");
-  assert.equal(unknown["supabase-project"], "todo");
+test("when GitHub could not be asked, nothing is claimed either way", () => {
+  const unknown = states("production", { ...fresh, productionSecrets: null });
+  assert.equal(unknown.secrets, "manual");
+  assert.equal(unknown.bootstrap, "manual");
+  assert.equal(unknown["supabase-project"], "manual");
 });
 
 test("a laptop on the hosted database: the project exists, and the page says who sees its runs", () => {
@@ -120,16 +119,17 @@ test("deployed: production steps are done by definition and a dead agent goes to
     onVercel: true,
     database: "hosted",
     agent: { reachable: true, model: "anthropic:claude-opus-5-5", version: "abc123" },
-    supabaseLinked: null,
-    vercelWebLinked: null,
-    vercelAgentLinked: null,
+    repo: null,
+    productionSecrets: null,
   };
   assert.deepEqual(states("production", live), {
     "supabase-project": "done",
     tokens: "done",
+    secrets: "done",
     bootstrap: "done",
     push: "done",
     "try-production": "manual",
+    manage: "manual",
     model: "done",
   });
   const broken = buildSteps("production", { ...live, agent: down });

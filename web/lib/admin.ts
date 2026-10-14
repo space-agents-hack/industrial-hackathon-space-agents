@@ -3,11 +3,11 @@
 // `node --test` runs them directly; relative imports carry `.ts` for the same reason.
 
 import { type MemberStatus, type Role, ROLE_LABELS, isMemberStatus, isRole } from "./access.ts";
-import { MIN_PASSWORD_LENGTH } from "./connect-answers.ts";
 import { compactJson } from "./trace.ts";
 import { type Parsed, isUuid } from "./validation.ts";
 
-export { MIN_PASSWORD_LENGTH };
+// The same rule as scripts/create-user.sh enforces for a hosted project (contract.test.ts).
+export const MIN_PASSWORD_LENGTH = 12;
 
 // ---------------------------------------------------------------------------------------------
 // Providers and models

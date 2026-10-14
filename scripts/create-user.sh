@@ -73,8 +73,8 @@ response="$(curl -sS -o "$out" -w '%{http_code}' -X POST "$url/auth/v1/admin/use
 detail="$(cat "$out")"
 rm -f "$out"
 
-# An existing user gets the password given here: running this again (or pressing Connect again on
-# the Setup page) is how a password is changed.
+# An existing user gets the password given here: running this again is how a password is changed
+# from a terminal (Admin, People does it from the app).
 find_user_id() { # email -> id, or nothing
   curl -sS "$url/auth/v1/admin/users?per_page=1000" \
     -H @<(printf 'apikey: %s\nAuthorization: Bearer %s\n' "$key" "$key") \

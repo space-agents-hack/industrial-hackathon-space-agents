@@ -5,35 +5,37 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { LOCAL_DEMO_USER } from "./config.ts";
-import { MIN_PASSWORD_LENGTH, needsProviderKey, parseConnectAnswers } from "./connect-answers.ts";
+import { MIN_PASSWORD_LENGTH } from "./admin.ts";
+import { REQUIRED_SECRETS, needsProviderKey } from "./deployment.ts";
 import { LAST_RELEASE_STEP, RELEASE_JOB } from "./releases.ts";
 
 const script = (name: string) => readFileSync(new URL(`../../scripts/${name}`, import.meta.url), "utf8");
 const bootstrap = script("bootstrap.sh");
 
-test("every answer the form sends is one the bootstrap script asks for", () => {
+const workflow = (name: string) => readFileSync(new URL(`../../.github/workflows/${name}`, import.meta.url), "utf8");
+const bootstrapWorkflow = workflow("bootstrap.yml");
+const deployWorkflow = workflow("deploy.yml");
+
+test("every answer the Bootstrap workflow sends is one the script asks for", () => {
   const asked = new Set(
     [...bootstrap.matchAll(/\b(?:ask(?:_secret)?|given) ([a-z_]+)\b/g)].map((m) => m[1]),
   );
-  const parsed = parseConnectAnswers({
-    project_ref: "abcdefghijklmnopqrst",
-    db_password: "p",
-    supabase_token: "t",
-    vercel_token: "v",
-    agent_model: "anthropic:claude-opus-5-5",
-    provider_key: "k",
-    name: "my-project",
-    agent_domain: "my-project-agent.vercel.app",
-    secret_key: "sb_secret_abc",
-    releases_token: "github_pat_abc",
-    users: [{ email: "a@b.co", password: "twelve chars" }],
-  });
-  assert.ok(parsed.ok);
-  if (!parsed.ok) return;
-  const sent = Object.keys({ ...parsed.value, shared_secret: "s" }).filter((key) => key !== "users");
+  const sent = [...bootstrapWorkflow.matchAll(/^\s+"([a-z_]+)": /gm)].map((m) => m[1]).filter((key) => key !== "users");
+  assert.ok(sent.length >= 8, "could not find the answers in bootstrap.yml");
   for (const key of sent) assert.ok(asked.has(key), `bootstrap.sh never asks for "${key}"`);
   // Users are read as a list, not through ask.
   assert.match(bootstrap, /\.get\("users"\)/);
+});
+
+test("the workflow refuses to start without what Admin › Deployment calls required", () => {
+  const check = /for name in ([A-Z_ ]+); do/.exec(bootstrapWorkflow)?.[1].trim().split(" ") ?? [];
+  assert.deepEqual([...check].sort(), [...REQUIRED_SECRETS].sort());
+});
+
+test("both workflows use the same Supabase CLI", () => {
+  const pinned = /SUPABASE_CLI_VERSION:\s*"([^"]+)"/.exec(deployWorkflow)?.[1];
+  assert.ok(pinned);
+  assert.match(bootstrapWorkflow, new RegExp(`version: "${pinned.replaceAll(".", "\\.")}"`));
 });
 
 test("both sides agree on which models need a provider key", () => {
@@ -53,13 +55,11 @@ test("the minimum password length and the local demo user are the same everywher
 });
 
 test("the setup page reads the Vercel CLI version CI pins", () => {
-  const workflow = readFileSync(new URL("../../.github/workflows/deploy.yml", import.meta.url), "utf8");
-  assert.match(workflow, /VERCEL_CLI_VERSION:\s*"\d+\.\d+\.\d+"/);
+  assert.match(deployWorkflow, /VERCEL_CLI_VERSION:\s*"\d+\.\d+\.\d+"/);
 });
 
 // lib/releases.ts tells "released" from "checks passed, nothing deployed" by these names.
 test("the release view knows the workflow's job and step names", () => {
-  const workflow = readFileSync(new URL("../../.github/workflows/deploy.yml", import.meta.url), "utf8");
   for (const name of [
     RELEASE_JOB,
     LAST_RELEASE_STEP,
@@ -67,6 +67,6 @@ test("the release view knows the workflow's job and step names", () => {
     "Apply migrations",
     "Deploy agent (not yet live)",
   ]) {
-    assert.match(workflow, new RegExp(`name: ${name.replace(/[()]/g, "\\$&")}\n`), `deploy.yml has no "${name}"`);
+    assert.match(deployWorkflow, new RegExp(`name: ${name.replace(/[()]/g, "\\$&")}\n`), `deploy.yml has no "${name}"`);
   }
 });
