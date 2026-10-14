@@ -15,7 +15,7 @@ const PARTS: [string, string][] = [
   ["auth", "Sign-in (Supabase Auth)"],
 ];
 
-// What is live, from this machine: the production address the Bootstrap workflow stored in GitHub
+// What is live, from this machine: the production address setup stored in GitHub
 // and its deep health check. Reads only; see lib/setup-commands.ts.
 export function ProductionStatus() {
   const [status, setStatus] = useState<Status | null>(null);
@@ -51,7 +51,7 @@ export function ProductionStatus() {
         </p>
       ) : null}
       {status && !status.known ? (
-        <p className="text-muted-foreground">No production address yet: the Bootstrap workflow stores it.</p>
+        <p className="text-muted-foreground">No production address yet: setup stores it.</p>
       ) : null}
       {status?.known ? (
         <>

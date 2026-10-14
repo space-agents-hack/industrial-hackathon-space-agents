@@ -6,9 +6,8 @@ import { ControlTokenSteps } from "@/components/admin/control-token-steps";
 import { DeploymentForm } from "@/components/admin/deployment-form";
 import { NoAccess } from "@/components/no-access";
 import { RelativeTime } from "@/components/relative-time";
-import { ReleaseProgress } from "@/components/release-progress";
 import { getCurrentOrg } from "@/lib/current-org";
-import { EDITABLE_SECRETS, REQUIRED_SECRETS } from "@/lib/deployment";
+import { EDITABLE_SECRETS, RELEASE_SECRETS } from "@/lib/deployment";
 import { deploymentState } from "@/lib/github";
 import { createClient } from "@/lib/supabase/server";
 
@@ -25,9 +24,10 @@ export default function DeploymentPage() {
 const LABELS = new Map<string, string>([
   ...EDITABLE_SECRETS.map(({ name, label }) => [name, label] as [string, string]),
   ["AGENT_SHARED_SECRET", "Secret between web and agent"],
-  ["VERCEL_ORG_ID", "Vercel team (set by Bootstrap)"],
-  ["VERCEL_WEB_PROJECT_ID", "Vercel web project (set by Bootstrap)"],
-  ["VERCEL_AGENT_PROJECT_ID", "Vercel agent project (set by Bootstrap)"],
+  ["VERCEL_ORG_ID", "Vercel team (set at setup)"],
+  ["VERCEL_WEB_PROJECT_ID", "Vercel web project (set at setup)"],
+  ["VERCEL_AGENT_PROJECT_ID", "Vercel agent project (set at setup)"],
+  ["SUPABASE_PROJECT_REF", "Supabase project (set at setup)"],
   ["ADMIN_PASSWORD", "First admin's password (deleted after use)"],
 ]);
 
@@ -50,7 +50,7 @@ async function Deployment() {
   }
 
   const stored = new Map(state.secrets.map((s) => [s.name, s.updatedAt]));
-  const missing = REQUIRED_SECRETS.filter((name) => !stored.has(name));
+  const missing = RELEASE_SECRETS.filter((name) => !stored.has(name));
   const supabase = await createClient();
   const { data: changes } = await supabase
     .from("audit_events")
@@ -64,8 +64,8 @@ async function Deployment() {
       <p className="max-w-prose text-muted-foreground">
         The credentials of this deployment live in GitHub
         {state.repo ? ` (${state.repo})` : ""}, in the production environment, where only the
-        workflows can read them. Change one here, then apply: the Bootstrap
-        workflow carries it to Vercel and Supabase and releases. See{" "}
+        workflows can read them. Change one here, then apply: a release copies the values to
+        Vercel and deploys with them. See{" "}
         <Link href="/admin/releases" className="text-primary underline underline-offset-2">
           Releases
         </Link>{" "}
@@ -75,7 +75,7 @@ async function Deployment() {
       <section className="grid gap-2">
         <h2 className="font-medium">What GitHub holds</h2>
         {missing.length ? (
-          <p className="text-danger">Missing, and the Bootstrap workflow needs it: {missing.join(", ")}.</p>
+          <p className="text-danger">Missing, and releases need it: {missing.join(", ")}.</p>
         ) : null}
         <dl className="grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[16rem_1fr]">
           {[...stored.entries()].map(([name, updatedAt]) => (
@@ -109,11 +109,6 @@ async function Deployment() {
       </section>
 
       <section className="grid gap-2">
-        <h2 className="font-medium">Latest Bootstrap run</h2>
-        <ReleaseProgress endpoint="/api/admin/releases?workflow=bootstrap" notConfigured={<ControlTokenSteps />} />
-      </section>
-
-      <section className="grid gap-2">
         <h2 className="font-medium">Recent changes</h2>
         {changes?.length ? (
           <ul className="divide-y rounded-md border bg-card text-sm">
@@ -142,7 +137,7 @@ function describeChange(action: string, detail: unknown): string {
     case "deployment.values_saved":
       return `Saved ${list || "values"} in GitHub`;
     case "deployment.reconfigure_started":
-      return "Ran the Bootstrap workflow";
+      return "Applied the settings and started a release";
     case "deployment.release_started":
       return "Started a release";
     default:

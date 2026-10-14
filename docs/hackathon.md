@@ -35,8 +35,8 @@ pipeline is broken we want to know at 12:15, not at 14:45 on Sunday.
 
 1. `gh repo create <name> --private --template clemenjuan/industrial-agent-template --clone`
 2. `make setup`, then `make dev`: the example run works locally.
-3. Create the Supabase project, put the values in GitHub, run the Bootstrap workflow (the Setup
-   page lists them). Wait for green.
+3. Setup page, "Deploy to production": paste the three tokens, press Create production. Wait for
+   green.
 4. Open the production URL, run the example, approve the step.
 5. Admin › Deployment: set the event's model and its key, apply, run the example again with the
    real model.

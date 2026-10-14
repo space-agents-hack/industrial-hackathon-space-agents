@@ -8,7 +8,7 @@ import { sealForGitHub } from "@/lib/sealed-box";
 import { runCli } from "@/lib/setup-commands";
 
 // The app's one door to GitHub: the workflows' runs (Admin › Releases, the Setup page) and the
-// values the Bootstrap workflow reads (Admin › Deployment). ADR-0005 says why GitHub, and why the
+// values the workflows read (Admin › Deployment). ADR-0005 says why GitHub, and why the
 // Vercel and Supabase tokens are never in the app.
 //
 // Two ways in. GITHUB_CONTROL_TOKEN on the web's Vercel project: a fine-grained token for this
@@ -210,8 +210,8 @@ export async function saveDeployment(change: DeploymentChange): Promise<Saved> {
   const values: [string, string][] = Object.entries(change.secrets) as [SecretName, string][];
   if (change.renewSharedSecret) values.push(["AGENT_SHARED_SECRET", randomBytes(32).toString("hex")]);
 
-  // The Bootstrap workflow signs in to GitHub with GH_CONTROL_TOKEN. A deployment connected
-  // before that existed lacks it; this page's own token is the one to give it.
+  // A release copies GH_CONTROL_TOKEN to the web, and the Bootstrap workflow signs in with it. A
+  // deployment connected before it existed lacks it; this page's own token is the one to give it.
   if (!change.secrets.GH_CONTROL_TOKEN) {
     const state = await deploymentState();
     if (state.ok && !state.secrets.some((s) => s.name === "GH_CONTROL_TOKEN")) {

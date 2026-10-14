@@ -46,7 +46,7 @@ export function DeploymentForm({ currentModel }: { currentModel: string }) {
     setMessage({
       ok: true,
       text: result.body.started
-        ? `${saved} The Bootstrap workflow is starting; it carries the values to Vercel and Supabase, then releases. Follow it below.`
+        ? `${saved} A release is starting; it copies the values to Vercel first. Follow it in Releases.`
         : `${saved} Nothing changes in production until you apply.`,
     });
     router.refresh();
@@ -67,7 +67,7 @@ export function DeploymentForm({ currentModel }: { currentModel: string }) {
             <Label htmlFor={`secret-${name}`}>{label}</Label>
             <Input
               id={`secret-${name}`}
-              type={name === "SUPABASE_PROJECT_REF" ? "text" : "password"}
+              type="password"
               value={secrets[name] ?? ""}
               onChange={(e) => setSecrets((current) => ({ ...current, [name]: e.target.value }))}
               placeholder="unchanged"
@@ -122,7 +122,7 @@ export function DeploymentForm({ currentModel }: { currentModel: string }) {
           Save only
         </Button>
         <span className="text-xs text-muted-foreground">
-          Apply runs the Bootstrap workflow and then a release: a few minutes.
+          Apply copies the values to Vercel and releases: a few minutes.
         </span>
       </div>
 

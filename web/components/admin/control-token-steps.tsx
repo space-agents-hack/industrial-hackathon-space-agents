@@ -25,8 +25,8 @@ export function ControlTokenSteps() {
         </li>
         <li>
           In Vercel, open the web project, Settings, Environment Variables, and add{" "}
-          <code className="font-mono">GITHUB_CONTROL_TOKEN</code> for Production. (A project set up
-          with the Bootstrap workflow already has it.)
+          <code className="font-mono">GITHUB_CONTROL_TOKEN</code> for Production. (Setup gives it to
+          the app when you paste it there.)
         </li>
         <li>Release once (push, or Run workflow on Deploy in GitHub): a new variable reaches only new deployments.</li>
       </ol>

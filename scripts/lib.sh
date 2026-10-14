@@ -39,7 +39,7 @@ vercel_cli() {
   local version scope=()
   version="$(grep -E '^\s*VERCEL_CLI_VERSION:' .github/workflows/deploy.yml | head -1 | cut -d'"' -f2)"
   [[ -z "${VERCEL_SCOPE:-}" ]] || scope=(--scope "$VERCEL_SCOPE")
-  npx --yes "vercel@${version:-latest}" "$@" "${scope[@]}"
+  npx --yes "vercel@${version:-latest}" "$@" ${scope[@]+"${scope[@]}"}
 }
 
 # Set KEY=VALUE in an env file, replacing the line if the key is already there. Other lines (a
