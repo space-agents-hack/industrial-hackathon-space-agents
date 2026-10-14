@@ -14,6 +14,7 @@ type Status = { linked: boolean; web: Endpoint | null; agent: Endpoint | null; r
 // how the latest release went. Reads only; see lib/setup-commands.ts.
 export function ProductionStatus() {
   const [status, setStatus] = useState<Status | null>(null);
+  const [failed, setFailed] = useState<number | null>(null);
   const [checking, setChecking] = useState(true);
 
   async function check() {
@@ -21,8 +22,10 @@ export function ProductionStatus() {
     try {
       const response = await fetch("/api/setup/production", { cache: "no-store" });
       setStatus(response.ok ? await response.json() : null);
+      setFailed(response.ok ? null : response.status);
     } catch {
       setStatus(null);
+      setFailed(0);
     }
     setChecking(false);
   }
@@ -40,7 +43,14 @@ export function ProductionStatus() {
   return (
     <div className="grid gap-2">
       {checking && !status ? <p className="text-muted-foreground">Asking Vercel and GitHub…</p> : null}
-      {!checking && !status ? <p className="text-red-700">Could not check production.</p> : null}
+      {!checking && !status ? (
+        <p className="text-red-700">
+          Could not check production
+          {failed ? ` (the local server answered ${failed})` : ""}. After pulling new code the
+          local server sometimes keeps an old copy: stop <code className="font-mono">make dev</code>{" "}
+          (Ctrl-C), start it again and reload.
+        </p>
+      ) : null}
       {status && !status.linked ? (
         <p className="text-muted-foreground">Not connected yet: the Vercel projects are not linked.</p>
       ) : null}
