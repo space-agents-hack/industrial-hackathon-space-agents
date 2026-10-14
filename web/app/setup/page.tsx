@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { AppHeader } from "@/components/app-header";
 import { ConnectForm } from "@/components/connect-form";
 import { ProductionStatus } from "@/components/production-status";
 import { ReleaseButton } from "@/components/release-button";
@@ -19,6 +20,7 @@ import {
 } from "@/lib/setup";
 import { setupCommandsAvailable } from "@/lib/local-request";
 import { gatherSetupFacts } from "@/lib/setup-facts";
+import { createClient, getSessionUser } from "@/lib/supabase/server";
 import type { Tone } from "@/lib/trace";
 import { cn } from "@/lib/utils";
 
@@ -30,20 +32,11 @@ export const metadata: Metadata = { title: "Setup" };
 export default function SetupPage(props: PageProps<"/setup">) {
   return (
     <>
-      <header className="border-b bg-card">
-        <div className="mx-auto flex h-11 w-full max-w-5xl items-center gap-3 px-4">
-          <span className="font-semibold tracking-tight">{APP_NAME}</span>
-          <h1 className="text-xs text-muted-foreground">Setup</h1>
-          {/* /login, not /: signed out, / comes straight back here. Signed in, /login goes on to
-              the app. */}
-          <Link
-            href="/login"
-            className="ml-auto inline-flex h-8 items-center rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            Sign in
-          </Link>
-        </div>
-      </header>
+      {/* Signed in, the page gets the app's own header (Runs, Admin, sign out). Signed out, or on
+          a clone with nothing configured, only a way to sign in. */}
+      <Suspense fallback={<SignedOutHeader />}>
+        <Header />
+      </Suspense>
       <main className="mx-auto grid w-full max-w-3xl flex-1 content-start gap-4 px-4 py-5">
         <Suspense fallback={<p className="text-muted-foreground">Checking…</p>}>
           <Guide searchParams={props.searchParams} />
@@ -55,6 +48,33 @@ export default function SetupPage(props: PageProps<"/setup">) {
         </p>
       </main>
     </>
+  );
+}
+
+async function Header() {
+  // Without the Supabase variables there is no session to look for, and asking would throw.
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) {
+    return <SignedOutHeader />;
+  }
+  const user = await getSessionUser(await createClient()).catch(() => null);
+  return user ? <AppHeader /> : <SignedOutHeader />;
+}
+
+function SignedOutHeader() {
+  return (
+    <header className="border-b bg-card">
+      <div className="mx-auto flex h-11 w-full max-w-5xl items-center gap-3 px-4">
+        <span className="font-semibold tracking-tight">{APP_NAME}</span>
+        <h1 className="text-xs text-muted-foreground">Setup</h1>
+        {/* /login, not /: signed out, / comes straight back here. */}
+        <Link
+          href="/login"
+          className="ml-auto inline-flex h-8 items-center rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          Sign in
+        </Link>
+      </div>
+    </header>
   );
 }
 
@@ -217,16 +237,17 @@ function Instructions({
         </>
       );
     case "try-local":
+      // /login works in both states: signed out it asks, signed in it goes straight to Runs.
       return (
         <p>
-          <Link href="/login" className="text-primary underline underline-offset-2">Sign in</Link>
+          <Link href="/login" className="text-primary underline underline-offset-2">Open the app</Link>
           {database === "hosted" ? (
-            " with your own account"
+            " (sign in with your own account if asked)"
           ) : (
             <>
               {" "}
-              as <Cmd>{LOCAL_DEMO_USER.email}</Cmd> with password{" "}
-              <Cmd>{LOCAL_DEMO_USER.password}</Cmd>
+              (if asked, sign in as <Cmd>{LOCAL_DEMO_USER.email}</Cmd> with password{" "}
+              <Cmd>{LOCAL_DEMO_USER.password}</Cmd>)
             </>
           )}
           . Start the first example run and approve the step.
