@@ -9,12 +9,18 @@ off in both Vercel projects, so the only path is `.github/workflows/deploy.yml`.
 2. If all three are green, **release**, one at a time:
    1. Skip if `main` has already moved past this commit.
    2. Apply new migrations to the hosted database.
-   3. Deploy the agent **without** the production domain, then smoke-test it.
-   4. Build and deploy the web **without** the production domain, then smoke-test it.
-   5. Promote the agent, then the web.
+   3. Deploy the agent **without** the production domain, smoke-test it, promote it.
+   4. Build and deploy the web **without** the production domain, then smoke-test it, including
+      `/api/health/deep`, which checks the web reaches the agent with the shared secret and the
+      agent reaches the database.
+   5. Promote the web.
 
-A failure at any step stops there. Production keeps serving the previous version, with one
-exception: migrations that were already applied stay applied (see "Migrations").
+A scheduled workflow (`watchdog.yml`) runs the same deep check against production every 30
+minutes and keeps a GitHub issue open while it fails.
+
+A failure at any step stops there. Production keeps serving the previous version, with two
+exceptions: migrations already applied stay applied, and if the web's smoke test fails the agent
+has already been promoted. Both must therefore work with the web that is live.
 
 ## One-time setup
 

@@ -10,6 +10,7 @@ const full: SavedSetup = {
   vercel_token: "vercel_token_value",
   agent_model: "anthropic:claude-opus-5-5",
   provider_key: "sk-ant-123",
+  shared_secret: "0123abcd",
   users: [
     { email: "ana@example.com", password: "a password with spaces" },
     { email: "ramon@example.com", password: "tab\tand=equals" },

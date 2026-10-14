@@ -41,10 +41,14 @@ class RunStore(Protocol):
         run_id: UUID,
         status: RunStatus,
         *,
+        only_if: RunStatus,
         output: str | None = None,
         error: str | None = None,
         usage: dict[str, Any] | None = None,
-    ) -> None: ...
+    ) -> bool:
+        """Change the status only while it is still `only_if`. False if it had moved on, for
+        example a run marked failed as stale while its old request was still finishing."""
+        ...
 
     async def aclose(self) -> None: ...
 
@@ -140,14 +144,22 @@ class SupabaseRunStore:
         run_id: UUID,
         status: RunStatus,
         *,
+        only_if: RunStatus,
         output: str | None = None,
         error: str | None = None,
         usage: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> bool:
         changes: dict[str, Any] = {"status": status, "output": output, "error": error}
         if usage is not None:
             changes["usage"] = usage
-        await self._db.table("runs").update(changes).eq("id", str(run_id)).execute()
+        res = (
+            await self._db.table("runs")
+            .update(changes)
+            .eq("id", str(run_id))
+            .eq("status", only_if)
+            .execute()
+        )
+        return len(res.data) == 1
 
     async def aclose(self) -> None:
         await self._db.postgrest.aclose()

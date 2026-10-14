@@ -3,6 +3,8 @@ import "server-only";
 import { after } from "next/server";
 
 // `status` is the agent's HTTP status, or null when no response arrived at all.
+const AGENT_ANSWER_TIMEOUT_MS = 30_000;
+
 export class AgentError extends Error {
   readonly status: number | null;
 
@@ -28,15 +30,23 @@ export async function advanceRun(runId: string): Promise<void> {
   if (!baseUrl || !secret) throw new AgentConfigError();
 
   const url = `${baseUrl.replace(/\/+$/, "")}/runs/${encodeURIComponent(runId)}/advance`;
+  // A bound on the wait for the agent's first line only. Once it has answered, the run may last
+  // as long as the function does; before that, a hung agent would keep the person's click
+  // spinning for minutes with no message.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AGENT_ANSWER_TIMEOUT_MS);
   let response: Response;
   try {
     response = await fetch(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${secret}` },
       cache: "no-store",
+      signal: controller.signal,
     });
   } catch (cause) {
     throw new AgentError("The agent could not be reached.", null, { cause });
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!response.ok) {

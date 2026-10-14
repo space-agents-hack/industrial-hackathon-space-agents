@@ -13,6 +13,7 @@ an already-approved write a second time, and only the domain knows whether that 
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 from collections.abc import AsyncIterable
@@ -21,6 +22,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from pydantic import ValidationError
 from pydantic_ai import (
     AgentStreamEvent,
     Conversation,
@@ -86,7 +88,18 @@ async def prepare(store: RunStore, settings: Settings, run_id: UUID) -> Plan:
         saved = await store.load_conversation(run_id)
         if saved is None:
             raise CannotAdvance("The run is paused but has no saved conversation to resume from.")
-        conversation = ConversationTypeAdapter.validate_python(saved)
+        try:
+            conversation = ConversationTypeAdapter.validate_python(saved)
+        except ValidationError:
+            # The library releases about weekly. A run paused under an older version whose saved
+            # shape no longer reads would otherwise fail every retry with a 500 and never leave
+            # "awaiting approval".
+            message = (
+                "The saved conversation was written by an incompatible version of the agent. "
+                "Start a new run."
+            )
+            await _fail(store, run_id, message, expected="awaiting_approval")
+            raise CannotAdvance(message) from None
         if not await store.claim(run_id, "awaiting_approval", settings.agent_model):
             raise CannotAdvance("Another request resumed this run first.")
         return Plan(run, conversation, approvals)
@@ -99,13 +112,34 @@ async def prepare(store: RunStore, settings: Settings, run_id: UUID) -> Plan:
             f"The agent stopped without finishing (no heartbeat for {idle:.0f} s). "
             "Nothing was re-run. Start a new run."
         )
-        await _fail(store, run_id, message)
+        await _fail(store, run_id, message, expected="running")
         raise CannotAdvance(message)
 
     raise CannotAdvance(f"The run is already {run.status}.")
 
 
 async def execute(store: RunStore, settings: Settings, plan: Plan) -> RunStatus:
+    run_id = plan.run.id
+    # The heartbeat belongs to the run, not to the HTTP response: if the caller hangs up, the run
+    # keeps working and must keep saying so, or a Retry would declare it dead while it writes.
+    heartbeat = asyncio.create_task(_heartbeat(store, run_id, settings.heartbeat_s))
+    try:
+        return await _execute(store, settings, plan)
+    finally:
+        heartbeat.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat
+
+
+async def _heartbeat(store: RunStore, run_id: UUID, every_s: float) -> None:
+    while True:
+        await asyncio.sleep(every_s)
+        # A missed beat is not a reason to stop the run.
+        with contextlib.suppress(Exception):
+            await store.touch(run_id)
+
+
+async def _execute(store: RunStore, settings: Settings, plan: Plan) -> RunStatus:
     run_id = plan.run.id
     try:
         await store.add_event(run_id, "status", {"status": "running"})
@@ -246,18 +280,22 @@ async def _finish(
     output: str | None = None,
     usage: dict[str, Any] | None = None,
 ) -> RunStatus:
-    await store.set_status(run_id, status, output=output, usage=usage)
+    if not await store.set_status(run_id, status, only_if="running", output=output, usage=usage):
+        log.warning("run %s was no longer running; not overwriting it with %s", run_id, status)
+        return "failed"
     await store.add_event(run_id, "status", {"status": status})
     return status
 
 
-async def _fail(store: RunStore, run_id: UUID, message: str) -> RunStatus:
+async def _fail(
+    store: RunStore, run_id: UUID, message: str, *, expected: RunStatus = "running"
+) -> RunStatus:
     # If recording the failure fails too (database unreachable), there is nowhere left to write
     # it; the log line is the last trace.
     try:
-        await store.set_status(run_id, "failed", error=message)
-        await store.add_event(run_id, "error", {"message": message})
-        await store.add_event(run_id, "status", {"status": "failed"})
+        if await store.set_status(run_id, "failed", only_if=expected, error=message):
+            await store.add_event(run_id, "error", {"message": message})
+            await store.add_event(run_id, "status", {"status": "failed"})
     except Exception:
         log.exception("could not record failure of run %s: %s", run_id, message)
     return "failed"

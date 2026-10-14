@@ -6,13 +6,12 @@ agent works. Nothing the UI needs travels in the body; it reads the database.
 """
 
 import asyncio
-import contextlib
 import hmac
 import json
 import os
 from collections.abc import AsyncIterator
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse
@@ -52,6 +51,23 @@ def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, st
     }
 
 
+# /health says the function starts. /ready says it can do its job: the caller holds the shared
+# secret (so the web's AGENT_SHARED_SECRET matches) and the database answers with this service's
+# key. Smoke tests and the watchdog call it through the web, so one request checks the whole chain.
+@app.get("/ready", dependencies=[Depends(require_secret)])
+async def ready(
+    settings: Annotated[Settings, Depends(get_settings)],
+    store: Annotated[RunStore, Depends(get_store)],
+) -> dict[str, str]:
+    try:
+        await store.get_run(uuid4())
+    except Exception as exc:
+        raise HTTPException(503, f"The database did not answer: {type(exc).__name__}.") from None
+    finally:
+        await store.aclose()
+    return {"status": "ok", "database": "ok", "model": settings.agent_model}
+
+
 # The secret is checked before the store is built, so an unauthenticated caller learns nothing
 # about whether the database is configured.
 @app.post("/runs/{run_id}/advance", dependencies=[Depends(require_secret)])
@@ -77,9 +93,7 @@ async def advance(
                 done, _ = await asyncio.wait({task}, timeout=settings.heartbeat_s)
                 if done:
                     break
-                # A missed heartbeat must not end the response: the run itself is still fine.
-                with contextlib.suppress(Exception):
-                    await store.touch(run_id)
+                # Keeps idle connections open; the run's own heartbeat is in runner.execute.
                 yield _line(event="heartbeat")
             yield _line(event="done", status=task.result())
         finally:

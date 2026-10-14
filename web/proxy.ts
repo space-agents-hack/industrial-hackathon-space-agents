@@ -20,9 +20,9 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Everything except Next.js build output, files with a static extension and the health check.
-  // /api/health is left out here, not just allowed inside updateSession, so the deploy smoke test
+  // /api/health and /api/health/deep are left out here, not just allowed inside updateSession, so the deploy smoke test
   // still answers when the Supabase variables are missing or Auth is down.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/health$|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/health(?:/deep)?$|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt)$).*)",
   ],
 };

@@ -8,6 +8,8 @@ export type SavedSetup = {
   vercel_token: string;
   agent_model: string;
   provider_key: string;
+  // The secret between web and agent, kept so that connecting again does not change it.
+  shared_secret: string;
   users: { email: string; password: string }[];
 };
 
@@ -18,6 +20,7 @@ export const EMPTY_SETUP: SavedSetup = {
   vercel_token: "",
   agent_model: "scripted",
   provider_key: "",
+  shared_secret: "",
   users: [],
 };
 
@@ -28,6 +31,7 @@ const FIELDS: [keyof Omit<SavedSetup, "users">, string][] = [
   ["vercel_token", "VERCEL_TOKEN"],
   ["agent_model", "AGENT_MODEL"],
   ["provider_key", "PROVIDER_API_KEY"],
+  ["shared_secret", "AGENT_SHARED_SECRET"],
 ];
 
 // Quoted only when needed, so the file stays readable; JSON quoting when it is, so any password

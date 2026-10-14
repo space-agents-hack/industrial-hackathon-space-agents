@@ -85,15 +85,19 @@ class InMemoryRunStore:
         run_id: UUID,
         status: RunStatus,
         *,
+        only_if: RunStatus,
         output: str | None = None,
         error: str | None = None,
         usage: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> bool:
+        if self.runs[run_id].status != only_if:
+            return False
         self._update(run_id, status)
         self.outputs[run_id] = output
         self.errors[run_id] = error
         if usage is not None:
             self.usage[run_id] = usage
+        return True
 
     async def aclose(self) -> None:
         self.closed = True

@@ -37,6 +37,9 @@ value = json.load(sys.stdin).get(sys.argv[1])
 print("" if value is None else value, end="")
 ' "$1"
 }
+given() { # key -> its value from the Setup page's answers; nothing in the terminal
+  [[ -z "$answers" ]] || from_json "$1"
+}
 ask() { # key, prompt, default -> answer on stdout
   local answer
   if [[ -n "$answers" ]]; then
@@ -63,7 +66,7 @@ json_field() { # file, field
 
 say "Checking that the three CLIs are signed in"
 gh auth status >/dev/null 2>&1 || { echo "Run: gh auth login" >&2; exit 1; }
-vercel whoami >/dev/null 2>&1 || { echo "Run: vercel login" >&2; exit 1; }
+vercel_cli whoami >/dev/null 2>&1 || { echo "Run: vercel login" >&2; exit 1; }
 supabase projects list >/dev/null 2>&1 || { echo "Run: supabase login" >&2; exit 1; }
 repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)" || {
   echo "This folder has no GitHub repository yet. Create it first (README.md)." >&2
@@ -75,8 +78,8 @@ name="$(ask name "Name for the Vercel projects (gets -web and -agent added)" "$(
 
 say "Vercel: creating and linking the two projects"
 for unit in web agent; do
-  vercel project add "$name-$unit" >/dev/null 2>&1 || echo "$name-$unit already exists; using it."
-  vercel link --cwd "$unit" --yes --project "$name-$unit" >/dev/null
+  vercel_cli project add "$name-$unit" >/dev/null 2>&1 || echo "$name-$unit already exists; using it."
+  vercel_cli link --cwd "$unit" --yes --project "$name-$unit" >/dev/null
 done
 org_id="$(json_field web/.vercel/project.json orgId)"
 web_id="$(json_field web/.vercel/project.json projectId)"
@@ -112,8 +115,21 @@ db_password="$(ask_secret db_password "Database password")"
 supabase_token="$(ask_secret supabase_token "Supabase access token")"
 
 # The API keys are read straight from the project, so they are never typed or shown.
-publishable_key="$(find_supabase_key "$project_ref" sb_publishable_)"
-secret_key="$(find_supabase_key "$project_ref" sb_secret_)"
+publishable_key="$(find_supabase_keys "$project_ref" sb_publishable_ | head -1)"
+secret_keys="$(find_supabase_keys "$project_ref" sb_secret_)"
+secret_key="$(given secret_key)"
+if [[ -n "$secret_key" ]]; then
+  # Given explicitly: it must be one of this project's keys.
+  printf '%s\n' "$secret_keys" | grep -qxF "$secret_key" \
+    || { echo "That secret key does not belong to project $project_ref." >&2; exit 1; }
+elif [[ "$(printf '%s\n' "$secret_keys" | grep -c .)" -gt 1 ]]; then
+  # During a rotation the old and the new key both exist, and their order is not defined.
+  echo "Project $project_ref has several secret keys. Give the one to use (Advanced, in the form)," >&2
+  echo "or delete the old one in Supabase, Project Settings, API Keys." >&2
+  exit 1
+else
+  secret_key="$secret_keys"
+fi
 if [[ -n "$publishable_key" && -n "$secret_key" ]]; then
   echo "Read the publishable and secret keys from the project."
 elif [[ -n "$answers" ]]; then
@@ -122,12 +138,12 @@ elif [[ -n "$answers" ]]; then
 else
   echo "Could not read the keys automatically. Copy them from Settings, API Keys."
   publishable_key="$(ask publishable_key "Publishable key (sb_publishable_...)" "")"
-  secret_key="$(ask_secret secret_key "Secret key (sb_secret_...)")"
+  secret_key="$(ask_secret secret_key_typed "Secret key (sb_secret_...)")"
 fi
 supabase_url="https://$project_ref.supabase.co"
 
 SUPABASE_DB_PASSWORD="$db_password" supabase link --project-ref "$project_ref"
-if [[ "$(ask apply_migrations "Apply the migrations to $project_ref now? This cannot be undone (y/n)" "n")" == "y" ]]; then
+if [[ "$(ask apply_migrations "Apply the migrations to $project_ref now? This cannot be undone (y/n)" "y")" == "y" ]]; then
   SUPABASE_DB_PASSWORD="$db_password" supabase db push --yes
   echo "Migrations applied."
 fi
@@ -151,11 +167,17 @@ esac
 [[ -z "$provider_key_name" ]] || provider_key="$(ask_secret provider_key "$provider_key_name")"
 echo "Model: $agent_model"
 
-shared_secret="$(openssl rand -hex 32)"
+# Kept between runs (the Setup page passes the saved one): a new secret on every run would make
+# the old web and the new agent disagree between their promotions.
+shared_secret="$(given shared_secret)"
+if [[ -z "$shared_secret" && -f .env.setup.local ]]; then
+  shared_secret="$(grep -E '^AGENT_SHARED_SECRET=' .env.setup.local | head -1 | cut -d= -f2- || true)"
+fi
+[[ -n "$shared_secret" ]] || shared_secret="$(openssl rand -hex 32)"
 
 say "Vercel: setting production environment variables"
 set_env() { # unit, name, value
-  printf '%s' "$3" | vercel env add "$2" production --cwd "$1" --force --yes >/dev/null
+  printf '%s' "$3" | vercel_cli env add "$2" production --cwd "$1" --force --yes >/dev/null
   echo "  $1: $2"
 }
 set_env web NEXT_PUBLIC_SUPABASE_URL "$supabase_url"
@@ -169,7 +191,13 @@ set_env agent AGENT_MODEL "$agent_model"
 [[ -z "$provider_key_name" ]] || set_env agent "$provider_key_name" "$provider_key"
 
 say "GitHub: setting secrets and variables for the workflow"
-gh api -X PUT "repos/$repo/environments/production" >/dev/null
+# Only main may deploy: the environment holds account-wide tokens, and without a branch rule any
+# branch's workflow could ask for them.
+gh api -X PUT "repos/$repo/environments/production" --input - >/dev/null <<'JSON'
+{"deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
+JSON
+gh api -X POST "repos/$repo/environments/production/deployment-branch-policies" \
+  -f name=main -f type=branch >/dev/null 2>&1 || true
 set_secret() { # name, value
   printf '%s' "$2" | gh secret set "$1" --repo "$repo" --env production
   echo "  secret $1"
@@ -185,15 +213,17 @@ set_secret SUPABASE_DB_PASSWORD "$db_password"
 # whoever is running this script.
 gh variable set VERCEL_AUTHOR_NAME --repo "$repo" --body "$(git config user.name)"
 gh variable set VERCEL_AUTHOR_EMAIL --repo "$repo" --body "$(git config user.email)"
-echo "  variables VERCEL_AUTHOR_NAME, VERCEL_AUTHOR_EMAIL"
+gh variable set PRODUCTION_URL --repo "$repo" --body "https://${web_domain:-$name-web.vercel.app}"
+echo "  variables VERCEL_AUTHOR_NAME, VERCEL_AUTHOR_EMAIL, PRODUCTION_URL"
 
-say "Supabase: closing sign-ups"
+say "Supabase: closing sign-ups, setting the site address"
 # Every signed-in user can see every run and spend model credits, so an open sign-up page is an
-# open door. Best effort: if the API refuses, the message says where to do it by hand.
+# open door. The site address is where Auth sends people back to. Best effort: if the API refuses,
+# the message says where to do it by hand.
 if curl -fsS -o /dev/null -X PATCH "https://api.supabase.com/v1/projects/$project_ref/config/auth" \
   -H @<(printf 'Authorization: Bearer %s' "$supabase_token") -H "content-type: application/json" \
-  -d '{"disable_signup": true}'; then
-  echo "New sign-ups are off."
+  --data-binary @<(printf '{"disable_signup": true, "site_url": "https://%s"}' "${web_domain:-$name-web.vercel.app}"); then
+  echo "New sign-ups are off; the site address is set."
 else
   echo "Could NOT turn sign-ups off automatically. Do it in the dashboard:"
   echo "  Authentication, Sign In / Providers, 'Allow new users to sign up'."

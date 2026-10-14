@@ -71,3 +71,22 @@ def test_advance_of_a_run_waiting_for_a_person_is_409(
 
     assert response.status_code == 409
     assert "pending" in response.json()["detail"]
+
+
+def test_ready_needs_the_secret_and_reaches_the_store(client: TestClient) -> None:
+    assert client.get("/ready").status_code == 401
+    response = client.get("/ready", headers=AUTH)
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "database": "ok", "model": "scripted"}
+
+
+def test_ready_reports_a_database_that_does_not_answer(
+    client: TestClient, store: InMemoryRunStore
+) -> None:
+    async def broken(_run_id):
+        raise ConnectionError("down")
+
+    store.get_run = broken  # type: ignore[method-assign]
+    response = client.get("/ready", headers=AUTH)
+    assert response.status_code == 503
+    assert "ConnectionError" in response.json()["detail"]

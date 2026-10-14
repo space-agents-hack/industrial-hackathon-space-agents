@@ -5,7 +5,8 @@ evaluated.** A unit test that asserts on a real model's wording fails at random 
 everyone to ignore red. So the numbers and the rules live in plain Python and SQL where they can be
 tested exactly, and the model's behaviour is measured separately, on purpose, when it changes.
 
-`make check` runs everything in this table except a real-model eval. CI runs the same.
+`make check` runs everything in this table except a real-model eval and the smoke tests, which
+run only in a release. CI runs the same.
 
 ## What exists
 
@@ -16,9 +17,11 @@ tested exactly, and the model's behaviour is measured separately, on purpose, wh
 | HTTP | `agent/tests/test_api.py` | An endpoint that is open when the secret is unset; wrong status codes |
 | Contract | `agent/tests/test_store_integration.py` | A migration the agent can no longer read or write through |
 | Access rules | `supabase/tests/*.sql` (pgTAP) | A browser that can edit a run, read the saved conversation, or change a decision |
-| Web helpers | `web/lib/*.test.ts` | Events paired or summarised wrongly in the trace |
+| Web helpers | `web/lib/*.test.ts` | Events paired wrongly in the trace; the setup guard letting another site or machine in; form values the bootstrap script does not read (`contract.test.ts`) |
+| Repository | `scripts/check-migrations.sh`, shellcheck, actionlint | An edited or out-of-order migration; a shell or workflow mistake |
 | Evals | `agent/evals/` | A model that skips a check or does not ask before the risky step |
-| Smoke | `.github/workflows/deploy.yml` | A build that compiles but does not start; a site that is public when signed out |
+| Smoke | `.github/workflows/deploy.yml` | A build that compiles but does not start; a site that is public when signed out; a web that cannot reach the agent or a secret that differs (`/api/health/deep`) |
+| Watchdog | `.github/workflows/watchdog.yml` | Production breaking between releases (an expired key, a paused database) |
 
 The loop tests use the **scripted model** (`agent/agent_service/domain/scripted.py`): a fixed
 policy that reads real tool results and decides from them. It makes the pause-and-resume path run

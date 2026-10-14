@@ -27,8 +27,13 @@ MSG
   exit 1
 fi
 
-publishable_key="$(find_supabase_key "$ref" sb_publishable_)"
-secret_key="$(find_supabase_key "$ref" sb_secret_)"
+publishable_key="$(find_supabase_keys "$ref" sb_publishable_ | head -1)"
+secret_keys="$(find_supabase_keys "$ref" sb_secret_)"
+if [[ "$(printf '%s\n' "$secret_keys" | grep -c .)" -gt 1 ]]; then
+  echo "Project $ref has several secret keys. Set SUPABASE_SECRET_KEY in agent/.env by hand." >&2
+  exit 1
+fi
+secret_key="$secret_keys"
 if [[ -z "$publishable_key" || -z "$secret_key" ]]; then
   cat >&2 <<MSG
 Could not read the API keys of project $ref.
@@ -60,8 +65,12 @@ set_env_line web/.env.local NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY "$publishable_k
 set_env_line web/.env.local AGENT_URL "http://127.0.0.1:8000"
 set_env_line web/.env.local AGENT_SHARED_SECRET "$secret"
 
+# agent/.env now holds the hosted secret key, which bypasses row-level security.
+chmod 600 agent/.env web/.env.local
+
 cat <<MSG
-agent/.env and web/.env.local now point at the hosted project $ref.
+agent/.env and web/.env.local now point at the hosted project $ref. agent/.env holds its secret
+key, which bypasses row-level security: it is readable by your user only.
 Sign in with your own account (the owner creates it with scripts/create-user.sh).
 Runs you start locally are visible to everyone who can sign in.
 MSG

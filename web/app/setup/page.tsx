@@ -386,7 +386,9 @@ function Rotation() {
           reads the keys itself; delete the old key after the release.
         </li>
         <li>A person&apos;s password: type the new one next to their email.</li>
-        <li>The secret between the web and the agent is renewed on every Connect.</li>
+        <li>
+          The secret between the web and the agent is kept between runs; tick Renew to replace it.
+        </li>
       </ul>
     </div>
   );

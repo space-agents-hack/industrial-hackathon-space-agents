@@ -6,6 +6,8 @@ export type ConnectUser = { email: string; password: string };
 export type ConnectAnswers = {
   name?: string;
   agent_domain?: string;
+  // Only needed while a project has more than one secret key (during a rotation).
+  secret_key?: string;
   vercel_token: string;
   project_ref: string;
   db_password: string;
@@ -14,6 +16,8 @@ export type ConnectAnswers = {
   agent_model: string;
   provider_key?: string;
   users: ConnectUser[];
+  // Set by the server, never by the form: see app/api/setup/connect/route.ts.
+  shared_secret?: string;
 };
 
 export type Parsed = { ok: true; value: ConnectAnswers } | { ok: false; error: string };
@@ -61,6 +65,11 @@ export function parseConnectAnswers(input: unknown): Parsed {
     return { ok: false, error: "The agent domain looks wrong; leave it empty to use the one Vercel assigns." };
   }
 
+  const secret_key = text(body, "secret_key");
+  if (secret_key && !secret_key.startsWith("sb_secret_")) {
+    return { ok: false, error: "A Supabase secret key starts with sb_secret_." };
+  }
+
   const agent_model = text(body, "agent_model") || "scripted";
   const provider_key = text(body, "provider_key");
   if (needsProviderKey(agent_model) && !provider_key) {
@@ -92,6 +101,7 @@ export function parseConnectAnswers(input: unknown): Parsed {
     value: {
       ...(name ? { name } : {}),
       ...(agent_domain ? { agent_domain } : {}),
+      ...(secret_key ? { secret_key } : {}),
       vercel_token: text(body, "vercel_token"),
       project_ref,
       db_password: typeof body.db_password === "string" ? body.db_password : "",

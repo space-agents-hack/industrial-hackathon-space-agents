@@ -48,3 +48,5 @@ AGENT_SHARED_SECRET=$secret
 ENV
   echo "Wrote web/.env.local"
 fi
+
+chmod 600 agent/.env web/.env.local

@@ -14,7 +14,8 @@ dependencies = [
 [tool.uv]
 # An application, not a library: nothing is built or published, `main.py` is the entrypoint.
 package = false
-required-version = ">=0.9.7"
+# The version CI uses (deploy.yml, UV_VERSION). Older ones can rewrite uv.lock differently.
+required-version = ">=0.13"
 
 [dependency-groups]
 # One group on purpose. In a local `vercel build` (CLI 63.1.2) the builder left `dev` out of the

@@ -17,7 +17,17 @@ need uv "curl -LsSf https://astral.sh/uv/install.sh | sh"
 need node "https://nodejs.org (version 24 or newer)"
 need npm "comes with Node.js"
 need supabase "brew install supabase/tap/supabase"
+need python3 "comes with macOS and most Linux; https://www.python.org"
+need openssl "comes with macOS and most Linux"
 [[ "$db" == "hosted" ]] || need docker "https://docs.docker.com/get-docker/ (or use: make setup DB=hosted)"
+
+if command -v uv >/dev/null 2>&1; then
+  uv_version="$(uv --version | awk '{print $2}')"
+  if [[ "$(printf '%s\n0.13.0\n' "$uv_version" | sort -V | head -1)" != "0.13.0" ]]; then
+    echo "uv $uv_version found; 0.13 or newer is required. Run: uv self update"
+    missing=1
+  fi
+fi
 
 if command -v node >/dev/null 2>&1; then
   major="$(node -p 'process.versions.node.split(".")[0]')"

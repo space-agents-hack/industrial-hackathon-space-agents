@@ -20,6 +20,7 @@ export function guard(request: Request): Response | null {
     host: request.headers.get("host"),
     origin: request.headers.get("origin"),
     contentType: request.headers.get("content-type"),
+    fetchSite: request.headers.get("sec-fetch-site"),
   };
   const status = refuseUnlessLocal(facts);
   return status === null ? null : new Response(null, { status });
@@ -68,18 +69,24 @@ export async function cliStatus(): Promise<CliStatus> {
   };
 }
 
-// One at a time: two runs would race on the same Vercel projects and GitHub secrets.
+// One at a time: two runs would race on the same Vercel projects and GitHub secrets. Claimed in
+// one synchronous step, before any await, so two quick submits cannot both get it.
 let bootstrapRunning = false;
 
-export function isBootstrapRunning(): boolean {
-  return bootstrapRunning;
+export function claimBootstrap(): boolean {
+  if (bootstrapRunning) return false;
+  bootstrapRunning = true;
+  return true;
+}
+
+export function releaseBootstrap(): void {
+  bootstrapRunning = false;
 }
 
 // The bootstrap script with the answers on stdin, its output streamed back line by line. The last
 // line is `exit <code>`, which the form reads to know how it ended.
 export function runBootstrap(answers: ConnectAnswers, signal: AbortSignal): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
-  bootstrapRunning = true;
   const child = spawn("bash", ["scripts/bootstrap.sh", "--from-json"], {
     cwd: repoRoot(),
     env: childEnv() as NodeJS.ProcessEnv,
@@ -156,9 +163,13 @@ export async function forgetSaved(): Promise<void> {
 // Production as seen from this machine: the two production addresses (asked of Vercel through
 // its CLI, signed in as you), whether each answers, and the latest run of the Deploy workflow.
 
-// The same version as VERCEL_CLI_VERSION in .github/workflows/deploy.yml; change both together.
-// Run through npx because `vercel api` needs a newer CLI than many machines have installed.
-const VERCEL_CLI = "vercel@63.1.2";
+// The Vercel CLI version CI uses, read from the workflow so there is one place to change it. Run
+// through npx because `vercel api` needs a newer CLI than many machines have installed.
+async function vercelCli(): Promise<string> {
+  const workflow = await readFile(path.join(repoRoot(), ".github", "workflows", "deploy.yml"), "utf8");
+  const version = /VERCEL_CLI_VERSION:\s*"([^"]+)"/.exec(workflow)?.[1];
+  return version ? `vercel@${version}` : "vercel@latest";
+}
 
 export type Endpoint = { url: string | null; healthy: boolean; detail: string; model?: string };
 export type ReleaseRun = {
@@ -190,7 +201,7 @@ async function productionDomain(link: { orgId: string; projectId: string }): Pro
   const team = link.orgId.startsWith("team_") ? `?teamId=${link.orgId}` : "";
   const result = await run(
     "npx",
-    ["--yes", VERCEL_CLI, "api", `/v9/projects/${link.projectId}/domains${team}`],
+    ["--yes", await vercelCli(), "api", `/v9/projects/${link.projectId}/domains${team}`],
     90_000,
   );
   if (!result.ok) return null;
