@@ -17,6 +17,7 @@ Open work on the template itself. Product work in a project made from this templ
 - [ ] A run cannot be cancelled from the web.
 - [ ] Per-person API keys (today keys belong to the organisation).
 - [ ] Purge hosted data after an event (`scripts/purge-challenge-data.sh --hosted`).
+- [ ] One real OpenRouter one-click connection, end to end (tested only up to the redirect).
 - [ ] No follow-up message on a finished run (the saved conversation would allow it).
 
 ## Port back to the template
