@@ -61,8 +61,12 @@ jobs:
         run: |
           gh label create watchdog --color B60205 --description "Production check failing" 2>/dev/null || true
           open="$(gh issue list --label watchdog --state open --json number --jq '.[0].number')"
-          message="$(printf 'Production check failed at %s.\n\n```\n%s\n```\n\n[Run](%s/%s/actions/runs/%s)' \
-            "$(date -u +'%Y-%m-%d %H:%M UTC')" "$DETAIL" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")"
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          message="Production check failed at $(date -u +'%Y-%m-%d %H:%M UTC').
+
+          $DETAIL
+
+          [Run]($run_url)"
           if [[ -n "$open" ]]; then
             gh issue comment "$open" --body "$message"
           else
