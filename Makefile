@@ -40,7 +40,8 @@ check: check-repo check-agent check-web check-db ## Everything CI checks. Run be
 
 check-repo: ## Shell scripts, workflows, and the migration rules against origin/main
 	uvx --quiet --from shellcheck-py shellcheck -x scripts/*.sh
-	uvx --quiet --from actionlint-py actionlint
+	@# With shellcheck, as in CI: without it actionlint skips the scripts inside workflows.
+	uvx --quiet --from actionlint-py actionlint -shellcheck="$$(uvx --quiet --from shellcheck-py python -c 'import shutil; print(shutil.which("shellcheck"))')"
 	@git fetch --quiet origin main 2>/dev/null || true
 	scripts/check-migrations.sh origin/main
 
