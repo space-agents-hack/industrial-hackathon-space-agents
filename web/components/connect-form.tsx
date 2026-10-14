@@ -33,6 +33,8 @@ export function ConnectForm() {
   const [providerKey, setProviderKey] = useState("");
   const [people, setPeople] = useState<Person[]>([{ email: "", password: "" }]);
   const [applyMigrations, setApplyMigrations] = useState(true);
+  const [remember, setRemember] = useState(true);
+  const [saved, setSaved] = useState(false);
   const [name, setName] = useState("");
   const [agentDomain, setAgentDomain] = useState("");
 
@@ -52,10 +54,52 @@ export function ConnectForm() {
     setChecking(false);
   }
 
+  async function loadSaved() {
+    try {
+      const response = await fetch("/api/setup/saved", { cache: "no-store" });
+      if (!response.ok) return;
+      const body: {
+        saved: boolean;
+        project_ref: string;
+        db_password: string;
+        supabase_token: string;
+        vercel_token: string;
+        agent_model: string;
+        provider_key: string;
+        users: Person[];
+      } = await response.json();
+      setSaved(body.saved);
+      if (!body.saved) return;
+      setProjectRef(body.project_ref);
+      setDbPassword(body.db_password);
+      setSupabaseToken(body.supabase_token);
+      setVercelToken(body.vercel_token);
+      setModel(body.agent_model || "scripted");
+      setProviderKey(body.provider_key);
+      if (body.users.length > 0) setPeople(body.users);
+    } catch {
+      // Nothing saved, or the server is not the local dev server: start with an empty form.
+    }
+  }
+
+  async function forget() {
+    await fetch("/api/setup/saved", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+    }).catch(() => undefined);
+    setSaved(false);
+    setDbPassword("");
+    setSupabaseToken("");
+    setVercelToken("");
+    setProviderKey("");
+    setPeople((current) => current.map((person) => ({ ...person, password: "" })));
+  }
+
   useEffect(() => {
-    // Checking runs three CLIs; it is a one-off on load, not a subscription.
+    // One-off on load, not a subscription: three CLIs to check and a file to read.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void checkCli();
+    void loadSaved();
   }, []);
 
   useEffect(() => {
@@ -85,6 +129,7 @@ export function ConnectForm() {
           users: people,
           name,
           agent_domain: agentDomain,
+          remember,
         }),
       });
     } catch {
@@ -111,12 +156,16 @@ export function ConnectForm() {
     const exit = /\nexit (\d+)\s*$/.exec(all);
     if (exit?.[1] === "0") {
       setPhase("done");
-      // Nothing secret stays in the page once it is no longer needed.
-      setDbPassword("");
-      setSupabaseToken("");
-      setVercelToken("");
-      setProviderKey("");
-      setPeople((current) => current.map((person) => ({ ...person, password: "" })));
+      if (remember) {
+        setSaved(true);
+      } else {
+        // Not remembered: nothing secret stays in the page once it is no longer needed.
+        setDbPassword("");
+        setSupabaseToken("");
+        setVercelToken("");
+        setProviderKey("");
+        setPeople((current) => current.map((person) => ({ ...person, password: "" })));
+      }
       router.refresh();
     } else {
       setPhase("failed");
@@ -210,6 +259,22 @@ export function ConnectForm() {
           />
           Create the database tables now (applies the migrations; cannot be undone)
         </label>
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+            Remember these on this machine
+          </label>
+          <span className="text-xs text-muted-foreground">
+            In <code className="font-mono">.env.setup.local</code>, plain text, readable only by
+            your user, never committed.
+          </span>
+          {saved ? (
+            <Button type="button" variant="outline" size="sm" onClick={forget}>
+              Forget saved values
+            </Button>
+          ) : null}
+        </div>
 
         <details className="text-sm">
           <summary className="cursor-pointer text-muted-foreground">Advanced</summary>

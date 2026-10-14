@@ -1,10 +1,12 @@
 import "server-only";
 
 import { execFile, spawn } from "node:child_process";
+import { chmod, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { ConnectAnswers } from "@/lib/connect-answers";
 import { type RequestFacts, refuseUnlessLocal } from "@/lib/local-request";
+import { EMPTY_SETUP, type SavedSetup, parseSetup, serializeSetup } from "@/lib/saved-setup";
 
 // Runs the repository's own scripts and CLIs for the local Setup page. Every route that uses this
 // calls `guard()` first; see lib/local-request.ts for who is allowed and why.
@@ -124,4 +126,29 @@ export async function startRelease(): Promise<{ ok: boolean; url: string | null;
     if (listed.ok && listed.stdout) return { ok: true, url: listed.stdout, detail: "Started." };
   }
   return { ok: true, url: null, detail: "Started; open the repository's Actions tab to follow it." };
+}
+
+// `.env.setup.local` at the repository root: ignored by git (`.env.*`), outside both Vercel
+// project folders so no deploy uploads it, and readable by the owner only.
+function savedPath(): string {
+  return path.join(repoRoot(), ".env.setup.local");
+}
+
+export async function readSaved(): Promise<SavedSetup & { saved: boolean }> {
+  try {
+    return { ...parseSetup(await readFile(savedPath(), "utf8")), saved: true };
+  } catch {
+    return { ...EMPTY_SETUP, saved: false };
+  }
+}
+
+export async function writeSaved(setup: SavedSetup): Promise<void> {
+  const file = savedPath();
+  await writeFile(file, serializeSetup(setup), { mode: 0o600 });
+  // `mode` only applies when the file is created; an existing file keeps its old permissions.
+  await chmod(file, 0o600);
+}
+
+export async function forgetSaved(): Promise<void> {
+  await rm(savedPath(), { force: true });
 }
