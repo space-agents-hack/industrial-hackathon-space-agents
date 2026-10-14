@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { NavLinks, NavLinksFallback } from "@/components/nav-links";
 import { SignOutButton } from "@/components/sign-out-button";
 import { APP_NAME } from "@/lib/config";
 import { createClient, getSessionUser } from "@/lib/supabase/server";
@@ -12,14 +13,9 @@ export function AppHeader() {
         <Link href="/" className="font-semibold tracking-tight">
           {APP_NAME}
         </Link>
-        <nav className="flex items-center gap-3 text-xs text-muted-foreground">
-          <Link href="/" className="hover:text-foreground">
-            Runs
-          </Link>
-          <Link href="/setup" className="hover:text-foreground">
-            Setup
-          </Link>
-        </nav>
+        <Suspense fallback={<NavLinksFallback />}>
+          <NavLinks />
+        </Suspense>
         <div className="ml-auto flex min-w-0 items-center gap-3">
           {/* Reading the session is request-time work; the boundary keeps the rest of the header
               in the static shell. */}

@@ -80,7 +80,7 @@ export function RunList({ initialRuns }: { initialRuns: RunSummary[] }) {
   return (
     <div className="grid gap-1.5">
       {stale ? (
-        <p role="status" className="text-xs text-amber-800">
+        <p role="status" className="text-xs text-attention">
           The list could not be refreshed. It will try again when this tab regains focus.
         </p>
       ) : null}
@@ -89,7 +89,7 @@ export function RunList({ initialRuns }: { initialRuns: RunSummary[] }) {
           <li key={run.id}>
             <Link
               href={`/runs/${run.id}`}
-              className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 px-3 py-2 hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none sm:grid-cols-[9.5rem_1fr_auto_5.5rem]"
+              className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 px-3 py-2 outline-none hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:grid-cols-[9.5rem_1fr_auto_5.5rem]"
             >
               <StatusBadge status={run.status} />
               <span className="order-last col-span-2 min-w-0 truncate sm:order-none sm:col-span-1">
