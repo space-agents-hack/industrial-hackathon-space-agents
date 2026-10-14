@@ -155,7 +155,7 @@ function productionSteps(facts: SetupFacts): Step[] {
       state: live ? "done" : "manual",
       summary: live
         ? "This page is served by a released deployment."
-        : "Releases happen on GitHub. This page cannot see them from your machine.",
+        : "Start one here, or push to main. The next step shows how the latest one went.",
     },
     {
       id: "try-production",
