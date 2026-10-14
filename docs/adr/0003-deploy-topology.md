@@ -1,6 +1,6 @@
 # ADR-0003: Two Vercel projects from one repo, deployed by one workflow
 
-**Status:** Accepted, with one open verification (see Action Items)
+**Status:** Accepted
 **Date:** 2026-10-13
 **Deciders:** Clemente (Ramón informed)
 
@@ -87,9 +87,7 @@ absorbs.
 
 ## Action Items
 
-1. [ ] On the first real deploy, confirm the agent builds from source and answers `/health`.
-   A local `vercel build` accepted the layout on 2026-10-13 (`docs/deploy.md`); the remote build
-   is not yet confirmed.
-2. [ ] Confirm on a real deployment how long a run can take before the platform ends it, on the
-   plan in use.
-3. [ ] Write `scripts/bootstrap.sh` so the two-project setup is one command.
+1. [x] Confirm the agent builds from source and answers `/health` (first release, 2026-10-14).
+   It needed `"framework": "fastapi"` in `agent/vercel.json`.
+2. [ ] Measure how long a run can take before the platform ends it, on the plan in use.
+3. [x] One-command setup: `scripts/bootstrap.sh`, also driven by the Setup page.

@@ -159,3 +159,49 @@ async def test_an_unknown_record_fails_the_run_instead_of_inventing_an_answer(
 
     assert store.outputs[run_id] is None
     assert any(p["is_error"] for p in store.payloads(run_id, "tool_result"))
+
+
+async def test_a_run_failed_as_stale_is_not_overwritten_when_its_old_request_finishes(
+    store, settings
+) -> None:
+    # The old request is still working when a Retry, seeing no heartbeat, marks the run failed.
+    run_id = store.add_run(HARMLESS)
+    plan = await runner.prepare(store, settings, run_id)
+    await store.set_status(run_id, "failed", only_if="running", error="stale")
+
+    assert await runner.execute(store, settings, plan) == "failed"
+
+    assert store.runs[run_id].status == "failed"
+    assert store.errors[run_id] == "stale"
+    assert "succeeded" not in [p["status"] for p in store.payloads(run_id, "status")]
+
+
+async def test_a_paused_run_whose_saved_conversation_no_longer_reads_is_failed(
+    store, settings
+) -> None:
+    run_id = store.add_run(COLLIDING)
+    await advance(store, settings, run_id)
+    store.decide(run_id, "approved")
+    store.conversations[run_id] = {"messages": [{"kind": "from-a-future-version"}]}
+
+    with pytest.raises(runner.CannotAdvance, match="incompatible version"):
+        await runner.prepare(store, settings, run_id)
+
+    assert store.runs[run_id].status == "failed"
+
+
+async def test_the_run_keeps_its_heartbeat_without_the_http_response(store, settings) -> None:
+    touched: list[object] = []
+    original = store.touch
+
+    async def counting_touch(run_id):
+        touched.append(run_id)
+        await original(run_id)
+
+    store.touch = counting_touch  # type: ignore[method-assign]
+    settings.heartbeat_s = 0.001
+    run_id = store.add_run(COLLIDING)
+
+    await advance(store, settings, run_id)
+
+    assert touched, "execute() should beat on its own"

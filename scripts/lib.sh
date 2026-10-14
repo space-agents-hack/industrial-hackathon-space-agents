@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Functions shared by the setup scripts. Sourced, not run.
 
-# Read one API key of a hosted Supabase project by its prefix (sb_publishable_ or sb_secret_).
-# The search is by prefix rather than by field name because the shape of this output has changed
-# before. Prints nothing if the key cannot be read (not signed in, no access, wrong reference).
-find_supabase_key() { # project ref, prefix
+# The API keys of a hosted Supabase project that start with a prefix (sb_publishable_ or
+# sb_secret_), one per line. The search is by prefix rather than by field name because the shape
+# of this output has changed before. Prints nothing if they cannot be read (not signed in, no
+# access, wrong reference). Several lines mean several keys exist, e.g. during a rotation; the
+# caller must not pick one at random.
+find_supabase_keys() { # project ref, prefix
   supabase projects api-keys --project-ref "$1" --reveal --output-format json 2>/dev/null \
     | python3 -c '
 import json, sys
@@ -20,10 +22,18 @@ def walk(node):
         for value in node:
             yield from walk(value)
 try:
-    print(next(walk(json.load(sys.stdin)), ""))
+    for key in dict.fromkeys(walk(json.load(sys.stdin))):
+        print(key)
 except Exception:
-    print("")
+    pass
 ' "$2" || true
+}
+
+# The Vercel CLI version CI pins (.github/workflows/deploy.yml), so every script uses the same one.
+vercel_cli() {
+  local version
+  version="$(grep -E '^\s*VERCEL_CLI_VERSION:' .github/workflows/deploy.yml | head -1 | cut -d'"' -f2)"
+  npx --yes "vercel@${version:-latest}" "$@"
 }
 
 # Set KEY=VALUE in an env file, replacing the line if the key is already there. Other lines (a

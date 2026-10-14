@@ -11,6 +11,7 @@ const ok: RequestFacts = {
   host: "localhost:3000",
   origin: "http://localhost:3000",
   contentType: "application/json",
+  fetchSite: "same-origin",
 };
 
 test("a POST from the local page is allowed, on either loopback name", () => {
@@ -53,4 +54,16 @@ test("reading the CLI status needs only the local Host", () => {
     refuseUnlessLocal({ ...ok, method: "GET", origin: null, contentType: null, host: "10.0.0.5:3000" }),
     403,
   );
+});
+
+test("a page on another site cannot even trigger a read", () => {
+  // An <img> or fetch from another tab carries Sec-Fetch-Site: cross-site. Each read would start
+  // CLI processes on the developer's machine.
+  const read = { ...ok, method: "GET", origin: null, contentType: null };
+  assert.equal(refuseUnlessLocal({ ...read, fetchSite: "cross-site" }), 403);
+  assert.equal(refuseUnlessLocal({ ...read, fetchSite: "same-site" }), 403);
+  assert.equal(refuseUnlessLocal({ ...read, fetchSite: "same-origin" }), null);
+  // Typed in the address bar, or curl with no header at all.
+  assert.equal(refuseUnlessLocal({ ...read, fetchSite: "none" }), null);
+  assert.equal(refuseUnlessLocal({ ...read, fetchSite: null }), null);
 });

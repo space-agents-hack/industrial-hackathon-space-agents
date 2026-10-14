@@ -26,7 +26,7 @@ Facts checked against the Pydantic AI docs on 2026-10-13 (v2.55.0, released 2026
 
 Use `pydantic-ai-slim` with the provider extras we need. The model is read from `AGENT_MODEL`
 (for example `anthropic:claude-opus-5-5`); changing provider is a change to that variable and the
-matching API key, with no code change. `AGENT_MODEL=test` runs the loop with no key at all.
+matching API key, with no code change. `AGENT_MODEL=scripted` runs the loop with no key at all.
 
 The conversation is saved to Postgres at every pause and at the end of every run. Approvals are
 rows that the web UI resolves.
@@ -94,5 +94,5 @@ requirement. D leaves the hardest part to us.
 ## Action Items
 
 1. [x] Pin the version in `uv.lock`; CI installs with `--locked`.
-2. [ ] Test the pause and resume path with a scripted model in `agent/tests/`.
+2. [x] Test the pause and resume path with a scripted model in `agent/tests/` (`test_runner.py`).
 3. [ ] Run the example task once against each provider we intend to use and note differences.

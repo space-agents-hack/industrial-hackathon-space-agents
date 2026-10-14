@@ -34,9 +34,11 @@ export function ConnectForm() {
   const [people, setPeople] = useState<Person[]>([{ email: "", password: "" }]);
   const [applyMigrations, setApplyMigrations] = useState(true);
   const [remember, setRemember] = useState(true);
+  const [renewSecret, setRenewSecret] = useState(false);
   const [saved, setSaved] = useState(false);
   const [name, setName] = useState("");
   const [agentDomain, setAgentDomain] = useState("");
+  const [secretKey, setSecretKey] = useState("");
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [log, setLog] = useState("");
@@ -129,7 +131,9 @@ export function ConnectForm() {
           users: people,
           name,
           agent_domain: agentDomain,
+          secret_key: secretKey,
           remember,
+          renew_shared_secret: renewSecret,
         }),
       });
     } catch {
@@ -276,6 +280,13 @@ export function ConnectForm() {
           ) : null}
         </div>
 
+        {saved ? (
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={renewSecret} onChange={(e) => setRenewSecret(e.target.checked)} />
+            Renew the secret between the web and the agent (then start a release)
+          </label>
+        ) : null}
+
         <details className="text-sm">
           <summary className="cursor-pointer text-muted-foreground">Advanced</summary>
           <div className="mt-2 grid gap-3 sm:grid-cols-2">
@@ -284,6 +295,15 @@ export function ConnectForm() {
             </Field>
             <Field label="Agent domain" hint="empty: the one Vercel assigns">
               <Input value={agentDomain} onChange={(e) => setAgentDomain(e.target.value)} spellCheck={false} />
+            </Field>
+            <Field label="Supabase secret key" hint="only while the project has more than one">
+              <Input
+                type="password"
+                value={secretKey}
+                onChange={(e) => setSecretKey(e.target.value)}
+                autoComplete="new-password"
+                spellCheck={false}
+              />
             </Field>
           </div>
         </details>

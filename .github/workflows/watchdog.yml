@@ -1,0 +1,80 @@
+name: Watchdog
+
+# Checks production every 30 minutes through the web's deep health check (web, agent with its
+# shared secret, database, Supabase Auth) and keeps one GitHub issue open while it fails. An issue
+# rather than an email: it reaches the repository's owner on the web, by email and in the mobile
+# app, and it closes itself with a comment when production is healthy again.
+#
+# GitHub may run a scheduled workflow late (sereno saw delays of hours); during an event, run it
+# by hand from the Actions tab or rely on the release's own smoke tests.
+#
+# Does nothing until the repository variable PRODUCTION_URL is set (scripts/bootstrap.sh sets it).
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: watchdog
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Check production
+        id: check
+        shell: bash
+        run: |
+          if [[ -z "$PRODUCTION_URL" ]]; then
+            echo "PRODUCTION_URL is not set; nothing to watch." >> "$GITHUB_STEP_SUMMARY"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+          body="$(curl --silent --show-error --max-time 30 --retry 2 --retry-delay 10 \
+            --write-out '\n%{http_code}' "$PRODUCTION_URL/api/health/deep" || true)"
+          code="$(tail -n1 <<<"$body")"
+          detail="$(sed '$d' <<<"$body")"
+          {
+            echo "detail<<EOF"
+            echo "HTTP $code: $detail"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          if [[ "$code" == "200" ]]; then echo "healthy=true" >> "$GITHUB_OUTPUT"; else echo "healthy=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Open or update the issue
+        if: steps.check.outputs.configured == 'true' && steps.check.outputs.healthy != 'true'
+        shell: bash
+        env:
+          DETAIL: ${{ steps.check.outputs.detail }}
+        run: |
+          gh label create watchdog --color B60205 --description "Production check failing" 2>/dev/null || true
+          open="$(gh issue list --label watchdog --state open --json number --jq '.[0].number')"
+          message="$(printf 'Production check failed at %s.\n\n```\n%s\n```\n\n[Run](%s/%s/actions/runs/%s)' \
+            "$(date -u +'%Y-%m-%d %H:%M UTC')" "$DETAIL" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")"
+          if [[ -n "$open" ]]; then
+            gh issue comment "$open" --body "$message"
+          else
+            gh issue create --title "Production is failing its health check" --label watchdog \
+              --assignee "$GITHUB_REPOSITORY_OWNER" --body "$message"
+          fi
+          exit 1
+
+      - name: Close the issue when healthy again
+        if: steps.check.outputs.configured == 'true' && steps.check.outputs.healthy == 'true'
+        shell: bash
+        run: |
+          for number in $(gh issue list --label watchdog --state open --json number --jq '.[].number'); do
+            gh issue close "$number" --comment "Healthy again at $(date -u +'%Y-%m-%d %H:%M UTC')."
+          done

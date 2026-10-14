@@ -31,6 +31,42 @@ env:
   NODE_VERSION: "24"
 
 jobs:
+  repo:
+    name: Check scripts, workflows and migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The migration rule compares with the previous main, so it needs history.
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Shell scripts
+        run: uvx --from shellcheck-py shellcheck -x scripts/*.sh
+
+      - name: Workflows
+        run: uvx --from actionlint-py actionlint
+
+      # Before the release, not at it: `supabase db push` would refuse an out-of-order migration
+      # only after the checks had passed, and main would stay red until someone renamed it.
+      - name: Migrations are only added, and in order
+        env:
+          BEFORE: ${{ github.event.before }}
+          BASE_REF: ${{ github.base_ref }}
+        shell: bash
+        run: |
+          if [[ -n "$BASE_REF" ]]; then
+            base="origin/$BASE_REF"
+          elif [[ -n "$BEFORE" && "$BEFORE" != 0000000000000000000000000000000000000000 ]]; then
+            base="$BEFORE"
+          else
+            echo "Nothing to compare with."; exit 0
+          fi
+          scripts/check-migrations.sh "$base"
+
   agent:
     name: Check agent (Python)
     runs-on: ubuntu-latest
@@ -142,7 +178,7 @@ jobs:
   release:
     name: Release to production
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: [agent, web, database]
+    needs: [repo, agent, web, database]
     runs-on: ubuntu-latest
     environment: production
     # One release at a time, none cancelled half-way. The queue starts after the checks, so a push
@@ -240,13 +276,16 @@ jobs:
       # Vercel can refuse a deployment whose commit author is not a member of the team that owns
       # the project. The amend exists only on this runner: it is never pushed and does not change
       # the commit on GitHub. Set the two repository variables to the Vercel owner's identity.
+      # Through env, not pasted into the script: a quote or $(...) in a name would otherwise run.
       - name: Re-author the commit as the Vercel owner
         if: steps.head.outputs.current == 'true' && vars.VERCEL_AUTHOR_EMAIL != ''
+        env:
+          AUTHOR_NAME: ${{ vars.VERCEL_AUTHOR_NAME }}
+          AUTHOR_EMAIL: ${{ vars.VERCEL_AUTHOR_EMAIL }}
         run: |
-          git config user.name "${{ vars.VERCEL_AUTHOR_NAME }}"
-          git config user.email "${{ vars.VERCEL_AUTHOR_EMAIL }}"
-          git commit --amend --no-edit \
-            --author="${{ vars.VERCEL_AUTHOR_NAME }} <${{ vars.VERCEL_AUTHOR_EMAIL }}>"
+          git config user.name "$AUTHOR_NAME"
+          git config user.email "$AUTHOR_EMAIL"
+          git commit --amend --no-edit --author="$AUTHOR_NAME <$AUTHOR_EMAIL>"
 
       - uses: actions/setup-node@v7
         if: steps.head.outputs.current == 'true'
@@ -302,6 +341,15 @@ jobs:
             exit 1
           fi
 
+      # The agent goes live before the web is built: the new web's smoke test checks the chain
+      # through the production agent, and may call something only the new agent has. Migrations
+      # and the agent must therefore work with the web that is still live (AGENTS.md, Limits).
+      - name: Promote agent
+        if: steps.head.outputs.current == 'true'
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_AGENT_PROJECT_ID }}
+        run: vercel promote "${{ steps.agent.outputs.url }}" --cwd agent --yes
+
       - name: Build web
         if: steps.head.outputs.current == 'true'
         env:
@@ -342,12 +390,16 @@ jobs:
             exit 1
           fi
 
-      # Agent first: the new web may call something only the new agent has.
-      - name: Promote agent
-        if: steps.head.outputs.current == 'true'
-        env:
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_AGENT_PROJECT_ID }}
-        run: vercel promote "${{ steps.agent.outputs.url }}" --cwd agent --yes
+          # The whole chain: this web reaches the agent with its shared secret, the agent reaches
+          # the database, Supabase Auth answers. A wrong AGENT_URL or a secret that differs
+          # between the two projects is caught here instead of by the first person who clicks.
+          deep="$(vercel curl /api/health/deep --deployment "$DEPLOYMENT_URL" -- \
+            --silent --show-error --retry 3 --retry-delay 3 --retry-all-errors || true)"
+          echo "$deep"
+          if ! grep -q '"agent":"ok"' <<<"$deep" || ! grep -q '"auth":"ok"' <<<"$deep"; then
+            echo "::error::The deep health check failed (see the line above). Not promoted."
+            exit 1
+          fi
 
       - name: Promote web
         if: steps.head.outputs.current == 'true'

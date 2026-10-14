@@ -31,17 +31,17 @@ so this project does not collide with another one running on the same machine:
 4. Make it work with the code that is already deployed: add columns as nullable or with a
    default; do not rename or drop what running code reads. Migrations are applied before the new
    code goes live.
-5. Never edit a migration that has reached `main`. Write a new one.
+5. Never edit a migration that has reached `main`, and always create one with
+   `supabase migration new` right before committing, so it sorts after everything already on
+   `main`. `make check` and CI enforce both (`scripts/check-migrations.sh`).
 
 ## Hosted project
 
-Created once (see `docs/deploy.md`). Two settings are not in this repo and have to be set in the
-Supabase dashboard:
-
-- **Authentication, Sign In / Providers: turn off "Allow new users to sign up".** Every signed-in
-  user sees every run and can spend model credits, so an open sign-up page is an open door.
-  `config.toml` only turns it off locally.
-- **Authentication, URL Configuration: set the Site URL** to the web's production address.
+Created once from the Setup page (or `scripts/bootstrap.sh`), which also turns new sign-ups off
+and sets the site address through the Supabase API. If it reports it could not, do it in the
+dashboard: Authentication, Sign In / Providers, "Allow new users to sign up" off; Authentication,
+URL Configuration, Site URL set to the web's production address. Sign-ups must stay off: every
+signed-in user sees every run and can spend model credits.
 
 Create users with the script. It asks for the password and does not accept the local default:
 

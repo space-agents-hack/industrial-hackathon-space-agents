@@ -12,7 +12,7 @@ DB ?= local
 # After setup, the env file is the record of that choice.
 USES_LOCAL_DB := $(shell grep -q '^SUPABASE_URL=http://127.0.0.1' agent/.env 2>/dev/null && echo yes)
 
-.PHONY: help setup dev check check-agent check-web check-db check-db-run test-integration types \
+.PHONY: help setup dev check check-repo check-agent check-web check-db check-db-run test-integration types \
         eval db-start db-reset db-stop user purge-data
 
 help: ## Show this list
@@ -36,7 +36,13 @@ endif
 	@echo
 	@echo "Ready. Run 'make dev' and open http://localhost:3000"
 
-check: check-agent check-web check-db ## Everything CI checks. Run before every push
+check: check-repo check-agent check-web check-db ## Everything CI checks. Run before every push
+
+check-repo: ## Shell scripts, workflows, and the migration rules against origin/main
+	uvx --quiet --from shellcheck-py shellcheck -x scripts/*.sh
+	uvx --quiet --from actionlint-py actionlint
+	@git fetch --quiet origin main 2>/dev/null || true
+	scripts/check-migrations.sh origin/main
 
 check-agent: ## Python: lint, format, types, tests, evals with the scripted model
 	cd agent && uv run ruff check . && uv run ruff format --check . && uv run pyright \

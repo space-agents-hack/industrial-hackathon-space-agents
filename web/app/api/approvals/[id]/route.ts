@@ -58,9 +58,26 @@ export async function POST(request: Request, ctx: RouteContext<"/api/approvals/[
   try {
     await advanceRun(runId);
   } catch (agentError) {
-    // 409 here means the run is no longer waiting: a teammate decided the other approval at the
-    // same moment and their request resumed it first.
     if (agentError instanceof AgentError && agentError.status === 409) {
+      // Two reasons for a 409. A teammate resumed the run first: fine. Or the decision landed in
+      // the instant between the agent writing the approval and marking the run paused, and the
+      // run is now waiting with nothing to wait for. Look, and in that case try once more.
+      const { data: run } = await supabase.from("runs").select("status").eq("id", runId).single();
+      if (run?.status === "awaiting_approval") {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        try {
+          await advanceRun(runId);
+          return Response.json({ status: decision, run_id: runId, resumed: true });
+        } catch (retryError) {
+          console.error(`POST /api/approvals/${id}: retry of run ${runId} failed`, retryError);
+          return Response.json({
+            status: decision,
+            run_id: runId,
+            resumed: false,
+            warning: describeAgentFailure(retryError),
+          });
+        }
+      }
       return Response.json({ status: decision, run_id: runId, resumed: true });
     }
     console.error(`POST /api/approvals/${id}: decision saved but run ${runId} not resumed`, agentError);
