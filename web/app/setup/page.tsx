@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
-import { AppHeader } from "@/components/app-header";
+import { NavLinks, NavLinksFallback } from "@/components/nav-links";
+import { SignOutButton } from "@/components/sign-out-button";
 import { ConnectForm } from "@/components/connect-form";
 import { ProductionStatus } from "@/components/production-status";
 import { ReleaseButton } from "@/components/release-button";
@@ -20,6 +21,8 @@ import {
 } from "@/lib/setup";
 import { setupCommandsAvailable } from "@/lib/local-request";
 import { gatherSetupFacts } from "@/lib/setup-facts";
+import { showsAdmin } from "@/lib/access";
+import { getCurrentOrg } from "@/lib/current-org";
 import { createClient, getSessionUser } from "@/lib/supabase/server";
 import type { Tone } from "@/lib/trace";
 import { cn } from "@/lib/utils";
@@ -32,11 +35,7 @@ export const metadata: Metadata = { title: "Setup" };
 export default function SetupPage(props: PageProps<"/setup">) {
   return (
     <>
-      {/* Signed in, the page gets the app's own header (Runs, Admin, sign out). Signed out, or on
-          a clone with nothing configured, only a way to sign in. */}
-      <Suspense fallback={<SignedOutHeader />}>
-        <Header />
-      </Suspense>
+      <SetupHeader />
       <main className="mx-auto grid w-full max-w-3xl flex-1 content-start gap-4 px-4 py-5">
         <Suspense fallback={<p className="text-muted-foreground">Checking…</p>}>
           <Guide searchParams={props.searchParams} />
@@ -51,30 +50,63 @@ export default function SetupPage(props: PageProps<"/setup">) {
   );
 }
 
-async function Header() {
-  // Without the Supabase variables there is no session to look for, and asking would throw.
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) {
-    return <SignedOutHeader />;
-  }
-  const user = await getSessionUser(await createClient()).catch(() => null);
-  return user ? <AppHeader /> : <SignedOutHeader />;
-}
-
-function SignedOutHeader() {
+// The same frame as the app's header, always rendered as it is; only the parts that depend on
+// the session are filled in per request, each inside its own Suspense. Rendering the whole header
+// from one per-request component made the development server reload the page in a loop.
+function SetupHeader() {
   return (
     <header className="border-b bg-card">
       <div className="mx-auto flex h-11 w-full max-w-5xl items-center gap-3 px-4">
-        <span className="font-semibold tracking-tight">{APP_NAME}</span>
-        <h1 className="text-xs text-muted-foreground">Setup</h1>
-        {/* /login, not /: signed out, / comes straight back here. */}
-        <Link
-          href="/login"
-          className="ml-auto inline-flex h-8 items-center rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          Sign in
+        <Link href="/" className="font-semibold tracking-tight">
+          {APP_NAME}
         </Link>
+        <Suspense fallback={<NavLinksFallback />}>
+          <SetupNav />
+        </Suspense>
+        <div className="ml-auto flex min-w-0 items-center gap-3">
+          <Suspense fallback={null}>
+            <SetupAccount />
+          </Suspense>
+        </div>
       </div>
     </header>
+  );
+}
+
+// Without the Supabase variables there is no session to look for, and asking would throw.
+async function sessionUser() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) {
+    return null;
+  }
+  return getSessionUser(await createClient()).catch(() => null);
+}
+
+async function SetupNav() {
+  if (!(await sessionUser())) return <span className="text-xs text-muted-foreground">Setup</span>;
+  const { access, current } = await getCurrentOrg();
+  return <NavLinks showAdmin={showsAdmin(access, current)} />;
+}
+
+async function SetupAccount() {
+  const user = await sessionUser();
+  if (!user) {
+    // /login, not /: signed out, / comes straight back here.
+    return (
+      <Link
+        href="/login"
+        className="inline-flex h-8 items-center rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        Sign in
+      </Link>
+    );
+  }
+  return (
+    <>
+      {user.email ? (
+        <span className="hidden truncate text-xs text-muted-foreground md:inline">{user.email}</span>
+      ) : null}
+      <SignOutButton />
+    </>
   );
 }
 
