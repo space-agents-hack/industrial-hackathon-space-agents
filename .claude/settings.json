@@ -15,7 +15,8 @@
     ],
     "deny": [
       "Read(./agent/.env)",
-      "Read(./web/.env.local)"
+      "Read(./web/.env.local)",
+      "Read(./.env.setup.local)"
     ]
   }
 }
