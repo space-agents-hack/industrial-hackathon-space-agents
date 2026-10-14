@@ -18,7 +18,9 @@ exception: migrations that were already applied stay applied (see "Migrations").
 
 ## One-time setup
 
-`scripts/bootstrap.sh` does this interactively. What it sets, so you can check or do it by hand:
+The local Setup page (`make dev`, then "Deploy to production") does this from a form; it runs
+`scripts/bootstrap.sh`, which also works on its own in a terminal. What it sets, so you can check
+or do it by hand:
 
 GitHub, environment `production`, secrets:
 

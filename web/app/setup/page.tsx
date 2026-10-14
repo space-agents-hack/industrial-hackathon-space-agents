@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { ConnectForm } from "@/components/connect-form";
+import { ReleaseButton } from "@/components/release-button";
 import { ToneBadge } from "@/components/status-badge";
 import { APP_NAME, LOCAL_DEMO_USER } from "@/lib/config";
 import {
@@ -14,6 +16,7 @@ import {
   describeWhere,
   parseTarget,
 } from "@/lib/setup";
+import { setupCommandsAvailable } from "@/lib/local-request";
 import { gatherSetupFacts } from "@/lib/setup-facts";
 import type { Tone } from "@/lib/trace";
 import { cn } from "@/lib/utils";
@@ -42,8 +45,9 @@ export default function SetupPage(props: PageProps<"/setup">) {
           <Guide searchParams={props.searchParams} />
         </Suspense>
         <p className="text-xs text-muted-foreground">
-          Secrets are never typed into this page or saved in a file of the repository. The
-          bootstrap script asks for them in hidden prompts and hands them to GitHub and Vercel.
+          What you type here goes to this machine only, and from there to GitHub, Vercel and
+          Supabase. Nothing is saved in a file of the repository. The form only works while{" "}
+          <code className="font-mono">make dev</code> runs on this machine, never on the deployed app.
         </p>
       </main>
     </>
@@ -55,6 +59,12 @@ async function Guide({ searchParams }: { searchParams: PageProps<"/setup">["sear
   // The deployed app has only one story to tell.
   const target: Target = facts.onVercel ? "production" : parseTarget(params.env);
   const steps = buildSteps(target, facts);
+  // The form and the release button run local commands; they exist only under `next dev`.
+  const commands = setupCommandsAvailable(
+    facts.onVercel,
+    process.env.NODE_ENV,
+    process.env.SETUP_LOOPBACK_ONLY === "1",
+  );
 
   return (
     <>
@@ -75,7 +85,13 @@ async function Guide({ searchParams }: { searchParams: PageProps<"/setup">["sear
       )}
       <ol className="grid gap-2">
         {steps.map((step, index) => (
-          <StepItem key={step.id} step={step} number={index + 1} database={facts.database} />
+          <StepItem
+            key={step.id}
+            step={step}
+            number={index + 1}
+            database={facts.database}
+            commands={commands}
+          />
         ))}
       </ol>
     </>
@@ -113,8 +129,8 @@ const TITLES: Record<StepId, string> = {
   customise: "Make it yours",
   "supabase-project": "Create the Supabase project",
   tokens: "Create two access tokens",
-  bootstrap: "Run the bootstrap script",
-  push: "Push",
+  bootstrap: "Connect GitHub, Vercel and Supabase",
+  push: "Start the first release",
   "try-production": "Try it in production",
   model: "Choose a model",
 };
@@ -123,10 +139,12 @@ function StepItem({
   step,
   number,
   database,
+  commands,
 }: {
   step: Step;
   number: number;
   database: Database;
+  commands: boolean;
 }) {
   const meta = STATE_META[step.state];
   return (
@@ -141,14 +159,22 @@ function StepItem({
       <p className="mt-1 text-muted-foreground">{step.summary}</p>
       {step.state === "done" ? null : (
         <div className="mt-2 grid gap-2 border-t pt-2">
-          <Instructions id={step.id} database={database} />
+          <Instructions id={step.id} database={database} commands={commands} />
         </div>
       )}
     </li>
   );
 }
 
-function Instructions({ id, database }: { id: StepId; database: Database }) {
+function Instructions({
+  id,
+  database,
+  commands,
+}: {
+  id: StepId;
+  database: Database;
+  commands: boolean;
+}) {
   switch (id) {
     case "tools":
       return (
@@ -253,8 +279,22 @@ function Instructions({ id, database }: { id: StepId; database: Database }) {
         </ul>
       );
     case "bootstrap":
-      return (
+      return commands ? (
         <>
+          <ConnectForm />
+          <p className="text-xs text-muted-foreground">
+            The form runs <Cmd>scripts/bootstrap.sh</Cmd> on this machine with your answers. The
+            same script also works on its own in a terminal.
+          </p>
+        </>
+      ) : (
+        <>
+          {process.env.NODE_ENV === "development" ? (
+            <p>
+              To fill this in on this page instead, stop the server (Ctrl-C) and start it with{" "}
+              <Cmd>make dev</Cmd>. Until then, run the script in a terminal:
+            </p>
+          ) : null}
           <Block>scripts/bootstrap.sh</Block>
           <table className="w-full text-left text-sm">
             <thead className="text-xs text-muted-foreground">
@@ -281,10 +321,11 @@ function Instructions({ id, database }: { id: StepId; database: Database }) {
     case "push":
       return (
         <>
-          <Block>git push</Block>
+          {commands ? <ReleaseButton /> : <Block>git push</Block>}
           <p>
-            Watch the Deploy workflow in the repository&apos;s Actions tab. If a step fails,
-            production keeps the previous version; <Cmd>docs/deploy.md</Cmd> says what each
+            {commands ? "Or push to main. " : null}
+            The Deploy workflow runs the checks, deploys, smoke-tests and promotes. If a step
+            fails, production keeps the previous version; <Cmd>docs/deploy.md</Cmd> says what each
             failure means.
           </p>
         </>

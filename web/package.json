@@ -6,7 +6,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "SETUP_LOOPBACK_ONLY=1 next dev --hostname 127.0.0.1",
     "build": "next build",
     "start": "next start",
     "lint": "eslint --max-warnings=0",

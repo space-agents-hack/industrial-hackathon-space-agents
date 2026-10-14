@@ -7,7 +7,9 @@ export async function proxy(request: NextRequest) {
   // it can be read on a fresh clone. Deployed, it shows the state of production
   // and stays behind sign-in like every other page.
   if (!process.env.VERCEL) {
-    if (request.nextUrl.pathname === "/setup") return NextResponse.next();
+    const { pathname } = request.nextUrl;
+    // The setup endpoints check for themselves that the request is local (lib/local-request.ts).
+    if (pathname === "/setup" || pathname.startsWith("/api/setup/")) return NextResponse.next();
     const configured =
       process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
     // Nothing else can work without a database; send the person to the steps instead of an error.
