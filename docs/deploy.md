@@ -15,6 +15,11 @@ off in both Vercel projects, so the only path is `.github/workflows/deploy.yml`.
       agent reaches the database.
    5. Promote the web.
 
+To follow a release job by job and step by step, with the reason when one fails: the Setup page
+under `make dev` (read with your `gh` sign-in), or **Admin › Releases** in production for platform
+admins. Production needs the optional `RELEASES_GITHUB_TOKEN` below; the page links to GitHub's
+form, filled in.
+
 A scheduled workflow (`watchdog.yml`) runs the same deep check against production every 30
 minutes and keeps a GitHub issue open while it fails.
 
@@ -47,7 +52,7 @@ Vercel, Production environment variables:
 
 | Project | Variables |
 |---|---|
-| web | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `AGENT_URL`, `AGENT_SHARED_SECRET` |
+| web | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `AGENT_URL`, `AGENT_SHARED_SECRET`; optional `RELEASES_GITHUB_TOKEN` (fine-grained, this repository only, Actions read-only) |
 | agent | `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `AGENT_SHARED_SECRET`, `AGENT_MODEL`, and the API key of that model's provider |
 
 Both `vercel.json` files pin the functions to `fra1` (Frankfurt). Keep that next to the database's
@@ -69,7 +74,8 @@ set, it fails and names the missing ones.
 
 ## After you push
 
-- [ ] The run in the Actions tab is green through "Promote web".
+- [ ] The run is green through "Promote web" (Admin › Releases says **Released**; "Not released"
+      means the checks passed and nothing was deployed, with the reason).
 - [ ] Open the production site, start the example run, approve the step. Two minutes, and it is
       the only check of the whole path with a real browser.
 

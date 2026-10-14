@@ -4,14 +4,12 @@ import { useEffect, useState } from "react";
 
 import { ToneBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import type { Tone } from "@/lib/trace";
 
 type Endpoint = { url: string | null; healthy: boolean; detail: string; model?: string };
-type ReleaseRun = { status: string; conclusion: string | null; url: string; createdAt: string; title: string };
-type Status = { linked: boolean; web: Endpoint | null; agent: Endpoint | null; release: ReleaseRun | null };
+type Status = { linked: boolean; web: Endpoint | null; agent: Endpoint | null };
 
-// What is live, from this machine: links to both production addresses, whether they answer, and
-// how the latest release went. Reads only; see lib/setup-commands.ts.
+// What is live, from this machine: links to both production addresses and whether they answer.
+// Reads only; see lib/setup-commands.ts. Releases are shown by ReleaseProgress.
 export function ProductionStatus() {
   const [status, setStatus] = useState<Status | null>(null);
   const [failed, setFailed] = useState<number | null>(null);
@@ -36,13 +34,11 @@ export function ProductionStatus() {
     void check();
   }, []);
 
-  const release = status?.release ?? null;
-  const running = release !== null && release.status !== "completed";
   const up = Boolean(status?.web?.healthy && status.agent?.healthy);
 
   return (
     <div className="grid gap-2">
-      {checking && !status ? <p className="text-muted-foreground">Asking Vercel and GitHub…</p> : null}
+      {checking && !status ? <p className="text-muted-foreground">Asking Vercel…</p> : null}
       {!checking && !status ? (
         <p className="text-danger">
           Could not check production
@@ -74,31 +70,13 @@ export function ProductionStatus() {
                 ) : null}{" "}
                 and sign in with a user you created.
               </>
-            ) : running ? (
-              "A release is running. Check again when it finishes (a few minutes)."
             ) : (
-              "Production is not answering yet. The latest release below says why."
+              "Production is not answering yet. The release in the step above says why."
             )}
           </p>
           <dl className="grid gap-1.5 text-sm sm:grid-cols-[8rem_1fr]">
             <Row label="Web app" endpoint={status.web} />
             <Row label="Agent" endpoint={status.agent} />
-            <dt className="text-muted-foreground">Latest release</dt>
-            <dd className="flex flex-wrap items-center gap-2">
-              {release ? (
-                <>
-                  <ToneBadge tone={releaseTone(release)} pulse={running}>
-                    {releaseLabel(release)}
-                  </ToneBadge>
-                  <span className="text-muted-foreground">{new Date(release.createdAt).toLocaleString()}</span>
-                  <a href={release.url} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">
-                    View on GitHub
-                  </a>
-                </>
-              ) : (
-                <span className="text-muted-foreground">None yet.</span>
-              )}
-            </dd>
           </dl>
         </>
       ) : null}
@@ -128,16 +106,4 @@ function Row({ label, endpoint }: { label: string; endpoint: Endpoint | null }) 
       </dd>
     </>
   );
-}
-
-function releaseLabel(release: ReleaseRun): string {
-  if (release.status !== "completed") return "Running";
-  if (release.conclusion === "success") return "Succeeded";
-  if (release.conclusion === "failure") return "Failed";
-  return release.conclusion ?? "Finished";
-}
-
-function releaseTone(release: ReleaseRun): Tone {
-  if (release.status !== "completed") return "blue";
-  return release.conclusion === "success" ? "green" : release.conclusion === "failure" ? "red" : "neutral";
 }

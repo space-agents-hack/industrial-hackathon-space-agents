@@ -189,6 +189,9 @@ set_env agent SUPABASE_SECRET_KEY "$secret_key"
 set_env agent AGENT_SHARED_SECRET "$shared_secret"
 set_env agent AGENT_MODEL "$agent_model"
 [[ -z "$provider_key_name" ]] || set_env agent "$provider_key_name" "$provider_key"
+# Optional, read-only (Actions: read on this repository): Admin > Releases in production.
+releases_token="$(given releases_token)"
+[[ -z "$releases_token" ]] || set_env web RELEASES_GITHUB_TOKEN "$releases_token"
 
 say "GitHub: setting secrets and variables for the workflow"
 # Only main may deploy: the environment holds account-wide tokens, and without a branch rule any

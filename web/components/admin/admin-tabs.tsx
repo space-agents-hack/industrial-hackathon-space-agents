@@ -12,11 +12,15 @@ const TABS = [
   { href: "/admin/usage", label: "Usage" },
   { href: "/admin/audit", label: "Audit log" },
 ];
-const ORGANISATIONS_TAB = { href: "/admin/organizations", label: "Organisations" };
+// The deployment, not one organisation: platform admins only.
+const PLATFORM_TABS = [
+  { href: "/admin/organizations", label: "Organisations" },
+  { href: "/admin/releases", label: "Releases" },
+];
 
 export function AdminTabs({ platformAdmin }: { platformAdmin: boolean }) {
   const pathname = usePathname();
-  const tabs = platformAdmin ? [...TABS, ORGANISATIONS_TAB] : TABS;
+  const tabs = platformAdmin ? [...TABS, ...PLATFORM_TABS] : TABS;
   return (
     <nav aria-label="Admin sections" className="flex flex-wrap gap-1 border-b pb-2 text-sm">
       {tabs.map((tab) => {

@@ -6,7 +6,7 @@ import { NavLinks, NavLinksFallback } from "@/components/nav-links";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ConnectForm } from "@/components/connect-form";
 import { ProductionStatus } from "@/components/production-status";
-import { ReleaseButton } from "@/components/release-button";
+import { ReleaseProgress } from "@/components/release-progress";
 import { ToneBadge } from "@/components/status-badge";
 import { APP_NAME, LOCAL_DEMO_USER } from "@/lib/config";
 import {
@@ -388,13 +388,25 @@ function Instructions({
     case "push":
       return (
         <>
-          {commands ? <ReleaseButton /> : <Block>git push</Block>}
           <p>
-            {commands ? "Or push to main. " : null}
+            {commands ? "Start one here or push to main. " : null}
             The Deploy workflow runs the checks, deploys, smoke-tests and promotes. If a step
             fails, production keeps the previous version; <Cmd>docs/deploy.md</Cmd> says what each
             failure means.
           </p>
+          {commands ? (
+            <ReleaseProgress
+              endpoint="/api/setup/releases"
+              startUrl="/api/setup/release"
+              notConfigured={
+                <p className="text-muted-foreground">
+                  Sign in to GitHub with <Cmd>gh auth login</Cmd> to see releases here.
+                </p>
+              }
+            />
+          ) : (
+            <Block>git push</Block>
+          )}
         </>
       );
     case "try-production":
