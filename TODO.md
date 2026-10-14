@@ -23,5 +23,5 @@ Nothing pending. Everything found up to 2026-10-13 was ported: per-clone local d
 identity, bootstrap reading keys and creating users, Frankfurt region, the Setup page, optional
 Docker.
 
-Still unverified in both repos until a real project exists: `scripts/bootstrap.sh`,
-`make setup DB=hosted`, and the release half of the workflow.
+Verified on 2026-10-14: the setup form, bootstrap and the full release. Still unverified:
+`make setup DB=hosted`, and a full run with approval in production.
