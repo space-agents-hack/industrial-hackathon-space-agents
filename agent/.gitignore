@@ -1,1 +1,4 @@
 .vercel
+# Also ignored at the root; written here too so `vercel env pull` does not add it again.
+.env*
+!.env.example
