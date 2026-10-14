@@ -259,7 +259,9 @@ function Instructions({
             Click <strong>Generate a password</strong> and copy it.
           </li>
           <li>
-            When the project is ready, copy its <strong>Project ID</strong> from Settings, General.
+            When the project is ready, copy its <strong>Project ID</strong>: the code after{" "}
+            <Cmd>/project/</Cmd> in the dashboard&apos;s address, also under Project Settings, General.
+            It is a Supabase value; Vercel needs only the token.
           </li>
         </ul>
       );
