@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { ConnectForm } from "@/components/connect-form";
+import { ProductionStatus } from "@/components/production-status";
 import { ReleaseButton } from "@/components/release-button";
 import { ToneBadge } from "@/components/status-badge";
 import { APP_NAME, LOCAL_DEMO_USER } from "@/lib/config";
@@ -157,11 +158,19 @@ function StepItem({
         </ToneBadge>
       </div>
       <p className="mt-1 text-muted-foreground">{step.summary}</p>
-      {step.state === "done" ? null : (
+      {step.state !== "done" ? (
         <div className="mt-2 grid gap-2 border-t pt-2">
           <Instructions id={step.id} database={database} commands={commands} />
         </div>
-      )}
+      ) : step.id === "bootstrap" && commands ? (
+        <details className="mt-2 border-t pt-2">
+          <summary className="cursor-pointer text-sm">Check, change or rotate credentials</summary>
+          <div className="mt-2 grid gap-2">
+            <Rotation />
+            <ConnectForm />
+          </div>
+        </details>
+      ) : null}
     </li>
   );
 }
@@ -333,7 +342,9 @@ function Instructions({
         </>
       );
     case "try-production":
-      return (
+      return commands ? (
+        <ProductionStatus />
+      ) : (
         <p>
           Open the web project&apos;s domain from Vercel, sign in with a user you created in the
           bootstrap script, start the first example run and approve the step.
@@ -349,6 +360,36 @@ function Instructions({
         </p>
       );
   }
+}
+
+// Where a new value comes from. The form below is prefilled from .env.setup.local; change a field,
+// press Connect, then start a release: environment changes reach only new deployments.
+function Rotation() {
+  return (
+    <div className="grid gap-1 text-sm">
+      <p>
+        What you entered is saved on this machine only, in <Cmd>.env.setup.local</Cmd>: readable by
+        your user account alone, never committed, never deployed. Press <strong>Show</strong> in a
+        field to check a value. To change one, edit it, press <strong>Connect</strong>, then{" "}
+        <strong>Start the release</strong>.
+      </p>
+      <ul className="list-disc pl-5 text-muted-foreground">
+        <li>
+          Vercel or Supabase token: create a new one (links in the form), paste it, Connect, then
+          delete the old one where you created it.
+        </li>
+        <li>
+          Database password: reset it in Supabase, Project Settings, Database, then paste it here.
+        </li>
+        <li>
+          Supabase API keys: create a new secret key in Supabase, Project Settings, API Keys. Connect
+          reads the keys itself; delete the old key after the release.
+        </li>
+        <li>A person&apos;s password: type the new one next to their email.</li>
+        <li>The secret between the web and the agent is renewed on every Connect.</li>
+      </ul>
+    </div>
+  );
 }
 
 const BOOTSTRAP_ANSWERS: [string, string][] = [

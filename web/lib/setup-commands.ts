@@ -152,3 +152,109 @@ export async function writeSaved(setup: SavedSetup): Promise<void> {
 export async function forgetSaved(): Promise<void> {
   await rm(savedPath(), { force: true });
 }
+
+// Production as seen from this machine: the two production addresses (asked of Vercel through
+// its CLI, signed in as you), whether each answers, and the latest run of the Deploy workflow.
+
+// The same version as VERCEL_CLI_VERSION in .github/workflows/deploy.yml; change both together.
+// Run through npx because `vercel api` needs a newer CLI than many machines have installed.
+const VERCEL_CLI = "vercel@63.1.2";
+
+export type Endpoint = { url: string | null; healthy: boolean; detail: string; model?: string };
+export type ReleaseRun = {
+  status: string;
+  conclusion: string | null;
+  url: string;
+  createdAt: string;
+  title: string;
+};
+export type ProductionStatus = {
+  linked: boolean;
+  web: Endpoint | null;
+  agent: Endpoint | null;
+  release: ReleaseRun | null;
+};
+
+async function readLink(unit: "web" | "agent"): Promise<{ orgId: string; projectId: string } | null> {
+  try {
+    const raw: unknown = JSON.parse(await readFile(path.join(repoRoot(), unit, ".vercel", "project.json"), "utf8"));
+    if (typeof raw !== "object" || raw === null) return null;
+    const { orgId, projectId } = raw as Record<string, unknown>;
+    return typeof orgId === "string" && typeof projectId === "string" ? { orgId, projectId } : null;
+  } catch {
+    return null;
+  }
+}
+
+async function productionDomain(link: { orgId: string; projectId: string }): Promise<string | null> {
+  const team = link.orgId.startsWith("team_") ? `?teamId=${link.orgId}` : "";
+  const result = await run(
+    "npx",
+    ["--yes", VERCEL_CLI, "api", `/v9/projects/${link.projectId}/domains${team}`],
+    90_000,
+  );
+  if (!result.ok) return null;
+  try {
+    const body: unknown = JSON.parse(result.stdout);
+    const domains =
+      typeof body === "object" && body !== null && Array.isArray((body as { domains?: unknown }).domains)
+        ? ((body as { domains: { name?: unknown }[] }).domains)
+        : [];
+    const name = domains.find((domain) => typeof domain.name === "string")?.name;
+    return typeof name === "string" ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+async function probe(domain: string | null, healthPath: string): Promise<Endpoint> {
+  if (!domain) return { url: null, healthy: false, detail: "Vercel did not report a production address." };
+  const url = `https://${domain}`;
+  try {
+    const response = await fetch(`${url}${healthPath}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
+    if (!response.ok) return { url, healthy: false, detail: `Answers ${response.status}.` };
+    const body: unknown = await response.json().catch(() => null);
+    const model =
+      typeof body === "object" && body !== null && typeof (body as { model?: unknown }).model === "string"
+        ? (body as { model: string }).model
+        : undefined;
+    return { url, healthy: true, detail: "Answering.", ...(model ? { model } : {}) };
+  } catch {
+    return { url, healthy: false, detail: "Does not answer yet." };
+  }
+}
+
+async function latestRelease(): Promise<ReleaseRun | null> {
+  const result = await run("gh", [
+    "run", "list", "--workflow", "deploy.yml", "--branch", "main", "--limit", "1",
+    "--json", "status,conclusion,url,createdAt,displayTitle",
+  ]);
+  if (!result.ok) return null;
+  try {
+    const [latest] = JSON.parse(result.stdout) as {
+      status: string;
+      conclusion: string;
+      url: string;
+      createdAt: string;
+      displayTitle: string;
+    }[];
+    if (!latest) return null;
+    return {
+      status: latest.status,
+      conclusion: latest.conclusion || null,
+      url: latest.url,
+      createdAt: latest.createdAt,
+      title: latest.displayTitle,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function productionStatus(): Promise<ProductionStatus> {
+  const [webLink, agentLink, release] = await Promise.all([readLink("web"), readLink("agent"), latestRelease()]);
+  if (!webLink || !agentLink) return { linked: false, web: null, agent: null, release };
+  const [webDomain, agentDomain] = await Promise.all([productionDomain(webLink), productionDomain(agentLink)]);
+  const [web, agent] = await Promise.all([probe(webDomain, "/api/health"), probe(agentDomain, "/health")]);
+  return { linked: true, web, agent, release };
+}
