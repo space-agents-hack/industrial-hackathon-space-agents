@@ -52,10 +52,34 @@ response="$(curl -sS -o "$out" -w '%{http_code}' -X POST "$url/auth/v1/admin/use
 detail="$(cat "$out")"
 rm -f "$out"
 
+# An existing user gets the password given here: running this again (or pressing Connect again on
+# the Setup page) is how a password is changed.
+update_password() { # email, password -> 0 if updated
+  local id
+  id="$(curl -sS "$url/auth/v1/admin/users?per_page=1000" \
+    -H @<(printf 'apikey: %s\nAuthorization: Bearer %s\n' "$key" "$key") \
+    | python3 -c '
+import json, sys
+email = sys.argv[1]
+users = json.load(sys.stdin).get("users", [])
+print(next((u["id"] for u in users if (u.get("email") or "").lower() == email), ""))
+' "$1")"
+  [[ -n "$id" ]] || return 1
+  printf '%s' "$2" | python3 -c 'import json,sys; print(json.dumps({"password": sys.stdin.read()}))' \
+    | curl -fsS -o /dev/null -X PUT "$url/auth/v1/admin/users/$id" \
+      -H @<(printf 'apikey: %s\nAuthorization: Bearer %s\n' "$key" "$key") \
+      -H "content-type: application/json" --data-binary @-
+}
+
 case "$response" in
   200|201) echo "Created $email." ;;
   422) if [[ "$detail" == *exist* || "$detail" == *registered* ]]; then
-         echo "$email already exists."
+         if update_password "$(printf '%s' "$email" | tr '[:upper:]' '[:lower:]')" "$password"; then
+           echo "$email already exists; its password was updated."
+         else
+           echo "$email already exists, but its password could not be updated." >&2
+           exit 1
+         fi
        else
          echo "Could not create $email: $detail" >&2; exit 1
        fi ;;

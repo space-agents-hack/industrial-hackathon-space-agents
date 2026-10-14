@@ -275,20 +275,23 @@ jobs:
       # That it built does not show that it starts. /health shows the app imports and answers.
       # A POST without the secret must be 401: the endpoint is up AND closed. A 503 here means
       # AGENT_SHARED_SECRET is not set in the agent's Vercel environment.
+      # From the project's folder, not with --cwd: `vercel curl` hands every option it does not
+      # use to curl, and curl rejects --cwd. That stopped the first real release.
       - name: Smoke agent
         if: steps.head.outputs.current == 'true'
+        working-directory: agent
         shell: bash
         env:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_AGENT_PROJECT_ID }}
           DEPLOYMENT_URL: ${{ steps.agent.outputs.url }}
         run: |
-          vercel curl /health --cwd agent --deployment "$DEPLOYMENT_URL" -- \
+          vercel curl /health --deployment "$DEPLOYMENT_URL" -- \
             --fail --silent --show-error --retry 5 --retry-delay 2 --retry-all-errors >/dev/null
 
           code=""
           for attempt in 1 2 3; do
             code="$(vercel curl /runs/00000000-0000-0000-0000-000000000000/advance \
-              --cwd agent --deployment "$DEPLOYMENT_URL" -- \
+              --deployment "$DEPLOYMENT_URL" -- \
               --silent --output /dev/null --write-out '%{http_code}' --request POST || true)"
             if [[ "$code" == "401" ]]; then break; fi
             echo "attempt $attempt: got '$code'"
@@ -321,17 +324,18 @@ jobs:
       # not running and every page is public.
       - name: Smoke web
         if: steps.head.outputs.current == 'true'
+        working-directory: web
         shell: bash
         env:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_WEB_PROJECT_ID }}
           DEPLOYMENT_URL: ${{ steps.web.outputs.url }}
         run: |
           for path in /api/health /login; do
-            vercel curl "$path" --cwd web --deployment "$DEPLOYMENT_URL" -- \
+            vercel curl "$path" --deployment "$DEPLOYMENT_URL" -- \
               --fail --silent --show-error --retry 5 --retry-delay 2 --retry-all-errors >/dev/null
           done
 
-          code="$(vercel curl / --cwd web --deployment "$DEPLOYMENT_URL" -- \
+          code="$(vercel curl / --deployment "$DEPLOYMENT_URL" -- \
             --silent --output /dev/null --write-out '%{http_code}' || true)"
           if [[ "$code" != "307" ]]; then
             echo "::error::The home page answered '$code' to a signed-out request; expected a 307 to /login. Not promoted."

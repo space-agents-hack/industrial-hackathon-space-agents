@@ -224,13 +224,10 @@ export function ConnectForm() {
                 placeholder="email"
                 aria-label={`Email of person ${index + 1}`}
               />
-              <Input
-                type="password"
+              <PersonPassword
                 value={person.password}
-                onChange={(e) => update(setPeople, index, { password: e.target.value })}
-                placeholder={`password, ${MIN_PASSWORD_LENGTH}+ characters`}
-                autoComplete="new-password"
-                aria-label={`Password of person ${index + 1}`}
+                onChange={(password) => update(setPeople, index, { password })}
+                label={`Password of person ${index + 1}`}
               />
               <Button
                 type="button"
@@ -269,8 +266,8 @@ export function ConnectForm() {
             Remember these on this machine
           </label>
           <span className="text-xs text-muted-foreground">
-            In <code className="font-mono">.env.setup.local</code>, plain text, readable only by
-            your user, never committed.
+            Saved on this machine only, in <code className="font-mono">.env.setup.local</code>:
+            readable by your user account alone, never committed, never deployed.
           </span>
           {saved ? (
             <Button type="button" variant="outline" size="sm" onClick={forget}>
@@ -386,18 +383,52 @@ function Field({
 }
 
 function Secret({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [visible, setVisible] = useState(false);
   return (
-    <Input
-      type="password"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      // Not a login form: keep the browser's password manager from filling or saving these.
-      autoComplete="new-password"
-      data-1p-ignore
-      data-lpignore="true"
-      spellCheck={false}
-      required
-    />
+    <div className="flex gap-1.5">
+      <Input
+        type={visible ? "text" : "password"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        // Not a login form: keep the browser's password manager from filling or saving these.
+        autoComplete="new-password"
+        data-1p-ignore
+        data-lpignore="true"
+        spellCheck={false}
+        className="font-mono"
+        required
+      />
+      <Button type="button" variant="outline" onClick={() => setVisible((v) => !v)}>
+        {visible ? "Hide" : "Show"}
+      </Button>
+    </div>
+  );
+}
+
+function PersonPassword({
+  value,
+  onChange,
+  label,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="flex gap-1.5">
+      <Input
+        type={visible ? "text" : "password"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={`password, ${MIN_PASSWORD_LENGTH}+ characters`}
+        autoComplete="new-password"
+        aria-label={label}
+      />
+      <Button type="button" variant="outline" onClick={() => setVisible((v) => !v)}>
+        {visible ? "Hide" : "Show"}
+      </Button>
+    </div>
   );
 }
 
