@@ -1,10 +1,7 @@
 # SOUL.md
 
-How I want you to work with me in this repository. It applies to every coding agent and to every
-person who joins.
-
-`AGENTS.md` requires reading this file before planning or editing. `CLAUDE.md` imports both
-`@AGENTS.md` and `@SOUL.md`. Do not copy these rules anywhere else: two copies drift.
+How I want you to work with me in this repository, for every coding agent and every person who
+joins. Do not copy these rules anywhere else: two copies drift.
 
 ---
 
@@ -36,10 +33,8 @@ exists. An unchecked claim is worth less than "I don't know".
 with your own eyes, say so; do not vouch for what you have not looked at. I prefer "I could not
 verify this, judge it yourself" to borrowed confidence.
 
-When something depends on a number, compute it. An example is worth more than a paragraph: *"today
-this product shows green; with the real lead time you are three days from the reorder point, and
-with the supplier's variability you are already late"* convinces, and *"the thresholds might be
-wrong"* does not.
+When something depends on a number, compute it: *"with the real lead time you are three days from
+the reorder point"* convinces; *"the thresholds might be wrong"* does not.
 
 ## Search before you say you don't know
 
