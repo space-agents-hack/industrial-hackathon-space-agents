@@ -37,7 +37,7 @@ so this project does not collide with another one running on the same machine:
 
 ## Hosted project
 
-Created once by the Bootstrap workflow (`scripts/bootstrap.sh`), which also turns new sign-ups off
+Created once by setup (`scripts/bootstrap.sh`, from the local Setup page), which also turns new sign-ups off
 and sets the site address through the Supabase API. If it reports it could not, do it in the
 dashboard: Authentication, Sign In / Providers, "Allow new users to sign up" off; Authentication,
 URL Configuration, Site URL set to the web's production address. Sign-ups must stay off: every
@@ -51,8 +51,9 @@ SUPABASE_URL=https://<ref>.supabase.co SUPABASE_SECRET_KEY=<secret key> scripts/
 
 ### Applying migrations by hand
 
-The release workflow applies them when the three Supabase secrets are set. To do it yourself
-instead, leave those secrets unset and run, after the checks are green on that commit:
+The release workflow applies them when GitHub has `SUPABASE_PROJECT_REF`, `SUPABASE_DB_PASSWORD`
+and the `SUPABASE_POOLER_URL` variable (setup writes all three). To do it yourself instead, leave
+them unset and run, after the checks are green on that commit:
 
 ```bash
 supabase link --project-ref <ref>

@@ -24,9 +24,8 @@ Open work on the template itself. Product work in a project made from this templ
 
 - [x] Show a release's real progress (each job and step, live) in the app: Setup page and
       Admin › Releases (2026-10-15), where a platform admin can also start one.
-- [x] Manage the deployment from production (ADR-0005, 2026-10-15): Admin › Deployment stores new
-      values in GitHub and re-runs the Bootstrap workflow; first setup from GitHub alone.
-- [ ] Prove "Create production" on a fresh repository from the template, end to end (written and
-      checked, never run against a real empty Supabase organisation), and the Bootstrap workflow.
-- [ ] Zero copies for GitHub: a GitHub App made with the manifest flow (two clicks, no expiry)
-      instead of the fine-grained token.
+- [x] Manage the deployment from production (ADR-0005): Admin › Deployment stores new values in
+      GitHub and starts a release that copies them to Vercel.
+- [x] One setup path: Connect GitHub (a GitHub App, two clicks), two pasted tokens, one form.
+- [ ] Prove it on a fresh repository from the template, end to end: Connect GitHub, creating the
+      Supabase project, the first release (written and tested in parts, never run for real).

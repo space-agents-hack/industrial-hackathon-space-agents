@@ -5,22 +5,21 @@ import { Suspense } from "react";
 import { NavLinks, NavLinksFallback } from "@/components/nav-links";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ProductionStatus } from "@/components/production-status";
+import { ConnectGithubButton } from "@/components/connect-github-button";
 import { CreateProductionForm } from "@/components/create-production-form";
+import { FinishGithubButton } from "@/components/finish-github-button";
 import { ReleaseProgress } from "@/components/release-progress";
 import { ToneBadge } from "@/components/status-badge";
 import { APP_NAME, LOCAL_DEMO_USER } from "@/lib/config";
-import { CONTROL_TOKEN_PERMISSIONS, controlTokenUrl } from "@/lib/deployment";
 import {
   type Database,
   type Step,
   type StepId,
   type StepState,
   type Target,
-  type Via,
   buildSteps,
   describeWhere,
   parseTarget,
-  parseVia,
 } from "@/lib/setup";
 import { setupCommandsAvailable } from "@/lib/local-request";
 import { gitEmail } from "@/lib/setup-commands";
@@ -35,7 +34,8 @@ export const metadata: Metadata = { title: "Setup" };
 
 // The steps to a local or a production environment. On a developer's machine this page needs
 // nothing: no database, no sign-in, no agent (`make dev` on a fresh clone). It sits outside the (app) group for
-// that reason, and proxy.ts lets it through. It never asks for a password, a token or a key.
+// that reason, and proxy.ts lets it through. What you type into its production form goes from this
+// browser to this machine and on to GitHub, Vercel and Supabase; nothing is kept here.
 export default function SetupPage(props: PageProps<"/setup">) {
   return (
     <>
@@ -45,8 +45,9 @@ export default function SetupPage(props: PageProps<"/setup">) {
           <Guide searchParams={props.searchParams} />
         </Suspense>
         <p className="text-xs text-muted-foreground">
-          This page asks for nothing secret. Production values go into GitHub, where only the
-          workflows can read them; this page sees only their names.
+          What you type here goes from this browser to this machine and on to GitHub, Vercel and
+          Supabase; nothing is saved on this machine. GitHub keeps the production values where only
+          the workflows can read them; this page sees only their names.
         </p>
       </main>
     </>
@@ -123,14 +124,22 @@ async function Guide({ searchParams }: { searchParams: PageProps<"/setup">["sear
     process.env.NODE_ENV,
     process.env.SETUP_LOOPBACK_ONLY === "1",
   );
-  const via: Via = commands ? parseVia(params.via) : "github";
-  const steps = buildSteps(target, facts, via);
+  const steps = buildSteps(target, facts);
   const context: Context = {
     database: facts.database,
     commands,
     repo: facts.repo,
+    appSlug: facts.githubApp?.slug ?? null,
+    appSettingsUrl: facts.githubApp?.settingsUrl ?? null,
+    knownProjectRef: facts.projectRef,
+    connected: facts.productionSecrets?.includes("VERCEL_WEB_PROJECT_ID") ?? false,
     defaultEmail: commands && target === "production" ? await gitEmail() : "",
   };
+  const github = typeof params.github === "string" ? params.github : null;
+  const reason = typeof params.reason === "string" ? params.reason : null;
+  const plain = (value: unknown) => (typeof value === "string" && /^[\w.-]{1,40}$/.test(value) ? value : null);
+  const slug = plain(params.slug);
+  const installationId = typeof params.installation_id === "string" && /^\d{1,20}$/.test(params.installation_id) ? params.installation_id : null;
 
   return (
     <>
@@ -149,28 +158,22 @@ async function Guide({ searchParams }: { searchParams: PageProps<"/setup">["sear
           <TargetLink current={target} target="production" label="Deploy to production" />
         </nav>
       )}
+      {target === "production" && github ? (
+        <GithubNotice
+          outcome={github}
+          reason={reason}
+          slug={slug}
+          owners={{ got: plain(params.owner), expected: plain(params.expected) }}
+          installationId={installationId}
+          release={plain(params.release)}
+          ownerType={plain(params.owner_type)}
+        />
+      ) : null}
       <ol className="grid gap-2">
         {steps.map((step, index) => (
           <StepItem key={step.id} step={step} number={index + 1} context={context} />
         ))}
       </ol>
-      {target === "production" && commands && !facts.onVercel ? (
-        <p className="text-sm text-muted-foreground">
-          {via === "form" ? (
-            <>
-              No CLIs on this machine?{" "}
-              <Link href="/setup?env=production&via=github" className="text-primary underline underline-offset-2">
-                Set it up from GitHub instead
-              </Link>
-              : the same steps, with the values pasted into GitHub and one workflow run.
-            </>
-          ) : (
-            <Link href="/setup?env=production" className="text-primary underline underline-offset-2">
-              Back to the one-form setup
-            </Link>
-          )}
-        </p>
-      ) : null}
     </>
   );
 }
@@ -205,17 +208,25 @@ const TITLES: Record<StepId, string> = {
   "try-local": "Try it",
   customise: "Make it yours",
   gh: "Sign in to GitHub on this machine",
-  tokens: "Create three tokens",
+  "github-app": "Connect GitHub",
+  tokens: "Copy two tokens",
   create: "Create production",
-  secrets: "Put them in GitHub",
-  bootstrap: "Run the Bootstrap workflow",
   push: "Watch the release",
   "try-production": "Try it in production",
   manage: "Change things later",
   model: "Choose a model",
 };
 
-type Context = { database: Database; commands: boolean; repo: string | null; defaultEmail: string };
+type Context = {
+  database: Database;
+  commands: boolean;
+  repo: string | null;
+  appSlug: string | null;
+  appSettingsUrl: string | null;
+  knownProjectRef: string | null;
+  connected: boolean;
+  defaultEmail: string;
+};
 
 function StepItem({ step, number, context }: { step: Step; number: number; context: Context }) {
   const meta = STATE_META[step.state];
@@ -234,7 +245,7 @@ function StepItem({ step, number, context }: { step: Step; number: number; conte
           <Instructions id={step.id} context={context} />
         </div>
       ) : step.id === "create" && context.commands ? (
-        // Run again to add the GitHub token to an older setup, or to replace a token.
+        // Run again to replace a token or to reconnect an older setup.
         <details className="mt-2 border-t pt-2">
           <summary className="cursor-pointer text-sm">Run it again</summary>
           <div className="mt-2">
@@ -247,9 +258,7 @@ function StepItem({ step, number, context }: { step: Step; number: number; conte
 }
 
 function Instructions({ id, context }: { id: StepId; context: Context }) {
-  const { database, commands, repo } = context;
-  // Links into this repository's GitHub settings; without a known repository, the plain path.
-  const github = (path: string) => (repo ? `https://github.com/${repo}/${path}` : null);
+  const { database, commands } = context;
   switch (id) {
     case "tools":
       return (
@@ -335,14 +344,43 @@ function Instructions({ id, context }: { id: StepId; context: Context }) {
           </p>
         </>
       );
+    case "github-app":
+      return !commands ? (
+        <p>
+          Run <Cmd>make dev</Cmd> on a machine with <Cmd>gh</Cmd> signed in and open this page there.
+        </p>
+      ) : context.appSlug ? (
+        <>
+          <p>
+            The app <Cmd>{context.appSlug}</Cmd> exists but is not installed.{" "}
+            <Ext href={`https://github.com/apps/${context.appSlug}/installations/new`}>Install it</Ext> on
+            this repository only; GitHub brings you back here.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Or make a new one (then delete the old one at{" "}
+            <Ext href={context.appSettingsUrl ?? `https://github.com/apps/${context.appSlug}`}>its settings page</Ext>):
+          </p>
+          <ConnectGithubButton label="Make a new app" />
+        </>
+      ) : (
+        <>
+          <ConnectGithubButton />
+          <p>
+            On GitHub, press <strong>Create GitHub App</strong>, then <strong>Install</strong>. Production
+            gets its own key, limited to this repository: it can show and start releases and change
+            its settings, never read a secret back or touch code. Nothing to copy.
+          </p>
+        </>
+      );
     case "create":
       return commands ? (
         <CreateProductionForm
           defaultEmail={context.defaultEmail}
+          knownProjectRef={context.knownProjectRef}
+          connected={context.connected}
           tokenUrls={{
             vercel: "https://vercel.com/account/tokens",
             supabase: "https://supabase.com/dashboard/account/tokens",
-            github: controlTokenUrl(repo ?? "", APP_NAME),
           }}
         />
       ) : (
@@ -361,62 +399,11 @@ function Instructions({ id, context }: { id: StepId; context: Context }) {
             Supabase:{" "}
             <Ext href="https://supabase.com/dashboard/account/tokens">supabase.com/dashboard/account/tokens</Ext>.
           </li>
-          <li>
-            GitHub: <Ext href={controlTokenUrl(repo ?? "", APP_NAME)}>a fine-grained token</Ext> for this
-            repository only, with {CONTROL_TOKEN_PERMISSIONS}. The app keeps it to change its settings
-            later; it cannot read them back or change code.
-          </li>
           <li className="list-none text-muted-foreground">
             Vercel does not let a signed-in CLI create tokens, and Supabase has no API for it: these
-            are the only things to copy by hand.
+            two are the only things to copy. Paste them in the next step.
           </li>
         </ul>
-      );
-    case "secrets":
-      return (
-        <>
-          <p>
-            In GitHub, open{" "}
-            {github("settings/environments") ? (
-              <Ext href={github("settings/environments")!}>Settings, Environments</Ext>
-            ) : (
-              "Settings, Environments"
-            )}
-            , then <strong>production</strong> (create it with that name if it is not there), and add
-            these environment secrets:
-          </p>
-          <ul className="list-disc pl-5">
-            <li>
-              <Cmd>VERCEL_TOKEN</Cmd>, <Cmd>SUPABASE_ACCESS_TOKEN</Cmd>, <Cmd>GH_CONTROL_TOKEN</Cmd>: the
-              three tokens
-            </li>
-            <li>
-              <Cmd>ADMIN_PASSWORD</Cmd>: the password you will sign in with, 12+ characters. The
-              workflow deletes it from GitHub once your account exists.
-            </li>
-          </ul>
-        </>
-      );
-    case "bootstrap":
-      return (
-        <>
-          <p>
-            Open{" "}
-            {github("actions/workflows/bootstrap.yml") ? (
-              <Ext href={github("actions/workflows/bootstrap.yml")!}>Actions, Bootstrap</Ext>
-            ) : (
-              "Actions, Bootstrap"
-            )}
-            , press <strong>Run workflow</strong> and fill in <strong>your email</strong>; if the
-            Supabase token reaches several organisations, also the one for the project. Leave the
-            rest empty.
-          </p>
-          <p>
-            It creates the Supabase project, the two Vercel projects and your account (platform
-            admin), then starts a release. Safe to run again. Afterwards, once: Settings,
-            Environments, production, Deployment branches, add <Cmd>main</Cmd> (the token cannot).
-          </p>
-        </>
       );
     case "push":
       return (
@@ -463,13 +450,99 @@ function Instructions({ id, context }: { id: StepId; context: Context }) {
     case "model":
       return (
         <p>
-          Set <Cmd>AGENT_MODEL</Cmd> (for example <Cmd>anthropic:claude-opus-5-5</Cmd>,{" "}
+          Locally, set <Cmd>AGENT_MODEL</Cmd> (for example <Cmd>anthropic:claude-opus-5-5</Cmd>,{" "}
           <Cmd>openai:gpt-5.2</Cmd>, <Cmd>openrouter:…</Cmd>, <Cmd>deepseek:…</Cmd>) and that
-          provider&apos;s API key: in <Cmd>agent/.env</Cmd> locally, or in the agent&apos;s Vercel
-          project in production, then re-run the Deploy workflow.
+          provider&apos;s API key in <Cmd>agent/.env</Cmd>. In production, use{" "}
+          <strong>Admin, Models and limits</strong> per organisation, or <strong>Admin, Deployment</strong>{" "}
+          for the default: a value set straight in Vercel is replaced by the next release.
         </p>
       );
   }
+}
+
+const GITHUB_ERRORS: Record<string, string> = {
+  state: "GitHub's answer did not match this browser's request. Press Connect GitHub again.",
+  code: "GitHub's answer was incomplete. Press Connect GitHub again.",
+  exchange: "GitHub did not hand over the new app (the link is valid for one hour). Press Connect GitHub again.",
+  install: "The installation could not be recorded. Check that gh is signed in and reload.",
+};
+
+type Owners = { got: string | null; expected: string | null };
+
+function GithubNotice({
+  outcome,
+  reason,
+  slug,
+  owners,
+  installationId,
+  release,
+  ownerType,
+}: {
+  outcome: string;
+  reason: string | null;
+  slug: string | null;
+  owners: Owners;
+  installationId: string | null;
+  release: string | null;
+  ownerType: string | null;
+}) {
+  if (outcome === "returned" && installationId) {
+    return (
+      <p className="rounded-md border bg-card px-3 py-2">
+        GitHub is back from the install page. <FinishGithubButton installationId={installationId} />
+      </p>
+    );
+  }
+  if (outcome === "requested") {
+    return (
+      <p className="rounded-md border bg-card px-3 py-2">
+        GitHub sent an installation request to an owner of the organisation. Once they approve it,
+        press Install again from this step.
+      </p>
+    );
+  }
+  if (outcome === "installed") {
+    return (
+      <p className="rounded-md border border-success-border bg-success-surface px-3 py-2">
+        GitHub is connected.{" "}
+        {release === "started"
+          ? "A release is giving production the app's key: follow it below."
+          : release === "failed"
+            ? "Production needs one release to receive the app's key: push to main, or start one below."
+            : "The release that Create production starts gives production the app's key."}
+      </p>
+    );
+  }
+  return (
+    <p role="alert" className="rounded-md border border-danger-border bg-danger-surface px-3 py-2 text-danger">
+      {reason === "owner" && slug ? (
+        <>
+          The app {slug} was created under {owners.got ?? "another account"}, the GitHub account this
+          browser is signed in to, but the repository belongs to {owners.expected ?? "someone else"}.
+          While still signed in as {owners.got ?? "that account"}, delete {slug} at{" "}
+          <Ext href={`https://github.com/settings/apps/${slug}`}>its settings page</Ext>; then sign in
+          to GitHub as {owners.expected ?? "the repository's owner"} and press Connect GitHub again.
+        </>
+      ) : reason === "store" && slug ? (
+        <>
+          The app {slug} was created, but its key could not be stored in GitHub: gh may be signed
+          out, or not an admin of this repository. Delete it at{" "}
+          <Ext
+            href={
+              ownerType === "Organization" && owners.got
+                ? `https://github.com/organizations/${owners.got}/settings/apps/${slug}`
+                : `https://github.com/settings/apps/${slug}`
+            }
+          >
+            its settings page
+          </Ext>{" "}
+          and press Connect GitHub again.
+        </>
+      ) : (
+        (GITHUB_ERRORS[reason ?? ""] ?? "Connecting GitHub did not finish. Press Connect GitHub again.")
+      )}
+    </p>
+  );
 }
 
 function Cmd({ children }: { children: React.ReactNode }) {

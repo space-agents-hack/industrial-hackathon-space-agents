@@ -1,14 +1,11 @@
 import { dbFailure, fail, requirePlatformAdmin } from "@/lib/admin-route";
-import { parseRunId, readRuns, startWorkflow } from "@/lib/github";
+import { parseRunId, readRuns, dispatchRelease } from "@/lib/github";
 
-// Runs of the Deploy workflow (or, with ?workflow=bootstrap, the Bootstrap workflow) for Admin.
-// Platform admins only: a run's names and errors describe the deployment, not one organisation.
+// Runs of the Deploy workflow for Admin › Releases. Platform admins only: a run's names and errors describe the deployment, not one organisation.
 export async function GET(request: Request) {
   const context = await requirePlatformAdmin();
   if (context instanceof Response) return context;
-  const params = new URL(request.url).searchParams;
-  const workflow = params.get("workflow") === "bootstrap" ? "bootstrap.yml" : "deploy.yml";
-  const runs = await readRuns(workflow, parseRunId(params.get("run")));
+  const runs = await readRuns(parseRunId(new URL(request.url).searchParams.get("run")));
   return Response.json(runs, { headers: { "cache-control": "no-store" } });
 }
 
@@ -17,7 +14,7 @@ export async function GET(request: Request) {
 export async function POST() {
   const context = await requirePlatformAdmin();
   if (context instanceof Response) return context;
-  const started = await startWorkflow("deploy.yml");
+  const started = await dispatchRelease();
   if (!started.ok) return fail(started.error, 502);
   const { error } = await context.supabase.rpc("record_deployment_change", {
     change: "deployment.release_started",

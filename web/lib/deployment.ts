@@ -10,14 +10,9 @@ export const EDITABLE_SECRETS = [
   { name: "VERCEL_TOKEN", label: "Vercel token", hint: "vercel.com/account/tokens, scoped to the team" },
   { name: "SUPABASE_DB_PASSWORD", label: "Database password", hint: "after resetting it in Supabase, Database settings" },
   { name: "PROVIDER_API_KEY", label: "Default model's API key", hint: "for the model below; organisations can add their own in Providers" },
-  { name: "GH_CONTROL_TOKEN", label: "GitHub control token", hint: "the token this page uses; reaches the app with the release" },
-  { name: "SUPABASE_ACCESS_TOKEN", label: "Supabase access token", hint: "only for the Bootstrap workflow; releases do not use it" },
 ] as const;
 
 export type SecretName = (typeof EDITABLE_SECRETS)[number]["name"];
-
-// What the Bootstrap workflow refuses to run without (bootstrap.yml, "What is set").
-export const BOOTSTRAP_SECRETS: SecretName[] = ["VERCEL_TOKEN", "SUPABASE_ACCESS_TOKEN", "GH_CONTROL_TOKEN"];
 
 // What a release needs from GitHub to deploy and to apply migrations (deploy.yml).
 export const RELEASE_SECRETS = [
@@ -64,9 +59,6 @@ export function parseDeploymentChange(body: unknown): Parsed {
     const value = name === "SUPABASE_DB_PASSWORD" ? raw : raw.trim();
     if (name !== "SUPABASE_DB_PASSWORD" && /\s/.test(value)) return { ok: false, error: `${label} has spaces in it.` };
     if (/[\n\r]/.test(value)) return { ok: false, error: `${label} must be on one line.` };
-    if (name === "GH_CONTROL_TOKEN" && !value.startsWith("github_pat_")) {
-      return { ok: false, error: "The GitHub control token is a fine-grained token; it starts with github_pat_." };
-    }
     secrets[name] = value;
   }
 
@@ -88,22 +80,3 @@ export function parseDeploymentChange(body: unknown): Parsed {
     value: { secrets, agentModel: model || null, renewSharedSecret, apply: input.apply === true, password },
   };
 }
-
-// GitHub's form for the control token, filled in. The person picks the repository; GitHub does
-// not allow filling that in. Administration is left out on purpose: with it the token could
-// delete the repository. Its one use (restricting production to main) is a click instead.
-export function controlTokenUrl(repo: string, appName: string): string {
-  const url = new URL("https://github.com/settings/personal-access-tokens/new");
-  url.searchParams.set("name", `${appName} control`);
-  url.searchParams.set("description", "Lets the app change its deployment settings and start releases.");
-  const owner = repo.split("/")[0];
-  if (owner) url.searchParams.set("target_name", owner);
-  url.searchParams.set("expires_in", "366");
-  url.searchParams.set("actions", "write");
-  url.searchParams.set("environments", "write");
-  url.searchParams.set("secrets", "write");
-  url.searchParams.set("variables", "write");
-  return url.toString();
-}
-
-export const CONTROL_TOKEN_PERMISSIONS = "Actions, Environments, Secrets and Variables: read and write";

@@ -33,8 +33,8 @@ except Exception:
 }
 
 # The Vercel CLI version CI pins (.github/workflows/deploy.yml), so every script uses the same one.
-# VERCEL_SCOPE, when set, is the team every command acts in (the Bootstrap workflow sets it; on a
-# laptop the CLI's own current team is used).
+# VERCEL_SCOPE, when set, is the team every command acts in (scripts/bootstrap.sh sets it from the
+# token; otherwise the CLI's own current team is used).
 vercel_cli() {
   local version scope=()
   version="$(grep -E '^\s*VERCEL_CLI_VERSION:' .github/workflows/deploy.yml | head -1 | cut -d'"' -f2)"
