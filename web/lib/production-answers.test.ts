@@ -36,8 +36,6 @@ test("an existing project ignores the organisation and keeps an optional passwor
 test("tokens are checked for shape before anything runs", () => {
   assert.equal(parseProductionAnswers({ ...valid, supabase_token: "not-a-supabase-token" }).ok, false);
   assert.equal(parseProductionAnswers({ ...valid, vercel_token: "has space in it" }).ok, false);
-  assert.equal(parseProductionAnswers({ ...valid, github_token: "ghp_classic" }).ok, false);
-  assert.ok(parseProductionAnswers({ ...valid, github_token: "github_pat_abc" }).ok);
 });
 
 test("the first admin needs a real email and a long enough password", () => {
@@ -45,7 +43,16 @@ test("the first admin needs a real email and a long enough password", () => {
   assert.equal(parseProductionAnswers({ ...valid, password: "short" }).ok, false);
 });
 
-test("a real model needs its key", () => {
-  assert.equal(parseProductionAnswers({ ...valid, agent_model: "anthropic:claude-opus-5-5" }).ok, false);
-  assert.ok(parseProductionAnswers({ ...valid, agent_model: "anthropic:claude-opus-5-5", provider_key: "sk-ant-x" }).ok);
+test("an empty model keeps production's; a written one must look like a model", () => {
+  const kept = parseProductionAnswers(valid);
+  assert.ok(kept.ok && kept.value.agent_model === undefined);
+  assert.equal(parseProductionAnswers({ ...valid, agent_model: "not a model" }).ok, false);
+  assert.ok(parseProductionAnswers({ ...valid, agent_model: "anthropic:claude-opus-5-5" }).ok);
+});
+
+test("replacing the database has to be asked for", () => {
+  const plain = parseProductionAnswers(valid);
+  assert.ok(plain.ok && plain.value.replace_database === undefined);
+  const asked = parseProductionAnswers({ ...valid, replace_database: true });
+  assert.ok(asked.ok && asked.value.replace_database === "y");
 });

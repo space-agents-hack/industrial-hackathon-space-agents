@@ -1,11 +1,11 @@
 import { dbFailure, fail, requirePlatformAdmin } from "@/lib/admin-route";
 import { parseDeploymentChange } from "@/lib/deployment";
-import { saveDeployment, startWorkflow } from "@/lib/github";
+import { saveDeployment, dispatchRelease } from "@/lib/github";
 import { passwordMatches } from "@/lib/step-up";
 import { readJson } from "@/lib/validation";
 
-// Admin › Deployment: store new values in GitHub and, if asked, start a release that first copies
-// them to Vercel (deploy.yml, "Carry settings to Vercel"; ADR-0005). Platform admins only, with
+// Admin › Deployment: store new values in GitHub and, if asked, start a release, which copies them
+// to Vercel before deploying (deploy.yml, "Carry settings to Vercel"; ADR-0005). Platform admins only, with
 // their password typed again. The audit log gets the names of what changed, never the values.
 export async function POST(request: Request) {
   // A form on another site cannot send JSON with the session cookie; this keeps it that way.
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
   }
 
   if (parsed.value.apply) {
-    const started = await startWorkflow("deploy.yml", { apply_settings: "true" });
+    const started = await dispatchRelease();
     if (!started.ok) return fail(`Saved ${saved.names.join(", ") || "nothing"}, but ${started.error}`, 502);
     const { error } = await context.supabase.rpc("record_deployment_change", {
       change: "deployment.reconfigure_started",

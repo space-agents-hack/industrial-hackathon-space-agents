@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { ControlTokenSteps } from "@/components/admin/control-token-steps";
+import { GithubAppMissing } from "@/components/admin/github-app-missing";
 import { NoAccess } from "@/components/no-access";
 import { ReleaseProgress } from "@/components/release-progress";
 import { getCurrentOrg } from "@/lib/current-org";
@@ -32,7 +32,7 @@ async function Releases() {
       <ReleaseProgress
         endpoint="/api/admin/releases"
         startUrl={canWrite() ? "/api/admin/releases" : undefined}
-        notConfigured={<ControlTokenSteps />}
+        notConfigured={<GithubAppMissing />}
       />
     </div>
   );

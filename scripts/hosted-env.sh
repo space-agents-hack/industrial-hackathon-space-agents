@@ -21,7 +21,7 @@ if [[ -z "$ref" ]]; then
 No hosted Supabase project is known for this repository.
   - If the project exists:  make setup DB=hosted PROJECT_REF=<ref>
     (the reference is the subdomain of the project's URL, <ref>.supabase.co)
-  - If it does not exist yet: create it and run the Bootstrap workflow (see the Setup page or
+  - If it does not exist yet: run make dev and use Setup, Deploy to production (see
     docs/deploy.md), then run this again.
 MSG
   exit 1

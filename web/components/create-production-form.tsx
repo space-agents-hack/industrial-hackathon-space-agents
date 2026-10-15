@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MIN_PASSWORD_LENGTH } from "@/lib/admin";
-import { CONTROL_TOKEN_PERMISSIONS, needsProviderKey } from "@/lib/deployment";
+import { needsProviderKey } from "@/lib/deployment";
 import { REGIONS } from "@/lib/production-answers";
 
 type Choices = {
@@ -17,30 +17,36 @@ type Choices = {
 
 type Phase = "idle" | "running" | "done" | "failed";
 
-// "Create production" (lib/production-answers.ts → scripts/bootstrap.sh). Three tokens and your
+// "Create production" (lib/production-answers.ts → scripts/bootstrap.sh). Two tokens and your
 // account; the script does the rest. Nothing typed here is saved on this machine.
 export function CreateProductionForm({
   defaultEmail,
+  knownProjectRef,
+  connected,
   tokenUrls,
 }: {
   defaultEmail: string;
-  tokenUrls: { vercel: string; supabase: string; github: string };
+  // The Supabase project setup used last time, offered first so repeating setup keeps it.
+  knownProjectRef: string | null;
+  connected: boolean;
+  tokenUrls: { vercel: string; supabase: string };
 }) {
   const router = useRouter();
   const [vercelToken, setVercelToken] = useState("");
   const [supabaseToken, setSupabaseToken] = useState("");
-  const [githubToken, setGithubToken] = useState("");
   const [choices, setChoices] = useState<Choices | null>(null);
   const [choicesError, setChoicesError] = useState<string | null>(null);
   // "new:<org slug>" or "existing:<project ref>".
-  const [target, setTarget] = useState("");
+  const [target, setTarget] = useState(knownProjectRef ? `existing:${knownProjectRef}` : "");
+  const [replaceDatabase, setReplaceDatabase] = useState(false);
   const [region, setRegion] = useState("eu-central-1");
   const [dbPassword, setDbPassword] = useState("");
   const [email, setEmail] = useState(defaultEmail);
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [vercelTeam, setVercelTeam] = useState("");
-  const [model, setModel] = useState("scripted");
+  // Empty keeps the model production has (scripts/bootstrap.sh).
+  const [model, setModel] = useState("");
   const [providerKey, setProviderKey] = useState("");
 
   const [phase, setPhase] = useState<Phase>("idle");
@@ -69,7 +75,8 @@ export function CreateProductionForm({
         }
         setChoices({ orgs: body.orgs, projects: body.projects });
         setChoicesError(null);
-        setTarget((current) => current || (body.orgs.length === 1 ? `new:${body.orgs[0].slug}` : ""));
+        // A connected repository is never steered towards a new project by default.
+        setTarget((current) => current || (!connected && body.orgs.length === 1 ? `new:${body.orgs[0].slug}` : ""));
       } catch {
         if (!cancelled) setChoicesError("The local server did not answer.");
       }
@@ -78,7 +85,7 @@ export function CreateProductionForm({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [supabaseToken]);
+  }, [supabaseToken, connected]);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
@@ -99,10 +106,9 @@ export function CreateProductionForm({
         body: JSON.stringify({
           vercel_token: vercelToken,
           supabase_token: supabaseToken,
-          github_token: githubToken,
           ...(existing
             ? { project_ref: target.slice("existing:".length), db_password: dbPassword }
-            : { supabase_org: target.slice("new:".length), region }),
+            : { supabase_org: target.slice("new:".length), region, replace_database: replaceDatabase }),
           email,
           password,
           name,
@@ -135,17 +141,18 @@ export function CreateProductionForm({
     // Nothing secret stays in the page once it has been used.
     setVercelToken("");
     setSupabaseToken("");
-    setGithubToken("");
     setDbPassword("");
     setPassword("");
     setProviderKey("");
     const exit = /\nexit (\d+)\s*$/.exec(all);
     if (exit?.[1] === "0") {
       setPhase("done");
-      router.refresh();
+      // The page refreshes when the person moves on, so the log (and any warning in it) stays.
     } else {
       setPhase("failed");
       setError("It stopped; the log says why. Fix it and press the button again: repeating is safe.");
+      // What the run already stored (a new project, its password) changes what the page offers.
+      router.refresh();
     }
   }
 
@@ -157,17 +164,6 @@ export function CreateProductionForm({
         </Field>
         <Field label="Supabase access token" hint={<Ext href={tokenUrls.supabase}>create one</Ext>}>
           {(control) => <Secret {...control} value={supabaseToken} onChange={setSupabaseToken} />}
-        </Field>
-        <Field
-          label="GitHub token"
-          hint={
-            <>
-              <Ext href={tokenUrls.github}>create one</Ext> for this repository: {CONTROL_TOKEN_PERMISSIONS}.
-              Lets production change its settings.
-            </>
-          }
-        >
-          {(control) => <Secret {...control} value={githubToken} onChange={setGithubToken} optional />}
         </Field>
         <Field label="Supabase project" hint={choicesError ?? (choices ? null : "appears once the Supabase token is in")}>
           {(control) => (
@@ -204,7 +200,14 @@ export function CreateProductionForm({
           )}
         </Field>
         {existing ? (
-          <Field label="Its database password" hint="empty: keep the one GitHub has">
+          <Field
+            label="Its database password"
+            hint={
+              target === `existing:${knownProjectRef}`
+                ? "empty: keep the one GitHub has"
+                : "empty: a new one is set and stored in GitHub (anything else using the old one stops working)"
+            }
+          >
             {(control) => <Secret {...control} value={dbPassword} onChange={setDbPassword} optional />}
           </Field>
         ) : (
@@ -259,12 +262,19 @@ export function CreateProductionForm({
               <Input {...control} value={vercelTeam} onChange={(e) => setVercelTeam(e.target.value)} spellCheck={false} />
             )}
           </Field>
-          <Field label="Default model" hint="scripted needs no key; organisations choose their own later">
+          <Field label="Default model" hint="empty: keep the current one (scripted the first time); organisations choose their own later">
             {(control) => (
-              <Input {...control} value={model} onChange={(e) => setModel(e.target.value)} spellCheck={false} className="font-mono" />
+              <Input
+                {...control}
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="keep"
+                spellCheck={false}
+                className="font-mono"
+              />
             )}
           </Field>
-          {needsProviderKey(model) ? (
+          {needsProviderKey(model.trim()) ? (
             <Field label="Its API key" hint={model.split(":")[0]}>
               {(control) => <Secret {...control} value={providerKey} onChange={setProviderKey} />}
             </Field>
@@ -272,13 +282,23 @@ export function CreateProductionForm({
         </div>
       </details>
 
+      {connected && target.startsWith("new:") ? (
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" checked={replaceDatabase} onChange={(e) => setReplaceDatabase(e.target.checked)} />
+          <span>
+            Replace the database: production moves to a new, empty Supabase project. The old one stays
+            in Supabase, untouched, until you delete it there.
+          </span>
+        </label>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" disabled={phase === "running" || !target}>
+        <Button type="submit" disabled={phase === "running" || !target || (connected && !existing && !replaceDatabase)}>
           {phase === "running" ? "Working… (a few minutes)" : existing ? "Connect and release" : "Create production"}
         </Button>
         <span className="text-xs text-muted-foreground">
           {existing
-            ? "Uses the project as it is; repeating is safe."
+            ? "Uses the project and its data as they are; repeating is safe."
             : "Creates a Supabase project (a Free organisation allows two; paid ones bill per project) and two Vercel projects."}
         </span>
       </div>
@@ -289,7 +309,12 @@ export function CreateProductionForm({
         </p>
       ) : null}
       {phase === "done" ? (
-        <p className="text-success">Done. The release has started: follow it in the next step.</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-success">Done. The release has started. Read the log for anything to do by hand.</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => router.refresh()}>
+            Follow the release
+          </Button>
+        </div>
       ) : null}
       {log ? (
         <pre

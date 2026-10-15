@@ -18,11 +18,6 @@ on:
   pull_request:
   # To release again without a new commit, for example after setting a missing variable.
   workflow_dispatch:
-    inputs:
-      apply_settings:
-        description: "Copy the settings kept in GitHub to Vercel before deploying (Admin > Deployment does this)"
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -284,6 +279,12 @@ jobs:
         shell: bash
         run: |
           if [[ -n "$SUPABASE_POOLER_URL" ]]; then
+            # The address is a repository variable, which more hands can change than the secret
+            # password: send the password only to this project's Supabase pooler.
+            if [[ ! "$SUPABASE_POOLER_URL" =~ ^postgresql://postgres\.${SUPABASE_PROJECT_REF}@[a-z0-9.-]+\.pooler\.supabase\.com:[0-9]+/[a-z_]+$ ]]; then
+              echo "::error::SUPABASE_POOLER_URL is not this project's Supabase pooler. Not migrating."
+              exit 1
+            fi
             # The password goes into the address here, URL-encoded, and only into this process.
             db_url="$(python3 -c 'import os, urllib.parse as u; a = os.environ["SUPABASE_POOLER_URL"]; print(a.replace("@", ":" + u.quote(os.environ["SUPABASE_DB_PASSWORD"], safe="") + "@", 1))')"
             echo "::add-mask::$db_url"
@@ -318,17 +319,21 @@ jobs:
         if: steps.head.outputs.current == 'true'
         run: npm install --global "vercel@${VERCEL_CLI_VERSION}"
 
-      # Admin > Deployment stores new values in GitHub and starts this workflow with
-      # apply_settings: the values the two projects read at run time are copied to Vercel here, so
-      # the deployments below start with them. Only values GitHub has; the rest stay as they are.
+      # GitHub holds the settings (setup and Admin > Deployment write them there); every release
+      # copies the ones the two projects read at run time to Vercel, so the deployments below start
+      # with them. A release skipped or replaced in the queue loses nothing: the next one copies
+      # them again. Only values GitHub has; the rest stay as they are in Vercel.
+      # The GitHub App's ID and key are how production reads runs and changes these values. (GH_,
+      # not GITHUB_: GitHub refuses secret names with that prefix.)
       - name: Carry settings to Vercel
-        if: steps.head.outputs.current == 'true' && inputs.apply_settings
+        if: steps.head.outputs.current == 'true'
         shell: bash
         env:
           SHARED_SECRET: ${{ secrets.AGENT_SHARED_SECRET }}
           AGENT_MODEL: ${{ vars.AGENT_MODEL }}
           PROVIDER_API_KEY: ${{ secrets.PROVIDER_API_KEY }}
-          GH_CONTROL_TOKEN: ${{ secrets.GH_CONTROL_TOKEN }}
+          GH_APP_ID: ${{ secrets.GH_APP_ID }}
+          GH_APP_PRIVATE_KEY_B64: ${{ secrets.GH_APP_PRIVATE_KEY_B64 }}
         run: |
           set_env() { # project id, name, value
             [[ -n "$3" ]] || return 0
@@ -337,7 +342,8 @@ jobs:
           }
           set_env "$WEB_PROJECT_ID" AGENT_SHARED_SECRET "$SHARED_SECRET"
           set_env "$AGENT_PROJECT_ID" AGENT_SHARED_SECRET "$SHARED_SECRET"
-          set_env "$WEB_PROJECT_ID" GITHUB_CONTROL_TOKEN "$GH_CONTROL_TOKEN"
+          set_env "$WEB_PROJECT_ID" GH_APP_ID "$GH_APP_ID"
+          set_env "$WEB_PROJECT_ID" GH_APP_PRIVATE_KEY_B64 "$GH_APP_PRIVATE_KEY_B64"
           set_env "$AGENT_PROJECT_ID" AGENT_MODEL "$AGENT_MODEL"
           case "$AGENT_MODEL" in
             anthropic:*) key_name=ANTHROPIC_API_KEY ;;

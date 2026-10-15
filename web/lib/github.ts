@@ -3,7 +3,8 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 
 import { type DeploymentChange, ENVIRONMENT, type SecretName } from "@/lib/deployment";
-import { type Release, type ReleaseRun, type Workflow, parseErrors, parseJobs, parseRuns, toRelease } from "@/lib/releases";
+import { appJwt, decodePrivateKey } from "@/lib/github-app-jwt";
+import { type Release, type ReleaseRun, parseErrors, parseJobs, parseRuns, toRelease } from "@/lib/releases";
 import { sealForGitHub } from "@/lib/sealed-box";
 import { runCli } from "@/lib/setup-commands";
 
@@ -11,9 +12,11 @@ import { runCli } from "@/lib/setup-commands";
 // values the workflows read (Admin › Deployment). ADR-0005 says why GitHub, and why the
 // Vercel and Supabase tokens are never in the app.
 //
-// Two ways in. GITHUB_CONTROL_TOKEN on the web's Vercel project: a fine-grained token for this
-// repository only, which can write secrets but never read one back, and start workflows. Or, on
-// `make dev` only, the `gh` CLI you are signed in with, for reading.
+// Two ways in. In production, the GitHub App the Setup page created for this repository
+// (GH_APP_ID and GH_APP_PRIVATE_KEY_B64 on the web's Vercel project): its key mints
+// one-hour tokens limited to the app's permissions on this one repository, which can write a secret
+// but never read one back, and start workflows. Or, on `make dev` only, the `gh` CLI you are signed
+// in with, for reading.
 
 type Answer =
   | { ok: true; status: number; data: unknown }
@@ -29,8 +32,58 @@ function repoName(): string | null {
   return repo && /^[\w.-]+\/[\w.-]+$/.test(repo) ? repo : null;
 }
 
-function controlToken(): string | null {
-  return process.env.GITHUB_CONTROL_TOKEN || null;
+function appCredentials(): { id: string; key: string } | null {
+  const id = process.env.GH_APP_ID;
+  const key = process.env.GH_APP_PRIVATE_KEY_B64;
+  return id && key ? { id, key } : null;
+}
+
+// One installation token at a time, reused until five minutes before it expires; concurrent
+// requests share the same exchange instead of each asking GitHub.
+let installation: { token: string; expiresAt: number } | null = null;
+let installationId: number | null = null;
+let pending: Promise<string | null> | null = null;
+
+async function installationToken(): Promise<string | null> {
+  const app = appCredentials();
+  const repo = repoName();
+  if (!app || !repo) return null;
+  if (installation && installation.expiresAt - Date.now() > 5 * 60_000) return installation.token;
+  pending ??= (async () => {
+    try {
+      const jwt = appJwt(app.id, decodePrivateKey(app.key), Math.floor(Date.now() / 1000));
+      const headers = {
+        accept: "application/vnd.github+json",
+        authorization: `Bearer ${jwt}`,
+        "x-github-api-version": "2022-11-28",
+      };
+      if (installationId === null) {
+        const found = await fetch(`${API}/repos/${repo}/installation`, { headers, cache: "no-store" });
+        if (!found.ok) return null;
+        installationId = Number(((await found.json()) as { id?: unknown }).id) || null;
+        if (installationId === null) return null;
+      }
+      const minted = await fetch(`${API}/app/installations/${installationId}/access_tokens`, {
+        method: "POST",
+        headers,
+        cache: "no-store",
+      });
+      if (!minted.ok) {
+        // Uninstalled and installed again gets a new id: look it up next time.
+        if (minted.status === 404) installationId = null;
+        return null;
+      }
+      const body = (await minted.json()) as { token?: string; expires_at?: string };
+      if (!body.token) return null;
+      installation = { token: body.token, expiresAt: Date.parse(body.expires_at ?? "") || Date.now() + 50 * 60_000 };
+      return body.token;
+    } catch {
+      return null;
+    } finally {
+      pending = null;
+    }
+  })();
+  return pending;
 }
 
 function onMakeDev(): boolean {
@@ -38,11 +91,11 @@ function onMakeDev(): boolean {
 }
 
 export function canRead(): boolean {
-  return Boolean((controlToken() && repoName()) || onMakeDev());
+  return Boolean((appCredentials() && repoName()) || onMakeDev());
 }
 
 export function canWrite(): boolean {
-  return Boolean(controlToken() && repoName());
+  return Boolean(appCredentials() && repoName());
 }
 
 // GitHub says which permission was missing in a header; that sentence is what the person needs.
@@ -63,9 +116,12 @@ async function refusal(response: Response): Promise<Answer> {
 
 // `{owner}/{repo}` in a path is this repository.
 async function api(method: Method, path: string, body?: unknown, as: "json" | "text" = "json"): Promise<Answer> {
-  const token = controlToken();
   const repo = repoName();
-  if (token && repo) {
+  if (appCredentials() && repo) {
+    const token = await installationToken();
+    if (!token) {
+      return { ok: false, reason: "refused", detail: "The GitHub App could not get a token: is it still installed on this repository?" };
+    }
     try {
       const response = await fetch(`${API}/${path.replace("{owner}/{repo}", repo)}`, {
         method,
@@ -79,6 +135,12 @@ async function api(method: Method, path: string, body?: unknown, as: "json" | "t
         cache: "no-store",
         signal: AbortSignal.timeout(10_000),
       });
+      // A token GitHub no longer accepts (the app was reinstalled, or the key rotated): forget it
+      // and the installation, so the next request mints a fresh one instead of failing for an hour.
+      if (response.status === 401) {
+        installation = null;
+        installationId = null;
+      }
       if (!response.ok) return refusal(response);
       if (response.status === 204) return { ok: true, status: 204, data: null };
       return { ok: true, status: response.status, data: as === "text" ? await response.text() : await response.json() };
@@ -97,7 +159,7 @@ async function api(method: Method, path: string, body?: unknown, as: "json" | "t
       return { ok: false, reason: "unreachable" };
     }
   }
-  return { ok: false, reason: "refused", detail: "No GitHub token is configured." };
+  return { ok: false, reason: "refused", detail: "The GitHub App is not connected." };
 }
 
 // A page left open polls every few seconds, and so may a second person. GitHub allows a token
@@ -121,12 +183,12 @@ export type Runs =
   | { ok: true; runs: ReleaseRun[]; selected: Release | null }
   | { ok: false; reason: "not-configured" | "refused" | "unreachable" };
 
-// The latest runs of a workflow on main, and one of them (the newest unless `runId` says
+// The latest runs of the Deploy workflow on main, and one of them (the newest unless `runId` says
 // otherwise) with every job and step. Pull request runs are left out: they never release.
-export async function readRuns(workflow: Workflow, runId?: number): Promise<Runs> {
+export async function readRuns(runId?: number): Promise<Runs> {
   if (!canRead()) return { ok: false, reason: "not-configured" };
 
-  const listed = await cachedGet(`repos/{owner}/{repo}/actions/workflows/${workflow}/runs?branch=main&per_page=8`);
+  const listed = await cachedGet("repos/{owner}/{repo}/actions/workflows/deploy.yml/runs?branch=main&per_page=8");
   if (!listed.ok) return { ok: false, reason: listed.reason };
   const runs = parseRuns(listed.data).filter((run) => run.event !== "pull_request");
   const run = runs.find((r) => r.id === runId) ?? runs[0];
@@ -145,7 +207,7 @@ export async function readRuns(workflow: Workflow, runId?: number): Promise<Runs
       }),
   );
 
-  return { ok: true, runs, selected: toRelease(run, jobs, workflow) };
+  return { ok: true, runs, selected: toRelease(run, jobs) };
 }
 
 const errorsByJob = new Map<number, string[]>();
@@ -205,19 +267,10 @@ export type Saved = { ok: true; names: string[] } | { ok: false; error: string; 
 // and says what had already been saved.
 export async function saveDeployment(change: DeploymentChange): Promise<Saved> {
   const names: string[] = [];
-  if (!canWrite()) return { ok: false, error: "No GitHub control token is configured.", names };
+  if (!canWrite()) return { ok: false, error: "The GitHub App is not connected.", names };
 
   const values: [string, string][] = Object.entries(change.secrets) as [SecretName, string][];
   if (change.renewSharedSecret) values.push(["AGENT_SHARED_SECRET", randomBytes(32).toString("hex")]);
-
-  // A release copies GH_CONTROL_TOKEN to the web, and the Bootstrap workflow signs in with it. A
-  // deployment connected before it existed lacks it; this page's own token is the one to give it.
-  if (!change.secrets.GH_CONTROL_TOKEN) {
-    const state = await deploymentState();
-    if (state.ok && !state.secrets.some((s) => s.name === "GH_CONTROL_TOKEN")) {
-      values.push(["GH_CONTROL_TOKEN", controlToken() ?? ""]);
-    }
-  }
 
   if (values.length) {
     const key = await api("GET", `repos/{owner}/{repo}/environments/${ENVIRONMENT}/secrets/public-key`);
@@ -253,10 +306,10 @@ export async function saveDeployment(change: DeploymentChange): Promise<Saved> {
 }
 
 // Workflow inputs are strings, booleans included.
-export async function startWorkflow(workflow: Workflow, inputs: Record<string, string> = {}): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!canWrite()) return { ok: false, error: "No GitHub control token is configured." };
-  const started = await api("POST", `repos/{owner}/{repo}/actions/workflows/${workflow}/dispatches`, { ref: "main", inputs });
-  if (!started.ok) return { ok: false, error: `GitHub refused to start ${workflow}. ${started.detail ?? ""}` };
+export async function dispatchRelease(inputs: Record<string, string> = {}): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!canWrite()) return { ok: false, error: "The GitHub App is not connected." };
+  const started = await api("POST", "repos/{owner}/{repo}/actions/workflows/deploy.yml/dispatches", { ref: "main", inputs });
+  if (!started.ok) return { ok: false, error: `GitHub refused to start a release. ${started.detail ?? ""}` };
   recent.clear();
   return { ok: true };
 }

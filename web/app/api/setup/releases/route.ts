@@ -6,5 +6,5 @@ export async function GET(request: Request) {
   const refused = guard(request);
   if (refused) return refused;
   const run = parseRunId(new URL(request.url).searchParams.get("run"));
-  return Response.json(await readRuns("deploy.yml", run), { headers: { "cache-control": "no-store" } });
+  return Response.json(await readRuns(run), { headers: { "cache-control": "no-store" } });
 }

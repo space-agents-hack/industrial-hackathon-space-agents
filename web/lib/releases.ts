@@ -1,4 +1,4 @@
-// Runs of the Deploy and Bootstrap workflows as the app shows them: each job and its steps, live. Pure functions
+// Runs of the Deploy workflow as the app shows them: each job and its steps, live. Pure functions
 // over GitHub's REST answers; fetching them is in lib/github.ts.
 
 import type { Tone } from "./trace";
@@ -26,10 +26,7 @@ export type ReleaseJob = {
 
 // What the run means for production, which the run's own result does not say: a green run whose
 // release job stopped at "What is configured" deployed nothing.
-// "done" is a Bootstrap run that finished: it changes settings and releases nothing itself.
-export type Outcome = "running" | "released" | "checked" | "not-released" | "done" | "failed" | "cancelled";
-
-export type Workflow = "deploy.yml" | "bootstrap.yml";
+export type Outcome = "running" | "released" | "checked" | "not-released" | "failed" | "cancelled";
 
 export type ReleaseRun = {
   id: number;
@@ -156,11 +153,10 @@ export function parseErrors(log: string): string[] {
     .slice(-4);
 }
 
-export function outcomeOf(run: ReleaseRun, jobs: ReleaseJob[], workflow: Workflow = "deploy.yml"): Outcome {
+export function outcomeOf(run: ReleaseRun, jobs: ReleaseJob[]): Outcome {
   if (run.phase === "running" || run.phase === "waiting") return "running";
   if (run.phase === "cancelled") return "cancelled";
   if (run.phase === "failed") return "failed";
-  if (workflow === "bootstrap.yml") return "done";
   const release = jobs.find((job) => job.name === RELEASE_JOB);
   // Pull requests run the checks only.
   if (!release || release.phase === "skipped") return run.event === "pull_request" ? "checked" : "not-released";
@@ -168,8 +164,8 @@ export function outcomeOf(run: ReleaseRun, jobs: ReleaseJob[], workflow: Workflo
   return last?.phase === "succeeded" ? "released" : "not-released";
 }
 
-export function toRelease(run: ReleaseRun, jobs: ReleaseJob[], workflow: Workflow = "deploy.yml"): Release {
-  return { ...run, outcome: outcomeOf(run, jobs, workflow), jobs };
+export function toRelease(run: ReleaseRun, jobs: ReleaseJob[]): Release {
+  return { ...run, outcome: outcomeOf(run, jobs), jobs };
 }
 
 // "Check web › Build; Check agent › Tests": what is happening now, for the one-line summary. The
@@ -212,7 +208,6 @@ export const OUTCOME_META: Record<Outcome, { label: string; tone: Tone }> = {
   released: { label: "Released", tone: "green" },
   checked: { label: "Checks passed", tone: "green" },
   "not-released": { label: "Not released", tone: "neutral" },
-  done: { label: "Done", tone: "green" },
   failed: { label: "Failed", tone: "red" },
   cancelled: { label: "Cancelled", tone: "neutral" },
 };

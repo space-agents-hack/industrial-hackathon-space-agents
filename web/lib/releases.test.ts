@@ -94,11 +94,6 @@ test("a green run is released only when the web was promoted", () => {
   assert.match(notReleasedReason(superseded), /newer commit/);
 });
 
-test("a finished Bootstrap run is done, not released", () => {
-  const [parsed] = parseRuns({ workflow_runs: [run({ display_title: "Bootstrap" })] });
-  assert.equal(toRelease(parsed, parseJobs({ jobs: [job("Connect Vercel and Supabase", [step("Connect")])] }), "bootstrap.yml").outcome, "done");
-});
-
 test("pull requests only check", () => {
   const pr = release({ event: "pull_request" }, [job("Check web (Next.js)", [step("Build")]), job(RELEASE, [], "completed", "skipped")]);
   assert.equal(pr.outcome, "checked");

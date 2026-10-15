@@ -4,6 +4,7 @@ import { execFile, spawn } from "node:child_process";
 import path from "node:path";
 
 import { type RequestFacts, refuseUnlessLocal } from "@/lib/local-request";
+import type { CreatedApp } from "@/lib/github-app";
 import type { ProductionAnswers } from "@/lib/production-answers";
 
 // Runs CLIs on this machine for the local Setup page. Every route that uses this
@@ -50,6 +51,131 @@ export function runCli(command: string, args: string[], timeoutMs = 20_000): Pro
       resolve({ ok: !error, stdout: String(stdout).trim() });
     });
   });
+}
+
+// Like runCli, with `input` on standard input: how secrets reach `gh`, never as an argument.
+export function runCliInput(command: string, args: string[], input: string, timeoutMs = 20_000): Promise<{ ok: boolean; stdout: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { cwd: repoRoot(), env: childEnv() as NodeJS.ProcessEnv, stdio: ["pipe", "pipe", "ignore"] });
+    let stdout = "";
+    const timer = setTimeout(() => child.kill("SIGTERM"), timeoutMs);
+    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+    child.on("error", () => {
+      clearTimeout(timer);
+      resolve({ ok: false, stdout: "" });
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve({ ok: code === 0, stdout: stdout.trim() });
+    });
+    child.stdin.end(input);
+  });
+}
+
+// ------------------------------------------------------------------ the GitHub App (ADR-0005)
+
+export type RepoInfo = { fullName: string; name: string; id: number; ownerLogin: string; ownerId: number; ownerType: string };
+
+export async function repoInfo(): Promise<RepoInfo | null> {
+  const result = await runCli("gh", ["api", "repos/{owner}/{repo}"]);
+  if (!result.ok) return null;
+  try {
+    const repo = JSON.parse(result.stdout) as {
+      full_name: string;
+      name: string;
+      id: number;
+      owner: { login: string; id: number; type: string };
+    };
+    return {
+      fullName: repo.full_name,
+      name: repo.name,
+      id: repo.id,
+      ownerLogin: repo.owner.login,
+      ownerId: repo.owner.id,
+      ownerType: repo.owner.type,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// The production environment, created with the rule that only main may use it if it does not
+// exist yet. Creating it needs Administration, which your `gh` has and the app deliberately lacks.
+async function ensureProductionEnvironment(repo: string): Promise<boolean> {
+  if ((await runCli("gh", ["api", `repos/${repo}/environments/production`])).ok) return true;
+  const created = await runCliInput(
+    "gh",
+    ["api", "-X", "PUT", `repos/${repo}/environments/production`, "--input", "-"],
+    JSON.stringify({ deployment_branch_policy: { protected_branches: false, custom_branch_policies: true } }),
+  );
+  if (!created.ok) return false;
+  await runCli("gh", ["api", "-X", "POST", `repos/${repo}/environments/production/deployment-branch-policies`, "-f", "name=main", "-f", "type=branch"]);
+  return true;
+}
+
+// The app's ID and key go into GitHub, from where the next release copies them to the web
+// (deploy.yml, "Carry settings to Vercel"). Nothing is kept on this machine. The key is stored
+// base64-encoded on one line, so no tool on the way has to keep a PEM's line breaks.
+export async function storeGithubApp(app: CreatedApp, repo: string, settingsUrl: string): Promise<boolean> {
+  if (!(await ensureProductionEnvironment(repo))) return false;
+  const secret = (name: string, value: string) =>
+    runCliInput("gh", ["secret", "set", name, "--env", "production", "--repo", repo], value);
+  const id = await secret("GH_APP_ID", String(app.id));
+  const key = await secret("GH_APP_PRIVATE_KEY_B64", Buffer.from(app.pem).toString("base64"));
+  const slug = await runCli("gh", ["variable", "set", "GH_APP_SLUG", "--repo", repo, "--body", app.slug]);
+  await runCli("gh", ["variable", "set", "GH_APP_SETTINGS_URL", "--repo", repo, "--body", settingsUrl]);
+  // A new app is not installed anywhere yet.
+  await runCli("gh", ["variable", "delete", "GH_APP_INSTALLATION_ID", "--repo", repo]);
+  return id.ok && key.ok && slug.ok;
+}
+
+export async function recordInstallation(installationId: number, repo: string): Promise<boolean> {
+  const set = await runCli("gh", ["variable", "set", "GH_APP_INSTALLATION_ID", "--repo", repo, "--body", String(installationId)]);
+  return set.ok;
+}
+
+// The app this repository's setup created, from the variables above. Names only.
+export type GithubAppStatus = { slug: string; installed: boolean; settingsUrl: string | null };
+
+export async function githubAppStatus(): Promise<GithubAppStatus | null> {
+  const listed = await runCli("gh", ["variable", "list", "--json", "name,value"]);
+  if (!listed.ok) return null;
+  try {
+    const variables = new Map((JSON.parse(listed.stdout) as { name: string; value: string }[]).map((v) => [v.name, v.value]));
+    const slug = variables.get("GH_APP_SLUG");
+    // Rendered as a link: only ever a GitHub address.
+    const settings = variables.get("GH_APP_SETTINGS_URL") ?? "";
+    return slug
+      ? { slug, installed: Boolean(variables.get("GH_APP_INSTALLATION_ID")), settingsUrl: settings.startsWith("https://github.com/") ? settings : null }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+// The Supabase project setup used last time, if any (scripts/bootstrap.sh sets the variable).
+export async function knownProjectRef(): Promise<string | null> {
+  const result = await runCli("gh", ["api", "repos/{owner}/{repo}/actions/variables/SUPABASE_PROJECT_REF", "--jq", ".value"]);
+  return result.ok && /^[a-z0-9]{20}$/.test(result.stdout) ? result.stdout : null;
+}
+
+// Records the installation (it ticks the Setup step; production finds the installation itself with
+// the app's key) and, on a deployment that already exists, starts the release that gives the web
+// the key. Only for an app this page created.
+// "started": a release is giving the web the key; "later": production does not exist yet, and Create
+// production's release will; "failed": it exists but the release did not start.
+export type InstallRelease = "started" | "later" | "failed";
+
+export async function finishInstallation(installationId: number): Promise<{ ok: boolean; release: InstallRelease }> {
+  const [repo, app] = await Promise.all([repoInfo(), githubAppStatus()]);
+  if (!repo || !app || !(await recordInstallation(installationId, repo.fullName))) return { ok: false, release: "later" };
+  return { ok: true, release: await releaseWithSettings(repo.fullName) };
+}
+
+async function releaseWithSettings(repo: string): Promise<InstallRelease> {
+  const secrets = await runCli("gh", ["api", `repos/${repo}/environments/production/secrets`, "--jq", ".secrets[].name"]);
+  if (!secrets.ok || !secrets.stdout.split("\n").includes("VERCEL_WEB_PROJECT_ID")) return "later";
+  return (await runCli("gh", ["workflow", "run", "deploy.yml", "--repo", repo, "--ref", "main"])).ok ? "started" : "failed";
 }
 
 // One at a time: two runs would race on the same projects and secrets. Claimed in one synchronous

@@ -17,7 +17,7 @@ off in both Vercel projects, so the only path is `.github/workflows/deploy.yml`.
 
 To follow a release job by job and step by step, with the reason when one fails: the Setup page
 under `make dev` (read with your `gh` sign-in), or **Admin › Releases** in production for platform
-admins, who can also start one there. Production needs `GITHUB_CONTROL_TOKEN` (below).
+admins, who can also start one there. Production reads them with its GitHub App (below).
 
 A scheduled workflow (`watchdog.yml`) runs the same deep check against production every 30
 minutes and keeps a GitHub issue open while it fails.
@@ -28,50 +28,60 @@ has already been promoted. Both must therefore work with the web that is live.
 
 ## One-time setup
 
-Three tokens are the only things copied by hand (ADR-0005): Vercel refuses to let a signed-in CLI
-create a token ("Cannot create tokens for this app", checked 2026-10-15) and Supabase has no API
-for it. Everything else is automated by `scripts/bootstrap.sh`, run one of two ways:
+One place, the local Setup page (`make dev`, Setup, "Deploy to production", with `gh` signed in),
+three steps (ADR-0005):
 
-- **One form** (usual): `make dev`, Setup, "Deploy to production", with `gh` signed in. Paste the
-  Vercel, Supabase and GitHub tokens, pick the Supabase organisation (or an existing project),
-  give your email and password. It creates the Supabase project and waits for it, both Vercel
-  projects, every secret and variable, the rule that only `main` may deploy, and your account,
-  then starts a release. The Supabase token is used there and not stored.
-- **From GitHub alone**, for a machine without the CLIs: put `VERCEL_TOKEN`,
-  `SUPABASE_ACCESS_TOKEN`, `GH_CONTROL_TOKEN` and `ADMIN_PASSWORD` in Settings, Environments,
-  `production`; run Actions, **Bootstrap** with your email. Then add `main` under Deployment
-  branches yourself: the token cannot (that needs Administration, which could also delete the
-  repository).
+1. **Connect GitHub**: press the button, then Create and Install on GitHub. It makes a GitHub App
+   for this repository only, stores its ID and key in GitHub, and brings you back. Nothing to copy.
+2. **Copy two tokens**: Vercel (vercel.com/account/tokens) and Supabase
+   (supabase.com/dashboard/account/tokens). Vercel refuses to let a signed-in CLI create a token
+   ("Cannot create tokens for this app", checked 2026-10-15) and Supabase has no API for it.
+3. **Create production**: paste them, pick the Supabase organisation (or an existing project),
+   give your email and password. `scripts/bootstrap.sh` creates the Supabase project and waits for
+   it, both Vercel projects, every secret and variable, the rule that only `main` may deploy, and
+   your account, then starts a release. The Supabase token is used there and not stored; one left
+   in GitHub by an earlier setup is removed (revoke it in Supabase too).
 
-The GitHub token: fine-grained, this repository only, Actions, Environments, Secrets and
-Variables set to read and write. Afterwards **Admin › Deployment** replaces any value and starts
-a release that copies them to Vercel first. What setup writes, so you can check:
+Running it again is safe: it offers the project already in use (a new, empty one only if you tick
+"Replace the database"), keeps the model and the web-agent secret unless you change them, and an
+empty database password sets a new one that only GitHub needs. A run that stops half-way has
+already stored the new project and its password, so the next run picks them up.
+
+The app may read the Deploy workflow's runs and logs, start a release (Actions), store secrets in
+the `production` environment (Environments) and set the model (Variables). It has no
+Administration (that could delete the repository) and no Contents (it never touches code). Its
+key mints one-hour tokens; it does not expire. Afterwards **Admin › Deployment** replaces any
+value and starts a release. Every release copies the settings GitHub holds (the web-agent secret,
+the model and its key, the app's key) to Vercel before deploying, so a value set straight in Vercel
+is replaced. Releases send the database password only to this project's Supabase pooler: a
+`SUPABASE_POOLER_URL` naming another host is refused. What setup writes, so you can check:
 
 GitHub, environment `production`, secrets:
 
 | Secret | What it is |
 |---|---|
 | `VERCEL_TOKEN` | A Vercel access token |
-| `VERCEL_ORG_ID` | The Vercel team or user id (written by Bootstrap) |
-| `VERCEL_WEB_PROJECT_ID` | The project that serves `web/` (written by Bootstrap) |
-| `VERCEL_AGENT_PROJECT_ID` | The project that serves `agent/` (written by Bootstrap) |
+| `VERCEL_ORG_ID` | The Vercel team or user id (written by setup) |
+| `VERCEL_WEB_PROJECT_ID` | The project that serves `web/` (written by setup) |
+| `VERCEL_AGENT_PROJECT_ID` | The project that serves `agent/` (written by setup) |
 | `SUPABASE_PROJECT_REF` | The project reference (the subdomain of its URL) |
 | `SUPABASE_DB_PASSWORD` | The database password (generated when setup creates the project) |
-| `SUPABASE_ACCESS_TOKEN` | Only with the GitHub-alone path; releases do not need it |
 | `AGENT_SHARED_SECRET` | Between web and agent; kept so a re-run does not change it |
-| `GH_CONTROL_TOKEN` | The GitHub token above; Bootstrap also gives it to the web |
+| `GH_APP_ID`, `GH_APP_PRIVATE_KEY_B64` | The GitHub App's ID and key (base64), written by Connect GitHub |
 | `PROVIDER_API_KEY` | Optional: the key of the default model's provider |
 
 GitHub repository variables: `VERCEL_AUTHOR_NAME`, `VERCEL_AUTHOR_EMAIL` (the Vercel token
-owner's identity, so a teammate's push deploys), `PRODUCTION_URL`, `AGENT_MODEL`, and
-`SUPABASE_POOLER_URL` (the database address without the password: with it, migrations need only
-`SUPABASE_DB_PASSWORD`, not an account-wide Supabase token).
+owner's identity, so a teammate's push deploys), `PRODUCTION_URL`, `AGENT_MODEL`,
+`SUPABASE_PROJECT_REF` (offered when setup runs again), `SUPABASE_POOLER_URL` (the database
+address without the password: with it, migrations need only `SUPABASE_DB_PASSWORD`, not an
+account-wide Supabase token), and `GH_APP_SLUG`, `GH_APP_SETTINGS_URL`, `GH_APP_INSTALLATION_ID`
+(which app, where to manage it, and that it is installed).
 
 Vercel, Production environment variables:
 
 | Project | Variables |
 |---|---|
-| web | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `AGENT_URL`, `AGENT_SHARED_SECRET`, `GITHUB_CONTROL_TOKEN` |
+| web | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `AGENT_URL`, `AGENT_SHARED_SECRET`, `GH_APP_ID`, `GH_APP_PRIVATE_KEY_B64` |
 | agent | `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `AGENT_SHARED_SECRET`, `AGENT_MODEL`, and the API key of that model's provider |
 
 Both `vercel.json` files pin the functions to `fra1` (Frankfurt). Keep that next to the database's
@@ -137,14 +147,15 @@ where they are applied by hand from one laptop: with several people pushing thro
 laptop is a bottleneck. The price is that an applied migration cannot be taken back by the
 workflow. Never edit a migration that has reached `main`; write a new one.
 
-To apply by hand instead, leave the three Supabase secrets unset and follow `supabase/README.md`.
+To apply by hand instead, leave the Supabase values unset and follow `supabase/README.md`.
 
 ## Verified on a real deployment
 
 First confirmed on 2026-10-14 with hackathon-prep (Vercel Pro, Supabase in Frankfurt):
 
-- `scripts/bootstrap.sh`, then driven by a local form, connects a fresh repository end to end. The
-  same script inside the Bootstrap workflow is not yet proven on a fresh repository (TODO.md).
+- `scripts/bootstrap.sh`, driven by an earlier version of the local form, connected a fresh
+  repository end to end. Creating the Supabase project and Connect GitHub are not yet proven on a
+  real run (TODO.md).
 - Migrations applied by the workflow; Vercel builds `agent/` from `uv.lock` as FastAPI on Python
   3.13; the web deploys prebuilt; both smoke tests pass; both are promoted.
 - Production: the web redirects signed-out visitors to `/login`, the setup endpoints are closed,

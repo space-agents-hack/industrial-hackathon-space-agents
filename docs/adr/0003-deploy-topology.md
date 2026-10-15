@@ -90,4 +90,4 @@ absorbs.
 1. [x] Confirm the agent builds from source and answers `/health` (first release, 2026-10-14).
    It needed `"framework": "fastapi"` in `agent/vercel.json`.
 2. [ ] Measure how long a run can take before the platform ends it, on the plan in use.
-3. [x] One-command setup: `scripts/bootstrap.sh`, run by the Bootstrap workflow (ADR-0005).
+3. [x] One-command setup: `scripts/bootstrap.sh`, run from the local Setup page (ADR-0005).

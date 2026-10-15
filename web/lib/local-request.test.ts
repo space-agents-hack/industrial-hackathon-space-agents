@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { type RequestFacts, refuseUnlessLocal } from "./local-request.ts";
+import { type RequestFacts, refuseUnlessLocal, refuseUnlessLocalReturn } from "./local-request.ts";
 
 const ok: RequestFacts = {
   onVercel: false,
@@ -66,4 +66,16 @@ test("a page on another site cannot even trigger a read", () => {
   // Typed in the address bar, or curl with no header at all.
   assert.equal(refuseUnlessLocal({ ...read, fetchSite: "none" }), null);
   assert.equal(refuseUnlessLocal({ ...read, fetchSite: null }), null);
+});
+
+test("GitHub's return to this machine is let through only as a GET to the local dev server", () => {
+  const back: RequestFacts = { ...ok, method: "GET", origin: null, contentType: null, fetchSite: "cross-site" };
+  // The ordinary rule refuses a navigation that comes from github.com...
+  assert.equal(refuseUnlessLocal(back), 403);
+  // ...the return rule allows it, and nothing else.
+  assert.equal(refuseUnlessLocalReturn(back), null);
+  assert.equal(refuseUnlessLocalReturn({ ...back, method: "POST" }), 405);
+  assert.equal(refuseUnlessLocalReturn({ ...back, host: "evil.example" }), 403);
+  assert.equal(refuseUnlessLocalReturn({ ...back, onVercel: true }), 404);
+  assert.equal(refuseUnlessLocalReturn({ ...back, loopbackOnly: false }), 404);
 });

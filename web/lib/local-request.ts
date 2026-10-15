@@ -44,3 +44,14 @@ export function refuseUnlessLocal(facts: RequestFacts): 403 | 404 | 415 | null {
   if (!facts.contentType?.toLowerCase().startsWith("application/json")) return 415;
   return null;
 }
+
+// GitHub sends the browser back here after creating or installing the app: a top-level GET from
+// github.com, so Sec-Fetch-Site says cross-site and the rule above would refuse it. Everything else
+// still holds (dev server, loopback Host), and the routes that use this check what they receive:
+// the callback compares GitHub's `state` with the cookie set when the person pressed the button.
+export function refuseUnlessLocalReturn(facts: RequestFacts): 403 | 404 | 405 | null {
+  if (!setupCommandsAvailable(facts.onVercel, facts.nodeEnv, facts.loopbackOnly)) return 404;
+  if (!facts.host || !LOOPBACK_HOST.test(facts.host)) return 403;
+  if (facts.method !== "GET") return 405;
+  return null;
+}

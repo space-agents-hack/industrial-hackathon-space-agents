@@ -23,7 +23,7 @@ import type { Tone } from "@/lib/trace";
 import { cn } from "@/lib/utils";
 
 // A workflow run, job by job and step by step, refreshed while it runs. Used by the local Setup
-// page (read with `gh`), Admin › Releases and Admin › Deployment (read with the control token).
+// page (read with `gh`) and Admin › Releases (read with the GitHub App).
 
 const LIVE_MS = 3_000;
 const IDLE_MS = 20_000;

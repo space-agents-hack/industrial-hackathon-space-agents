@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
-import { ControlTokenSteps } from "@/components/admin/control-token-steps";
+import { GithubAppMissing } from "@/components/admin/github-app-missing";
 import { DeploymentForm } from "@/components/admin/deployment-form";
 import { NoAccess } from "@/components/no-access";
 import { RelativeTime } from "@/components/relative-time";
@@ -41,7 +41,7 @@ async function Deployment() {
   const state = await deploymentState();
   if (!state.ok) {
     return state.reason === "not-configured" ? (
-      <ControlTokenSteps />
+      <GithubAppMissing />
     ) : (
       <p role="alert" className="text-danger">
         GitHub refused to show the deployment&apos;s values. {state.detail}
@@ -103,7 +103,7 @@ async function Deployment() {
         ) : (
           <p className="text-muted-foreground">
             Reading with your <code className="font-mono">gh</code> sign-in. Changes are made in the
-            deployed app, which has the control token.
+            deployed app, which has the GitHub App&apos;s key.
           </p>
         )}
       </section>

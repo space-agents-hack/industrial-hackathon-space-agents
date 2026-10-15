@@ -3,7 +3,7 @@ import "server-only";
 import { connection } from "next/server";
 
 import { type AgentHealth, type SetupFacts, databaseOf } from "@/lib/setup";
-import { runCli } from "@/lib/setup-commands";
+import { githubAppStatus, knownProjectRef, runCli } from "@/lib/setup-commands";
 
 // What the Setup page can observe: the configuration of this server, the agent's health over
 // HTTP and, under `make dev`, which secrets the repository's production environment holds (names
@@ -15,13 +15,21 @@ export async function gatherSetupFacts(): Promise<SetupFacts> {
 
   const onVercel = Boolean(process.env.VERCEL);
   const local = !onVercel && process.env.SETUP_LOOPBACK_ONLY === "1";
-  const [agent, github] = await Promise.all([agentHealth(), local ? productionSecrets() : null]);
+  const [agent, github, githubApp, projectRef] = await Promise.all([
+    agentHealth(),
+    local ? productionSecrets() : null,
+    local ? githubAppStatus() : null,
+    local ? knownProjectRef() : null,
+  ]);
   return {
     onVercel,
     database: databaseOf(process.env.NEXT_PUBLIC_SUPABASE_URL),
     agent,
     repo: github?.repo ?? null,
     productionSecrets: github?.names ?? null,
+    // Deployed, the app counts as connected when its key reached this deployment.
+    githubApp: onVercel ? (process.env.GH_APP_ID && process.env.GH_APP_PRIVATE_KEY_B64 ? { slug: "", installed: true } : null) : githubApp,
+    projectRef,
   };
 }
 

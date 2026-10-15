@@ -3,7 +3,6 @@
 // keys.
 
 import { MIN_PASSWORD_LENGTH } from "./admin.ts";
-import { needsProviderKey } from "./deployment.ts";
 
 export type ProductionAnswers = {
   vercel_token: string;
@@ -11,12 +10,14 @@ export type ProductionAnswers = {
   // Empty: create a project in `supabase_org`, in `region`.
   project_ref?: string;
   supabase_org?: string;
+  // Required to create a new project for a repository that is already connected to one.
+  replace_database?: "y";
   region?: string;
   db_password?: string;
-  github_token?: string;
   vercel_team?: string;
   name?: string;
-  agent_model: string;
+  // Empty: keep the model production has (or scripted, the first time).
+  agent_model?: string;
   provider_key?: string;
   users: { email: string; password: string }[];
   // Start a release when done.
@@ -58,10 +59,6 @@ export function parseProductionAnswers(input: unknown): Parsed {
   if (!supabase_token.startsWith("sbp_") || !TOKEN.test(supabase_token)) {
     return { ok: false, error: "Paste the Supabase access token; it starts with sbp_." };
   }
-  const github_token = text(body, "github_token");
-  if (github_token && !github_token.startsWith("github_pat_")) {
-    return { ok: false, error: "The GitHub token is a fine-grained token; it starts with github_pat_." };
-  }
 
   const project_ref = text(body, "project_ref");
   const supabase_org = text(body, "supabase_org");
@@ -84,11 +81,13 @@ export function parseProductionAnswers(input: unknown): Parsed {
   const vercel_team = text(body, "vercel_team");
   if (vercel_team && !/^[\w-]{1,64}$/.test(vercel_team)) return { ok: false, error: "That is not a Vercel team slug." };
 
-  const agent_model = text(body, "agent_model") || "scripted";
-  const provider_key = text(body, "provider_key");
-  if (needsProviderKey(agent_model) && !provider_key) {
-    return { ok: false, error: `The model ${agent_model} needs its provider's API key.` };
+  // Whether a key is needed depends on the model production already has: scripts/bootstrap.sh
+  // decides, since it can see that.
+  const agent_model = text(body, "agent_model");
+  if (agent_model && agent_model !== "scripted" && !/^[a-z-]+:[\w./:-]+$/.test(agent_model)) {
+    return { ok: false, error: "A model is scripted or provider:name, for example anthropic:claude-opus-5-5." };
   }
+  const provider_key = text(body, "provider_key");
 
   const email = text(body, "email").toLowerCase();
   const password = typeof body.password === "string" ? body.password : "";
@@ -102,11 +101,12 @@ export function parseProductionAnswers(input: unknown): Parsed {
     value: {
       vercel_token,
       supabase_token,
-      ...(project_ref ? { project_ref, ...(db_password ? { db_password } : {}) } : { supabase_org, region }),
-      ...(github_token ? { github_token } : {}),
+      ...(project_ref
+        ? { project_ref, ...(db_password ? { db_password } : {}) }
+        : { supabase_org, region, ...(body.replace_database === true ? { replace_database: "y" as const } : {}) }),
       ...(vercel_team ? { vercel_team } : {}),
       ...(name ? { name } : {}),
-      agent_model,
+      ...(agent_model ? { agent_model } : {}),
       ...(provider_key ? { provider_key } : {}),
       users: [{ email, password }],
       release: "y",
