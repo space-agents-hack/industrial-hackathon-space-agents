@@ -11,8 +11,6 @@ name: Watchdog
 # Does nothing until the repository variable PRODUCTION_URL is set (scripts/bootstrap.sh sets it).
 
 on:
-  schedule:
-    - cron: "*/30 * * * *"
   workflow_dispatch:
 
 permissions:

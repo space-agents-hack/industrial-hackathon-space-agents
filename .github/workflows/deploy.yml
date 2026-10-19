@@ -15,6 +15,7 @@ name: Deploy
 on:
   push:
     branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
   pull_request:
   # To release again without a new commit, for example after setting a missing variable.
   workflow_dispatch:
@@ -33,7 +34,7 @@ env:
 jobs:
   repo:
     name: Check scripts, workflows and migrations
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -69,7 +70,7 @@ jobs:
 
   agent:
     name: Check agent (Python)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     defaults:
       run:
         working-directory: agent
@@ -104,7 +105,7 @@ jobs:
 
   web:
     name: Check web (Next.js)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     defaults:
       run:
         working-directory: web
@@ -179,7 +180,7 @@ jobs:
     name: Release to production
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: [repo, agent, web, database]
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     environment: production
     # One release at a time, none cancelled half-way. The queue starts after the checks, so a push
     # whose checks fail never delays a green one.
