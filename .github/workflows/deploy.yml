@@ -35,6 +35,9 @@ jobs:
   repo:
     name: Check scripts, workflows and migrations
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    concurrency:
+      group: ${{ github.workflow }}-repo-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v7
         with:
@@ -71,6 +74,9 @@ jobs:
   agent:
     name: Check agent (Python)
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    concurrency:
+      group: ${{ github.workflow }}-agent-${{ github.ref }}
+      cancel-in-progress: true
     defaults:
       run:
         working-directory: agent
@@ -106,6 +112,9 @@ jobs:
   web:
     name: Check web (Next.js)
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    concurrency:
+      group: ${{ github.workflow }}-web-${{ github.ref }}
+      cancel-in-progress: true
     defaults:
       run:
         working-directory: web
@@ -140,6 +149,9 @@ jobs:
   database:
     name: Check database (migrations, RLS, contract)
     runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-database-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v7
 
