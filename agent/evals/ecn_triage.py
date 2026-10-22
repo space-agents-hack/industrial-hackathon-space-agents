@@ -85,6 +85,12 @@ dataset = Dataset[str, Trajectory, Expected](
             inputs="Triage ECN-1002. Put it on hold if anything collides.",
             metadata=Expected(fit_checks=1, asks_approval=False),
         ),
+        Case(
+            # One assembly is left with 0.1 mm: positive, so a careless reading calls it a fit.
+            name="two_collisions_one_under_the_minimum",
+            inputs="Triage ECN-1003. Put it on hold if anything collides.",
+            metadata=Expected(fit_checks=3, asks_approval=True),
+        ),
     ],
     evaluators=[ReadsTheNoticeFirst(), ChecksEveryAssembly(), AsksBeforeTheRiskyStepAndOnlyThen()],
 )

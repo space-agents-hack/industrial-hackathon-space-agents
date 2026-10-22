@@ -20,6 +20,10 @@ const EXAMPLES: { label: string; task: string }[] = [
     task: "Triage ECN-1002: cover plate thickness 1.5 → 1.6 mm. Find affected assemblies, check fit, check open orders, and put the ECN on hold if anything collides.",
   },
   {
+    label: "ECN-1003: two collisions",
+    task: "Triage ECN-1003: hinge pin diameter 6.0 → 6.4 mm. Find affected assemblies, check fit, check open orders, and put the ECN on hold if anything collides.",
+  },
+  {
     label: "ECN-4040: unknown record",
     task: "Triage ECN-4040 and put it on hold if anything collides.",
   },
