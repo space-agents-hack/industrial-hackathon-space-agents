@@ -243,8 +243,8 @@ async def _run_subgoal(
     loop = asyncio.get_running_loop()
     limits = subgoal_review.Limits(
         batch_size=settings.subgoal_review_batch,
-        concurrency=settings.writer_concurrency,
-        timeout_s=settings.subagent_timeout_s,
+        concurrency=settings.subgoal_review_concurrency,
+        timeout_s=settings.subgoal_review_timeout_s,
         # No new reviewer batch past this, so the file is written before RUN_TIMEOUT_S: the rules'
         # answer for what was not reviewed is better than no file.
         deadline=loop.time() + settings.run_timeout_s - 30,

@@ -21,7 +21,7 @@ not from the others. For each requirement:
      sentences of the new version that now state it into `new_quote`, exactly as printed. Do not
      rewrite, shorten or summarise them.
    - `removed`: the new version no longer requires it anywhere.
-3. `reason`: one sentence saying what changed in the obligation, or why nothing did.
+3. `reason`: one short sentence saying what changed in the obligation, or why nothing did.
 
 If the new text shown does not contain the old sentence or its rewording, it may have moved: call
 `search_new_version` with a few distinctive words of the old sentence before you decide that it

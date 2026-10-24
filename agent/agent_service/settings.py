@@ -49,16 +49,21 @@ class Settings(BaseSettings):
     # provider is healthy (an estimate: per-window times are not measured yet, #14).
     subagent_timeout_s: float = 240
     # Sub-goal runs (domain/subgoal.py, #42): whether reviewer agents re-read the requirements
-    # whose cited paragraph changed, and how many requirements one reviewer call reads. 8 keeps
-    # a call to a few thousand tokens of paragraph text, read in well under a minute; a rewritten
-    # regulation with 300 such requirements is then about 38 calls, 6 at a time. Off means the
-    # rules diff alone, at no model cost. An estimate, not measured on a real model yet.
+    # whose cited paragraph changed. Off means the rules diff alone, at no model cost.
     subgoal_review: bool = True
     # The reviewer's model when the organisation chose no check model in Admin. Not the run's
     # model: that is the writer's, often the largest one, and the reviewer only compares short
-    # passages. The first production run on the run's model (Opus) was slow and costly.
+    # passages. The first production run on the run's model (Opus) was slow.
     subgoal_review_model: str = "anthropic:claude-sonnet-5-5"
-    subgoal_review_batch: int = 8
+    # Sized for wall time, not cost (Clemente, 2026-10-24: Certivity's own run takes about a
+    # minute; ten is not acceptable). 4 requirements per call keeps an answer to a few hundred
+    # output tokens, and 16 calls at once put the dev case's 15 reviewed requirements, or a
+    # rewritten regulation's 60, in one round. 90 s per call, one retry: a stalled call costs at
+    # most 3 minutes, and then the rules' answer stands for its requirements. Estimates, not
+    # measured on a real model yet.
+    subgoal_review_batch: int = 4
+    subgoal_review_concurrency: int = 16
+    subgoal_review_timeout_s: float = 90
 
     # Case ingestion (domain/case_ingest.py): the model that reads what the parsers cannot (a
     # scanned page, a drawing, a file a parser fails on). Small and cheap on purpose: it
