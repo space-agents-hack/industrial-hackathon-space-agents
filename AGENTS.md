@@ -21,7 +21,36 @@ This file is for whoever **builds** this repo. What the agent itself reads at ru
   They must stay in step.
 - Living documents: the map in `docs/architecture.md`, the reasons in `docs/adr/`, tests in
   `docs/testing.md`, the pipeline in `docs/deploy.md`, the event playbook in `docs/hackathon.md`.
-  Open work goes in `TODO.md`.
+- What the product must do and for whom: `docs/se/` (stakeholders, requirements, interfaces,
+  verification). Who is doing what: **GitHub Issues**, nowhere else.
+
+## Working in parallel
+
+Two people (Clemente, Ramón) and several agents push to this repo at once. These rules exist so
+that nobody builds on a guess about someone else's work.
+
+- **Issues are the only task tracker.** No task lists in `TODO.md` or in documents: a second copy
+  drifts from the first.
+- **Claim before you edit.** Pick an open issue without the `doing` label, add `doing`, and
+  comment one line with your plan. Humans also assign themselves; agents add the label
+  `owner:<agent-name>`, because several agents may commit through one account. If an issue has
+  `doing` and is not yours, do not touch its files: pick another or ask on the issue.
+- **Status labels:** `doing`, `blocked` (say on what), `review` (PR open). Closed means merged.
+- **Every issue body has two lines:** `Traces to: SYS-x` (from `docs/se/requirements.md`) and
+  `Interfaces: IF-x` (from `docs/se/interfaces.md`), or `none` with the reason. Work that serves
+  no requirement either reveals a missing need (add it, say who it comes from) or is scope creep.
+- **Commits mention the SYS- or IF- id** they implement or change.
+- **Interfaces change only with both owners' agreement**, written on the issue, before merge. If
+  you need a change on the other side, ask there; do not edit the other side's code to fit yours.
+- **Owners are assigned by Clemente or Ramón.** Where a document or issue says `UNASSIGNED`, leave
+  it and say so. Never write someone's name as owner on their behalf.
+- **Issues opened by an agent are drafts** until Clemente or Ramón confirms them. Say so when you
+  rely on one.
+- **Notes others need** (a number you measured, a gotcha, an interface detail) go as a comment on
+  the issue; if they outlive the task, into `docs/se/interfaces.md` or the score log in
+  `docs/se/verification.md`.
+- **Never `R-` or `R1` for our own ids.** Certivity's output requirements are `R-001...` and the
+  brief's required elements are referred to as `CR1` to `CR4` (`docs/se/README.md`).
 
 ## Validation
 
