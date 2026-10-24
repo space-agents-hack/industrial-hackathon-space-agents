@@ -1,183 +1,97 @@
 # System requirements
 
-Each requirement: a statement with "shall", its reason, the needs it serves, the part it is
-allocated to, how it is verified (see `verification.md`), the issue that implements it, and its
-status. Every status below is `proposed` (written by Claude on 2026-10-24, not yet reviewed by
-Clemente or Ramón). Owners are on the issues, not here.
+All `proposed` (Claude, 2026-10-24); not yet reviewed by Clemente or Ramón (#11). Owners live on
+the issues. Needs: `stakeholders.md`. Verification: `verification.md`.
 
-Allocation names: **web** (`web/`), **ingest** (case files to tagged case content,
-`agent/`), **regs** (regulation index and requirement extraction, `agent/`), **checks**
-(Certivity's `validate.py` and `score_local.py`), **db** (`supabase/`), **ops** (deploy, upload
-procedure, people).
+**Allocation:** web = `web/` · ingest = case files to tagged case content · regs = regulation
+catalogue and requirement extraction · checks = Certivity `validate.py` / `score_local.py` ·
+db = `supabase/` · ops = deploy, uploads, people.
+**Verification:** T test · S score · D demonstration · I inspection.
 
-Verification methods: **T** automated test, **S** score (`score_local.py` on the dev case or the
-platform), **D** demonstration, **I** inspection.
+## Requirements
 
-## Input
+| Id | The system shall... | Needs | Alloc | Ver | IF | Issue |
+|---|---|---|---|---|---|---|
+| **Input** | | | | | | |
+| SYS-1 | accept a case as several files: .md .txt .pdf .png .jpg .docx, CAD .step/.stp .iges/.igs .stl | N-3 | web, ingest, db | T | 1 | #8 |
+| SYS-2 | pass every accepted file to the model as text or image, and list in the trace what was read, skipped or truncated per file | N-1, N-3, N-9 | ingest | T | 1 | #8 |
+| SYS-3 | hand the regulation step the case content tagged by file and page, plus optional free-form notes from a cheap model | N-1, N-2, N-4 | ingest, regs | T, S | 2 | — |
+| SYS-23 | ingest a regulations `index.json` automatically: download, verify checksums, store by version, page and paragraph | N-13, N-1, N-2 | regs, db | T, I | 3 | #3 |
+| **Output** | | | | | | |
+| SYS-4 | output a main-goal JSON that `validate.py` accepts, with `team_id` and `case_id` | N-7 | regs, checks | T | 4 | #4 |
+| SYS-5 | cite only catalogue regulations, with the **base** `version_label` and a page of that PDF | N-2, N-7 | regs | T | 3, 5 | #3, #4 |
+| SYS-6 | cite the paragraph label of every requirement | N-1, N-2 | regs | T | 3 | #3 |
+| SYS-7 | state one engineering obligation per requirement | N-1, N-4, N-5 | regs | S, I | — | #4 |
+| SYS-8 | reach regulation-level recall ≥ `TBD` and page-level recall ≥ `TBD` on the dev case | N-1, N-4 | ingest, regs | S | — | #4 |
+| SYS-9 | (should) give a test case per requirement | N-5 | regs | I | — | — |
+| **Checks** | | | | | | |
+| SYS-10 | run `validate.py` (unchanged) automatically on each run's output JSON and show every problem with its JSON path | N-7 | checks, web | T | 5 | — |
+| SYS-11 | score the output JSON against the dev case's `expected.json` with `score_local.py` and show regulation and page scores | N-1, N-12 | checks, web | D | 5 | — |
+| **Review and deployability** | | | | | | |
+| SYS-12 | link each requirement to its source page in the web | N-2 | web | D | — | #6 |
+| SYS-13 | require one person's approval ("approve all") before export or submission | N-9 | regs, web | T | — | #6 |
+| SYS-14 | go from upload to a validated JSON with no manual step | N-8 | all | D | 1–5 | #4 |
+| SYS-15 | finish a run within `RUN_TIMEOUT_S` = 270 s | N-8 | regs, ingest, ops | T | 3 | — |
+| SYS-16 | never commit case files or Certivity data, and purge them, Storage included | N-9 | db, ops | I, T | 1, 5 | — |
+| SYS-17 | record every model message, tool call, check and approval in `run_events` | N-9, N-12 | regs, db | T | — | — |
+| SYS-18 | (may) export to Polarion or Jama (ReqIF or CSV) | N-10 | web | D | — | — |
+| **Sub-goal** | | | | | | |
+| SYS-19 | output a sub-goal JSON that `validate.py --requirements-old` accepts: modified, removed or added, with the reason | N-6, N-7 | regs, checks | T, S | 5 | #5 |
+| **Event operations** | | | | | | |
+| SYS-20 | make the best-scoring file the last valid held-out upload, before Sunday 13:00 | N-7 | ops | I | 6 | #7 |
+| SYS-21 | submit repository, demo and answers on the organisers' platform | N-11 | ops | I | — | — |
+| SYS-22 | present only measured scores, and where the system is weak | N-12 | ops | I | — | — |
 
-**SYS-1 Case file formats.** The system shall accept a case as one or more files in .md, .txt,
-.pdf, .png, .jpg, .docx and the CAD formats .step/.stp, .iges/.igs and .stl.
-Why: engineers have the product in whatever form they have it (N-3); the dev case is .md + .png.
-CAD is in on Clemente's decision (2026-10-24): engineers keep their parts as CAD.
-Serves N-3. Allocated: web, ingest, db. Interface: IF-1. Verify: T. Issue: #8 (to be updated
-to the bucket design). Status: proposed.
-What "accepted" means for CAD in version 1: the file is stored and listed, and what can be read
-as text reaches the model (STEP and IGES are plain-text formats that carry part and product
-names; binary STL carries almost nothing but a name and a triangle count). No geometry is
-rendered or measured. The trace says so for each CAD file (SYS-2).
-Future work, not accepted yet: .pptx, legacy .doc, .zip archives. Per-file and per-run limits
-are `TBD` in the ingestion design.
-Future work: reuse Ramón's regulation ingestion layer (PDF to text by page, issue #3) for case
-PDFs once it exists, instead of keeping two PDF readers.
+SYS-23 has a number out of order because it was added after SYS-1 to SYS-22. Ids are never
+renumbered.
 
-**SYS-2 Nothing dropped silently.** Every accepted file shall reach the model as text or image,
-and the run trace shall list each file with what was read and anything skipped or truncated.
-Why: a page the model never saw is a requirement nobody finds (N-1), and the engineer cannot tell.
-Serves N-1, N-3, N-9. Allocated: ingest. Verify: T. Issue: #8 (to be updated). Status: proposed.
+## Rationale and notes
 
-**SYS-3 Case content hand-off.** The system shall hand the regulation step the case content
-itself: the text of each file by page and its images, each tagged with file name and page.
-It may add free-form notes on the product (parts, functions, vehicle category) from a quick,
-cheap model, each note citing the file and page it came from.
-Why: Certivity could not confirm a fixed set of product attributes (Clemente, 2026-10-24), so a
-fixed case-profile schema would be a guess that the regulation step then depends on. Content
-tagged by file and page loses nothing; the notes are a help, not a contract.
-Serves N-1, N-4, N-2. Allocated: ingest, regs. Interface: IF-2. Verify: T (every block carries
-file and page), S (regulation-level recall). Issue: none yet. Status: proposed.
-Changed 2026-10-24: was "case profile" with fixed fields.
+| Id | Why, and what to watch |
+|---|---|
+| SYS-1 | CAD in by Clemente's decision (2026-10-24). In v1 a CAD file is stored and only its readable text reaches the model. STEP/IGES carry part names, binary STL almost nothing, and no geometry is rendered. Future: .pptx, .doc, .zip; reuse Ramón's PDF layer (#3) for case PDFs |
+| SYS-2 | A page the model never saw is a requirement nobody finds, and the engineer cannot tell |
+| SYS-3 | Certivity could not confirm fixed product attributes (2026-10-24), so there is no fixed schema. The notes are a help, not a contract. Was "case profile" until 2026-10-24 |
+| SYS-23 | The same mechanism loads any customer's regulation set (Clemente, 2026-10-24) |
+| SYS-4 | CR1. The platform runs the same check, and a rejected file does not count |
+| SYS-5 | CR2. A page of the `latest` version counts as a wrong page. **Same-name risk:** `validate.py` checks against the `index.json` file, not our database, so the catalogue keeps its exact strings and the file stays available to the checks |
+| SYS-6 | A page counts if the page *or* the paragraph is right, so the paragraph covers an off-by-one page |
+| SYS-7 | Matching is one to one, so merging two obligations loses recall (Brief 07) |
+| SYS-8 | F2 favours recall. Targets will be set from the first baseline, not invented |
+| SYS-10 | A check, not a write: nobody approves it. It saves wasting one of the 5 uploads/hour |
+| SYS-11 | Only the dev case has an answer file. `index.json` plays no part in this check |
+| SYS-13 | One click for the whole list. Per-requirement accept/reject is future work for client engineers |
+| SYS-15 | Not measured. If it doesn't fit, the architecture changes (pre-computed index, or the `agent/Dockerfile` container) |
+| SYS-16 | AGENTS.md, LICENSE-DATA.md. The purge script deletes rows only today, not bucket objects |
+| SYS-20 | The **last** valid upload counts, not the best. Procedure in `docs/hackathon.md` |
 
-## Output
+## Traceability: needs to requirements
 
-**SYS-4 Submission format.** The output of a main-goal run shall be a JSON document that
-`validate.py` accepts, with `team_id` and `case_id` set.
-Why: CR1; the platform runs the same check on upload, and a file that fails does not count.
-Serves N-7. Allocated: regs, checks. Interface: IF-4. Verify: T. Issue: #4. Status: proposed.
+| Need | Satisfied by |
+|---|---|
+| N-1 Completeness | SYS-2, 3, 6, 7, 8, 11, 23 |
+| N-2 Checkable source | SYS-3, 5, 6, 12, 23 |
+| N-3 Input as I have it | SYS-1, 2 |
+| N-4 No noise | SYS-3, 7, 8 |
+| N-5 Actionable wording | SYS-7, 9 |
+| N-6 Stale requirements | SYS-19 |
+| N-7 Accepted submission | SYS-4, 5, 10, 19, 20 |
+| N-8 End to end | SYS-14, 15 |
+| N-9 Deployable | SYS-2, 13, 16, 17 |
+| N-10 Fits their tooling | SYS-18 |
+| N-11 Submitted | SYS-21 |
+| N-12 Shows its weakness | SYS-11, 17, 22 |
+| N-13 Reusable regulation set | SYS-23 |
 
-**SYS-5 Citation validity.** Every requirement shall cite a regulation from our regulation
-catalogue (the database, loaded from Certivity's `index.json` by SYS-23), with the
-`version_label` of its **base** version, and a page of that version's PDF.
-Why: CR2; a page of the `latest` version counts as a different page (README section 2).
-Same-name risk: Certivity's `validate.py` checks citations against the `index.json` file, not
-against our database. If the catalogue ever differs from that file (a renamed regulation, a
-re-typed version label), our run looks valid and the platform rejects the upload. So the
-catalogue keeps the exact `regulation` and `version_label` strings from `index.json`, and the
-original file stays available to `validate.py` (IF-5).
-Serves N-2, N-7. Allocated: regs. Verify: T. Issue: #3, #4. Status: proposed.
+Every need has at least one requirement, and every requirement has at least one need.
 
-**SYS-6 Paragraph.** Every requirement shall also cite the paragraph label.
-Why: a page counts if the page or the paragraph is right (README, "How it is judged"), so the
-paragraph protects against an off-by-one page. Serves N-2, N-1. Allocated: regs. Verify: T.
-Issue: #3. Status: proposed.
+## Allocation: parts to requirements
 
-**SYS-7 One obligation per requirement.** Each requirement shall state one engineering
-obligation (one scope, condition and constraint).
-Why: requirements are matched one to one; merging two loses recall (Brief 07). Serves N-4, N-5,
-N-1. Allocated: regs. Verify: S (requirement level on the platform), I. Issue: #4. Status:
-proposed.
-
-**SYS-8 Recall and precision on the dev case.** On `dev-rear-lamp`, regulation-level recall shall
-be at least `TBD` and page-level recall at least `TBD`, measured with `score_local.py`.
-Why: F2 weights recall over precision (Brief 07). Targets are set from the first baseline score,
-not before (SOUL.md: no invented numbers). Serves N-1, N-4. Allocated: ingest, regs. Verify: S.
-Issue: #4. Status: proposed.
-
-**SYS-9 Test case.** Each requirement should carry a test case. ("Should": optional in the
-schema, not scored as far as the README says.)
-Serves N-5. Allocated: regs. Verify: I. Issue: none yet. Status: proposed.
-
-## Checks on our side
-
-**SYS-10 Validate on every run.** When a run produces a submission (the one output JSON of that
-run), the system shall automatically run `validate.py`, unchanged from Certivity's copy, and show
-the result with each problem's JSON path. No person approves this step: it is a check, it writes
-nothing.
-Why: catching an invalid file before upload saves one of 5 uploads per hour. Serves N-7.
-Allocated: checks, web. Interface: IF-5. Verify: T. Issue: none yet (validate/score design in
-progress). Status: proposed.
-
-**SYS-11 Local score where an answer exists.** For a case with an expected answer (only the dev
-case), the system shall compare the run's output JSON with Certivity's expected answer for that
-case (`cases/dev-rear-lamp/expected.json`) using `score_local.py`, and show the regulation and
-page scores. `index.json` plays no part in this.
-Why: the only offline measure we have. Serves N-1, N-12. Allocated: checks, web. Interface: IF-5.
-Verify: D. Issue: none yet. Status: proposed.
-
-## Review, demo, deployability
-
-**SYS-12 Source link.** In the web, each requirement shall link to its source page of the
-regulation PDF.
-Why: Brief 07 names it under the UI criterion. Serves N-2. Allocated: web. Verify: D. Issue: #6.
-Status: proposed.
-
-**SYS-13 Approval before export.** Exporting or submitting the requirements shall be a tool
-marked `requires_approval=True`, so a person approves before anything leaves the system. One
-approval covers the whole list ("approve all"), not one per requirement or per file.
-Per-requirement review (accept or reject each line) is future work: useful for an engineer at a
-client, not something we can do for a long list during the hackathon.
-Why: AGENTS.md rule for writes, and the deployability story. Serves N-9. Allocated: regs, web.
-Verify: T (the run pauses before it). Issue: #6. Status: proposed.
-
-**SYS-14 End to end in one flow.** From uploading case files to a validated submission shall need
-no manual step.
-Serves N-8. Allocated: web, ingest, regs, checks. Verify: D. Issue: #4. Status: proposed.
-
-**SYS-15 Run time.** A full run shall finish inside the agent's run limit, today
-`RUN_TIMEOUT_S` = 270 s in one HTTP request (`docs/architecture.md`).
-Why: a run that times out produces nothing. Not measured yet; writing every cited requirement of a
-case in one request may not fit. If it does not fit,
-this requirement changes the architecture (pre-computed index, or the container in
-`agent/Dockerfile`), not only the prompt. Serves N-8. Allocated: regs, ingest, ops. Verify: T
-(timed real run). Issue: none yet. Status: proposed.
-
-**SYS-16 Confidential inputs.** Case files and Certivity data shall never be committed, and shall
-be deletable by `scripts/purge-challenge-data.sh`, including Storage objects.
-Why: AGENTS.md limits, LICENSE-DATA.md ("hackathon only"), and N-9. The script deletes database
-rows only today; it does not empty Storage buckets. Serves N-9. Allocated: db, ops. Verify: I, T.
-Issue: none yet. Status: proposed.
-
-**SYS-17 Record of the run.** Every model message, tool call, check result and approval shall be
-recorded in the run trace (`run_events`).
-Why: an auditor or an engineer must be able to see why a requirement is on the list. Already true
-for the template's loop. Serves N-9, N-12. Allocated: regs, db. Verify: T. Issue: none. Status:
-proposed.
-
-**SYS-18 Export to requirements tools.** The system may export requirements in a format
-importable by Polarion or Jama (for example ReqIF or CSV). ("May": not graded.)
-Serves N-10. Allocated: web. Verify: D. Issue: none. Status: proposed.
-
-**SYS-23 Automatic regulation ingestion.** Given a regulations `index.json`, the system shall
-download each listed PDF, verify its checksum, and store the regulation, its versions and its
-text by page and paragraph in the database, with no manual step, ready to be linked to
-organisations or retrieved by the model.
-Why: the same mechanism then loads any customer's regulation set, not only this hackathon's
-(Clemente, 2026-10-24). Serves N-13, N-1, N-2. Allocated: regs, db. Interface: IF-3.
-Verify: T (a small index ingests end to end), I (row counts per regulation against the index).
-Issue: #3. Status: proposed.
-
-## Sub-goal
-
-**SYS-19 Change detection.** Given the old requirements and the base and latest versions of a
-regulation, the system shall produce a sub-goal file that `validate.py --requirements-old`
-accepts, flagging each requirement as modified, removed or added with the reason in the
-regulation.
-Serves N-6, N-7. Allocated: regs, checks. Verify: T, S. Issue: #5. Status: proposed.
-
-## Operations at the event
-
-**SYS-20 Held-out submission.** The final valid upload for `heldout-front-bumper` shall be the
-best-scoring file we have, uploaded before Sunday 13:00, following the procedure in
-`docs/hackathon.md`.
-Why: the last valid upload counts, not the best (README section 5); uploads close at 13:00 (Brief
-08). Serves N-7. Allocated: ops. Verify: I (upload log on #7). Issue: #7. Status: proposed.
-
-**SYS-21 Organisers' submission.** Repository, demo and answers shall be on the organisers'
-platform before their deadline. Serves N-11. Allocated: ops. Verify: I. Issue: none yet.
-Status: proposed.
-
-**SYS-22 Measured weakness.** The pitch shall state the measured scores and where the system is
-weak, from our own measurements. Serves N-12. Allocated: ops. Verify: I. Issue: none yet.
-Status: proposed.
-
-## Needs without a requirement yet
-
-None. Every N- in `stakeholders.md` has at least one SYS-.
+| Part | Requirements |
+|---|---|
+| web | SYS-1, 10, 11, 12, 13, 14, 18 |
+| ingest | SYS-1, 2, 3, 8, 14, 15 |
+| regs | SYS-3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 17, 19, 23 |
+| checks | SYS-4, 10, 11, 14, 19 |
+| db | SYS-1, 16, 17, 23 |
+| ops | SYS-15, 16, 20, 21, 22 |
