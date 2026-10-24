@@ -25,9 +25,10 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     supabase_secret_key: str | None = None
 
-    # Below the platform's hard limit (300 s on Vercel Hobby, 800 s on Pro) so a slow run ends as
-    # a recorded failure instead of a killed function that leaves the run looking alive.
-    run_timeout_s: float = 270
+    # Below the platform's hard limit (800 s on Vercel Pro, which this project uses; `maxDuration`
+    # in vercel.json) so a slow run ends as a recorded failure instead of a killed function that
+    # leaves the run looking alive. On Hobby the limit is 300 s: set RUN_TIMEOUT_S=270 there.
+    run_timeout_s: float = 770
     # A loop that keeps calling tools without converging stops here instead of at the bill.
     max_model_requests: int = 30
     # Spending per organisation and calendar month (UTC), from the cost recorded on each run. None

@@ -4,8 +4,8 @@ import { createClient, getSessionUser } from "@/lib/supabase/server";
 import { isUuid, parseDecision, readJson } from "@/lib/validation";
 
 // The run resumes while this function holds the connection to the agent (lib/agent.ts).
-// 300 s is the ceiling on Vercel Hobby; Pro allows 800.
-export const maxDuration = 300;
+// 800 s is the ceiling on Vercel Pro, which this project uses (Hobby: 300).
+export const maxDuration = 800;
 
 export async function POST(request: Request, ctx: RouteContext<"/api/approvals/[id]">) {
   const supabase = await createClient();

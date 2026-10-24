@@ -29,13 +29,16 @@ This file is for whoever **builds** this repo. What the agent itself reads at ru
 Two people (Clemente, Ramón) and several agents push to this repo at once. These rules exist so
 that nobody builds on a guess about someone else's work.
 
+- **Trunk-based: no branches, no pull requests.** Commit straight to `main` in small commits,
+  after `git pull --rebase` and green checks (Clemente, 2026-10-24: under 24 hours left, a branch
+  is a merge waiting to go wrong). Close an issue with `Fixes #n` in the commit message.
 - **Issues are the only task tracker.** No task lists in `TODO.md` or in documents: a second copy
   drifts from the first.
 - **Claim before you edit.** Pick an open issue without the `doing` label, add `doing`, and
   comment one line with your plan. Humans also assign themselves; agents add the label
   `owner:<agent-name>`, because several agents may commit through one account. If an issue has
   `doing` and is not yours, do not touch its files: pick another or ask on the issue.
-- **Status labels:** `doing`, `blocked` (say on what), `review` (PR open). Closed means merged.
+- **Status labels:** `doing`, `blocked` (say on what). Closed means on `main`.
 - **Every issue body has two lines:** `Traces to: SYS-x` (from `docs/se/requirements.md`) and
   `Interfaces: IF-x` (from `docs/se/interfaces.md`), or `none` with the reason. Work that serves
   no requirement either reveals a missing need (add it, say who it comes from) or is scope creep.

@@ -153,8 +153,9 @@ whole run inside that request and writes its progress to the database; the respo
 and then keeps reading the agent's stream in the background with `after()`, because nothing
 documented lets a Python function on Vercel keep working after its caller disconnects.
 
-That is why the three handlers that call the agent export `maxDuration = 300` (the Hobby ceiling;
-Pro allows 800): a run can last at most as long as the web function that holds its connection.
+That is why the three handlers that call the agent export `maxDuration = 800` (the Pro ceiling,
+which this project uses; Hobby allows 300): a run can last at most as long as the web function that
+holds its connection.
 
 The browser never calls the agent, and never needs the response of that call: it reads `runs`,
 `run_events` and `approvals` and subscribes to them through Supabase Realtime.

@@ -59,7 +59,7 @@ There is no coverage percentage to hit. The two rules that are checked in review
 - **Realtime delivery.** Nothing checks that an inserted event reaches an open page.
 - **Real providers in CI.** No test calls Anthropic, OpenAI, OpenRouter or DeepSeek. A provider
   that rejects a tool schema shows up in `make eval` with that provider, not in CI.
-- **Platform limits.** The 270 s run timeout is tested with a zero timeout, not by running for
-  270 s on Vercel.
+- **Platform limits.** The 770 s run timeout is tested with a zero timeout, not by running for
+  770 s on Vercel.
 - **Load.** Nothing runs two runs at once on purpose, apart from the test that a run is claimed
   only once.
