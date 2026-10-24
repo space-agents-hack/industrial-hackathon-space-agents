@@ -29,9 +29,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from supabase_auth.errors import AuthApiError
 
 from agent_service import providers, runner
-from agent_service.domain import case_ingest, certivity, changes, regulations
+from agent_service.domain import case_ingest, certivity, changes, regulation_search, regulations
 from agent_service.domain.library_store import SupabaseLibraryStore
+from agent_service.domain.regulation_search import SearchStore
 from agent_service.domain.regulations import LibraryStore
+from agent_service.domain.search_store import SupabaseSearchStore
 from agent_service.providers import Provider
 from agent_service.settings import Settings, get_settings
 from agent_service.store import RunStore, SupabaseRunStore
@@ -61,6 +63,14 @@ async def get_library(settings: Annotated[Settings, Depends(get_settings)]) -> L
     if not settings.supabase_url or not settings.supabase_secret_key:
         raise HTTPException(503, "SUPABASE_URL and SUPABASE_SECRET_KEY are not configured.")
     return await SupabaseLibraryStore.connect(settings.supabase_url, settings.supabase_secret_key)
+
+
+async def get_search_store(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> SearchStore:
+    if not settings.supabase_url or not settings.supabase_secret_key:
+        raise HTTPException(503, "SUPABASE_URL and SUPABASE_SECRET_KEY are not configured.")
+    return await SupabaseSearchStore.connect(settings.supabase_url, settings.supabase_secret_key)
 
 
 DownloadClient = Callable[[], httpx.AsyncClient]
@@ -250,8 +260,61 @@ async def ingest_case(
     return StreamingResponse(body(), media_type="application/x-ndjson")
 
 
-def _line(**fields: str) -> str:
+def _line(**fields: Any) -> str:
     return json.dumps(fields) + "\n"
+
+
+# One slice of indexing an organisation's regulation library for search
+# (domain/regulation_search.py): vectors for new paragraphs, then scope summaries. Streamed like an
+# import; `done` says what was done and whether anything is left, and the caller sends the next
+# request while `finished` is false. Two requests at once only duplicate work: every write is
+# idempotent.
+@app.post("/regulations/index/{organization_id}/advance", dependencies=[Depends(require_secret)])
+async def advance_index(
+    organization_id: UUID,
+    settings: Annotated[Settings, Depends(get_settings)],
+    store: Annotated[SearchStore, Depends(get_search_store)],
+    download_client: Annotated[DownloadClient, Depends(get_download_client)],
+) -> StreamingResponse:
+    async def work() -> regulation_search.Progress:
+        async with download_client() as http:
+            return await regulation_search.index_library(store, http, settings, organization_id)
+
+    async def body() -> AsyncIterator[str]:
+        yield _line(event="accepted", organization_id=str(organization_id))
+        task = asyncio.create_task(work())
+        try:
+            while True:
+                done, _ = await asyncio.wait({task}, timeout=settings.heartbeat_s)
+                if done:
+                    break
+                yield _line(event="heartbeat")
+            try:
+                p = task.result()
+            except Exception as exc:
+                # The provider refused or the database did: the message says which, never a key
+                # (EmbeddingError scrubs it), and the next request starts where this one stopped.
+                log.exception("Indexing %s failed", organization_id)
+                yield _line(
+                    event="done", status="failed", error=f"{type(exc).__name__}: {exc}"[:500]
+                )
+                return
+            yield _line(
+                event="done",
+                status="finished" if p.done else "paused",
+                finished=p.done,
+                keys_changed=p.keys_changed,
+                embedded=p.embedded,
+                pruned=p.pruned,
+                summarized=p.summarized,
+                notes=p.notes,
+            )
+        finally:
+            if not task.done():
+                await asyncio.shield(task)
+            await store.aclose()
+
+    return StreamingResponse(body(), media_type="application/x-ndjson")
 
 
 # ------------------------------------------------------------------------------------------

@@ -58,6 +58,15 @@ class Settings(BaseSettings):
     # The bucket's limit, which is the Supabase free plan's limit per file.
     import_max_file_bytes: int = 50 * 1024 * 1024
 
+    # Regulation search (domain/regulation_search.py). "openai:<model>" or "openrouter:<model>";
+    # changing it starts the vectors from nothing, because vectors of two models are never compared.
+    embedding_model: str = "openai:text-embedding-3-small"
+    # Writes the scope summary of each regulation version. None uses AGENT_MODEL. A cheap model is
+    # enough: it reads the first pages of 92 PDFs once.
+    summary_model: str | None = None
+    # Same budget as an import slice, for the same reason: it fits Vercel Hobby and Pro alike.
+    index_slice_s: float = 150
+
 
 @dataclass(frozen=True)
 class RunSettings:

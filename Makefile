@@ -13,7 +13,7 @@ DB ?= local
 USES_LOCAL_DB := $(shell grep -q '^SUPABASE_URL=http://127.0.0.1' agent/.env 2>/dev/null && echo yes)
 
 .PHONY: help setup dev check check-repo check-agent check-web check-db check-db-run test-integration types \
-        eval certivity-load db-start db-reset db-stop user purge-data
+        eval certivity-load regulations-index regulations-search db-start db-reset db-stop user purge-data
 
 help: ## Show this list
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -84,6 +84,13 @@ eval: ## Run the evals with AGENT_MODEL (a real model spends tokens)
 CERTIVITY ?= ../industrial-ai-hackathon
 certivity-load: ## Load Certivity's index and answer files into the database (CERTIVITY=path)
 	cd agent && uv run python -m agent_service.domain.load_certivity "$(abspath $(CERTIVITY))"
+
+regulations-index: ## Vectors and scope summaries for the regulation library (ORG=uuid if several)
+	cd agent && uv run python -m agent_service.domain.index_regulations $(if $(ORG),--org $(ORG)) index
+
+regulations-search: ## Query the regulation library: Q="text" [MODE=hybrid|text|vector] [K=10]
+	cd agent && uv run python -m agent_service.domain.index_regulations $(if $(ORG),--org $(ORG)) \
+		search "$(Q)" --mode $(or $(MODE),hybrid) --k $(or $(K),10)
 
 db-start: ## Start the local Supabase stack if it is not running
 	@supabase status >/dev/null 2>&1 || supabase start -x $(SUPABASE_SKIP)

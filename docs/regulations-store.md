@@ -1,8 +1,8 @@
 # Regulations store: proposal
 
-Status: the import and the split into paragraphs with pages and full-text search are built (see
-"Importing from the app" and "Extraction" below). Embeddings, scope summaries and the hybrid search
-function are still a proposal (another thread is building them on top of `regulation_paragraphs`). How the UN Regulation
+Status: the import, the split into paragraphs with pages and full-text search are built (see
+"Importing from the app" and "Extraction" below), and so are embeddings, scope summaries and the
+hybrid search (see "As built" under Search). How the UN Regulation
 PDFs get into Supabase so the agent can match a component description to the paragraphs that apply,
 and cite them the way the challenge scores them.
 
@@ -72,8 +72,8 @@ image once. With 214 MB of PDFs, the bucket stays around 300 MB of the free plan
 ## Tables
 
 `regulations` and `regulation_versions` are built (`20261024180000_regulations.sql`), and so is
-`regulation_paragraphs` (`20261024200000_regulation_paragraphs.sql`, below). The rest of this block
-is still the proposal.
+`regulation_paragraphs` (`20261024200000_regulation_paragraphs.sql`, below) and the search tables
+(`20261024210000_regulation_search.sql`). The rows not marked BUILT are still the proposal.
 
 ```
 regulations            one row per regulation (56)
@@ -98,13 +98,17 @@ regulation_versions gets extracted_with, extraction_error, paragraph_count      
 paragraph_images       one row per kept picture
   id, version_id, paragraph_id null, page, path, caption, sha256
 
-embeddings             one row per distinct text and model
-  content_hash, model, embedding halfvec(1024)
-  primary key (content_hash, model)
+regulation_embeddings  one row per distinct embedded input, organisation and model       BUILT
+  organization_id, model 'openai:text-embedding-3-small@1024', input_sha256,
+  embedding halfvec(1024)
+regulation_paragraph_keys  paragraph_id -> input_sha256, refreshed by the indexer      BUILT
+regulation_versions gets scope_summary, scope_keywords, summary_model, summary_sha256,
+  summarized_at                                                                       BUILT
 ```
 
-`embeddings` is keyed by `content_hash`, not by paragraph: most paragraphs are identical in base and
-latest, so each distinct text is embedded once. It also lets a new model be added beside the old one.
+`regulation_embeddings` is keyed by the hash of the input, not by paragraph: most paragraphs are
+identical in base and latest, so each distinct text is embedded once. It also lets a new model be
+added beside the old one. Why the key is not `content_hash`: "As built" under Search.
 
 ## Importing from the app
 
@@ -194,6 +198,64 @@ Agent tools, all read-only so none needs approval:
 The model reads the top results itself; that is the reranking step. A separate cross-encoder is
 deferred until the pilot shows the model is drowning in bad candidates.
 
+### As built (migration `20261024210000_regulation_search.sql`, issue #18)
+
+What changed from the proposal above, and why:
+
+- **Two hashes with two names.** `regulation_paragraphs.content_hash` is the sha256 of the paragraph
+  text alone, which the version diff needs. A vector depends on more than that: the input is the
+  regulation code and title, the heading breadcrumb, the AI context line when there is one, and the
+  text (`regulation_embedding_input`). Its key is `input_sha256`, in `regulation_embeddings`
+  `(organization_id, model, input_sha256)`. Base and latest still share a vector when the paragraph
+  is unchanged.
+- **The key is stored per paragraph** (`regulation_paragraph_keys`), not computed at search time.
+  Computing it in the query took 7.9 s for a search over 50,000 paragraphs, and one plan did not
+  finish in ten minutes. `refresh_regulation_embedding_keys` brings the keys up to date and the
+  indexer runs it at the start of every slice. Until it runs, a new paragraph is found by full text
+  only.
+- **Vectors per organisation**, like everything else in the library (SYS-24), so deleting an
+  organisation deletes them.
+- **`model` records provider, model and length** (`openai:text-embedding-3-small@1024`): vectors from
+  OpenAI and OpenRouter are never compared until someone checks that they match.
+- **Full text matches any word of the query**, ranked with `ts_rank`. A specification passage has
+  dozens of words and requiring all of them would match nothing. `ts_rank_cd` was nine times slower.
+
+Measured on 2026-10-24 on a local Postgres 16 with pgvector 0.8, with 49,680 synthetic paragraphs over
+92 versions (34,776 distinct texts) and random vectors. The text was synthetic, so these numbers are
+about speed and size only, not about how good the results are:
+
+| What | Result |
+|---|---|
+| Vectors with their keys | 101 MB |
+| Search over the whole library | 0.5 to 0.9 s |
+| Search over 10 versions | 0.1 to 0.2 s |
+| Refreshing every key, first time | 3.1 s |
+| The same 10-version search before the tables had statistics | over 30 s, once 6 minutes |
+
+Two things the speed depends on. The search is a plpgsql function planned with the real
+organisation and versions on every call: planned once with placeholders, the same query took
+minutes. And the planner needs statistics on freshly written tables: the indexer calls
+`analyze_regulation_search` after it writes keys or vectors, rather than waiting for autovacuum.
+
+With the extraction's 68 MB for the paragraphs, a library takes about 170 MB of the free plan's
+500 MB. A second organisation with the same library takes another 170 MB.
+
+How to run it: `make regulations-index` embeds what has no vector and writes the scope summaries,
+slice after slice, against the database in `agent/.env`. The agent endpoint
+`POST /regulations/index/{organization_id}/advance` does one slice and is what the web would call
+after an import. `make regulations-search Q="..." MODE=text|vector|hybrid` shows what a query
+finds. That is also how to compare full text, vectors and both on the dev case.
+
+Scope summaries read the first 8 pages of each PDF (title, contents, scope) with the model in
+`SUMMARY_MODEL`, or `AGENT_MODEL` when that is unset. `summary_sha256` records which PDF a summary
+came from, so a new PDF under the same label gets a new summary. The keywords are for the agent to
+read. They are not in the full-text index, because that index belongs to the paragraphs table and
+the keywords belong to a version.
+
+Not built yet: the agent tools (`list_regulations`, `search_paragraphs`, `get_paragraph`), which
+belong to the pipeline in #4; the web calling the index endpoint after an import; recall measured on
+the dev case.
+
 **The sub-goal gets most of its work from the same table:** base and latest paragraphs line up by
 `(regulation, label)`, and a different `content_hash` marks a modified paragraph, a missing label a
 removed or added one. The model then only judges which requirements each change touches.
@@ -276,8 +338,9 @@ the per-paragraph context line is worth its cost.
 
 1. Bucket, tables and extraction to paragraphs with pages; full-text search only. Gives a baseline.
    Done.
-2. Scope summaries per version.
-3. Embeddings and the hybrid function; measure recall against step 1.
+2. Scope summaries per version. Built (#18).
+3. Embeddings and the hybrid function; measure recall against step 1. Built (#18); recall not
+   measured yet.
 4. Context line per paragraph, only if step 3 leaves misses that headings would explain.
 5. Pictures last: they are needed for display, not for matching.
 
