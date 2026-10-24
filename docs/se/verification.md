@@ -20,7 +20,7 @@ Methods: **T** automated test in `make check`, **S** score, **D** demonstration,
 | V-10 | SYS-10 | T: an invalid output shows its problems with JSON paths | none yet |
 | V-11 | SYS-11 | D: dev-case run shows regulation and page scores; held-out run shows "no local score" | none yet |
 | V-12 | SYS-12 | D: a click on a requirement opens the cited page | none yet |
-| V-13 | SYS-13 | T: the run pauses before export, like the template's approval test | none yet |
+| V-13 | SYS-13 | T: the run pauses once before export and one approval releases the whole list | none yet |
 | V-14 | SYS-14 | D: production run from upload to validated file, no manual step, timed | none yet |
 | V-15 | SYS-15 | T: timed real run on the dev case, under `RUN_TIMEOUT_S`, with the time recorded | none yet |
 | V-16 | SYS-16 | I: `git ls-files` has no case or Certivity data; T: purge empties tables and buckets | none yet |

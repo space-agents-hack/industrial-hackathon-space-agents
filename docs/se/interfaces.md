@@ -31,7 +31,7 @@ them in on their behalf. A change needs both owners to agree on the issue before
 |---|---|---|
 | IF-1 | Storage bucket `case-files` + table `run_files` (path, name, media type, bytes, sha256) instead of #8's table of bytes (Clemente, 2026-10-24). Reason: Vercel rejects bodies over 4.5 MB. A check constraint on media type is the single list of formats | Size limits per file and per run. Purge must empty the bucket. Later: use Ramón's PDF layer (#3) for case PDFs |
 | IF-2 | No fixed profile, because Certivity could not confirm the attributes (2026-10-24). Blocks of text or image, each with file and page. Notes are free-form and cite a block | Block format. Which cheap model writes the notes (the template runs one model per run) |
-| IF-3 | Catalogue loaded from `index.json` (SYS-23). `regulation` and `version_label` strings are kept exactly as in the file | Query and response shape. Pre-computed or built during the run (270 s limit) |
+| IF-3 | Catalogue loaded from `index.json` (SYS-23). `regulation` and `version_label` strings are kept exactly as in the file | Query and response shape. Pre-computed or built during the run (`RUN_TIMEOUT_S`, SYS-15) |
 | IF-4 | Output is the Certivity JSON itself, as a typed output, never free text | Source of `team_id` (a setting) and `case_id` |
 | IF-5 | Tools copied unchanged, with a hash test and a sync command. Data in a private bucket `challenge`, never committed, purged after the event | — |
 | IF-6 | 5 valid uploads per hour per challenge. The **last** valid held-out upload counts. Uploads close Sunday 13:00 | Unconfirmed: whether dev-case and held-out uploads share the same quota. Ask Certivity |
