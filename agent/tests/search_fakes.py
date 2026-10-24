@@ -6,7 +6,12 @@ import hashlib
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
-from agent_service.domain.regulation_search import Hit, ScopeSummary, VersionToSummarize
+from agent_service.domain.regulation_search import (
+    Hit,
+    ProjectScope,
+    ScopeSummary,
+    VersionToSummarize,
+)
 
 ORG = UUID("00000000-0000-4000-8000-000000000001")
 
@@ -27,6 +32,8 @@ class InMemorySearchStore:
     keys: dict[str, str] = field(default_factory=dict)
     # What Admin stored per process (organization_models).
     models: dict[str, str] = field(default_factory=dict)
+    # case id -> its project's regulation choice
+    scopes: dict[UUID, ProjectScope] = field(default_factory=dict)
     refreshes: int = 0
     analyses: int = 0
     matches: list[dict[str, object]] = field(default_factory=list)
@@ -47,6 +54,9 @@ class InMemorySearchStore:
 
     async def provider_key(self, org: UUID, provider: str) -> str | None:
         return self.keys.get(provider)
+
+    async def project_scope(self, case_id: UUID) -> ProjectScope | None:
+        return self.scopes.get(case_id)
 
     async def organization_model(self, org: UUID, process: str) -> str | None:
         return self.models.get(process)

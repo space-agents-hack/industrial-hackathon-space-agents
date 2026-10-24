@@ -224,8 +224,18 @@ class Hit(BaseModel):
     similarity: float | None = None
 
 
+@dataclass(frozen=True)
+class ProjectScope:
+    """Which regulations a case's project uses (projects.all_regulations, project_regulations)."""
+
+    all_regulations: bool
+    # The versions of the chosen regulations; ignored when all_regulations is true.
+    version_ids: list[UUID] = field(default_factory=list)
+
+
 class SearchStore(Protocol):
     async def provider_key(self, org: UUID, provider: str) -> str | None: ...
+    async def project_scope(self, case_id: UUID) -> ProjectScope | None: ...
     async def organization_model(self, org: UUID, process: str) -> str | None: ...
     async def refresh_keys(self, org: UUID) -> int: ...
     async def texts_to_embed(self, org: UUID, model: str, limit: int) -> list[tuple[str, str]]: ...
@@ -395,6 +405,19 @@ async def _summarize(
 SearchMode = Literal["hybrid", "text", "vector"]
 
 
+def within_scope(requested: list[UUID] | None, scope: ProjectScope | None) -> list[UUID] | None:
+    """The versions a search may return: what the caller asked for, cut to the project's choice.
+
+    None means the whole library. An empty list means nothing, on purpose: a project narrowed to
+    regulations that have no stored version yet must find nothing rather than everything."""
+    if scope is None or scope.all_regulations:
+        return requested
+    allowed = set(scope.version_ids)
+    if requested is None:
+        return list(scope.version_ids)
+    return [v for v in requested if v in allowed]
+
+
 async def search(
     store: SearchStore,
     http: httpx.AsyncClient,
@@ -405,9 +428,16 @@ async def search(
     version_ids: list[UUID] | None = None,
     k: int = 20,
     mode: SearchMode = "hybrid",
+    case_id: UUID | None = None,
 ) -> list[Hit]:
     """The paragraphs that best match `query`, best first. "text" and "vector" switch one half
-    off, which is how the recall of each is compared with both."""
+    off, which is how the recall of each is compared with both.
+
+    With `case_id`, only the regulations the case's project uses (SYS-32, IF-3 as agreed on #24
+    by Ramón and Clemente): the writer passes the run's case, and a project that left a
+    regulation out never gets a paragraph of it back, whatever the caller asked for."""
+    if case_id is not None:
+        version_ids = within_scope(version_ids, await store.project_scope(case_id))
     model = await embedding_model_for(store, settings, org)
     embedding: list[float] | None = None
     if mode != "text":

@@ -5,6 +5,7 @@ tests/search_fakes.py. The PDFs are made up here, not challenge material."""
 import json
 from collections.abc import Iterator
 from typing import Any
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -17,6 +18,7 @@ from agent_service.domain.regulation_search import (
     DIMENSIONS,
     EmbeddingError,
     EmbeddingModel,
+    ProjectScope,
     _batches,  # pyright: ignore[reportPrivateUsage]
     embed,
     index_library,
@@ -314,6 +316,29 @@ async def test_the_organisations_embedding_model_is_used_to_index_and_to_search(
     assert provider.requests[0]["url"] == "https://openrouter.ai/api/v1/embeddings"
     assert provider.requests[0]["body"]["model"] == "openai/text-embedding-3-large"
     assert store.matches[0]["model"] == chosen
+
+
+async def test_a_case_searches_only_its_projects_regulations(settings: Settings) -> None:
+    # SYS-32, IF-3 as agreed on #24: the project's choice cuts whatever the caller asked for.
+    r48, r7, r10 = uuid4(), uuid4(), uuid4()
+    narrowed, open_, empty = uuid4(), uuid4(), uuid4()
+    store = InMemorySearchStore(
+        scopes={
+            narrowed: ProjectScope(all_regulations=False, version_ids=[r48, r7]),
+            open_: ProjectScope(all_regulations=True),
+            empty: ProjectScope(all_regulations=False),
+        }
+    )
+    async with Provider().client as http:
+        await search(store, http, settings, ORG, "lamp", mode="text", case_id=narrowed)
+        await search(
+            store, http, settings, ORG, "lamp", mode="text", case_id=narrowed, version_ids=[r7, r10]
+        )
+        await search(store, http, settings, ORG, "lamp", mode="text", case_id=open_)
+        await search(store, http, settings, ORG, "lamp", mode="text", case_id=empty)
+        await search(store, http, settings, ORG, "lamp", mode="text")
+
+    assert [m["versions"] for m in store.matches] == [[r48, r7], [r7], None, [], None]
 
 
 async def test_text_search_needs_no_provider(

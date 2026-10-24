@@ -9,7 +9,12 @@ from uuid import UUID
 from postgrest.types import ReturnMethod
 from supabase import AsyncClient, acreate_client
 
-from agent_service.domain.regulation_search import Hit, ScopeSummary, VersionToSummarize
+from agent_service.domain.regulation_search import (
+    Hit,
+    ProjectScope,
+    ScopeSummary,
+    VersionToSummarize,
+)
 from agent_service.domain.regulations import BUCKET
 
 
@@ -57,6 +62,33 @@ class SupabaseSearchStore:
         rows = _rows(res)
         model = rows[0].get("model") if rows else None
         return model if isinstance(model, str) else None
+
+    async def project_scope(self, case_id: UUID) -> ProjectScope | None:
+        res = await (
+            self._db.table("cases")
+            .select("projects(all_regulations, project_regulations(regulation_id))")
+            .eq("id", str(case_id))
+            .limit(1)
+            .execute()
+        )
+        rows = _rows(res)
+        project = rows[0].get("projects") if rows else None
+        if not isinstance(project, dict):
+            return None
+        if project.get("all_regulations", True):
+            return ProjectScope(all_regulations=True)
+        chosen = [r["regulation_id"] for r in project.get("project_regulations") or []]
+        if not chosen:
+            return ProjectScope(all_regulations=False)
+        versions = await (
+            self._db.table("regulation_versions")
+            .select("id")
+            .in_("regulation_id", chosen)
+            .execute()
+        )
+        return ProjectScope(
+            all_regulations=False, version_ids=[UUID(r["id"]) for r in _rows(versions)]
+        )
 
     async def refresh_keys(self, org: UUID) -> int:
         res = await self._db.rpc(
