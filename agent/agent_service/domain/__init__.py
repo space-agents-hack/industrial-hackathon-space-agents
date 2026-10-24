@@ -54,7 +54,8 @@ async def prepare_deps(store: RunStore, run: Run, settings: Settings) -> Deps:
         check_model = providers.build_model(name, check_secret, endpoint)
     case_name, parts, chosen = "no-case", [], None
     if run.case_id is not None:
-        case_name = await store.case_name(run.case_id) or str(run.case_id)
+        # Never empty: a file without case_id is scored against nothing (Clemente, 18:22).
+        case_name = (await store.case_name(run.case_id) or "").strip() or str(run.case_id)
         parts = (await case_ingest.case_content(store, run.case_id)).parts
         # The project's choice of regulations (SYS-32), read the way the search reads it.
         scope = await store.search_store().project_scope(run.case_id)
@@ -65,7 +66,6 @@ async def prepare_deps(store: RunStore, run: Run, settings: Settings) -> Deps:
         run=run,
         case_name=case_name,
         case_parts=parts,
-        team_id=settings.certivity_team_id,
         settings=settings,
         check_model=check_model,
         check_secret=check_secret,

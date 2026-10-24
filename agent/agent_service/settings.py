@@ -42,9 +42,6 @@ class Settings(BaseSettings):
     # dev case is about 25 windows, so 6 reads it in about 5 rounds. Higher hits the provider's
     # rate limit before it saves time on a Tier 2 Anthropic key (an estimate, not measured: #14).
     writer_concurrency: int = 6
-    # The `team_id` Certivity gave us, written into every submission (IF-4). Empty means the file
-    # says so in place of an id, and the run's summary asks for it to be set.
-    certivity_team_id: str = ""
 
     # Case ingestion (domain/case_ingest.py): the model that reads what the parsers cannot (a
     # scanned page, a drawing, a file a parser fails on). Small and cheap on purpose: it

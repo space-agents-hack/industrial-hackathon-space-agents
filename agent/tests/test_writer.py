@@ -173,3 +173,10 @@ async def test_a_writer_citing_a_paragraph_outside_its_window_is_asked_again() -
 
     assert [d.ref for d in result.output] == [3]
     assert len(calls) == 2
+
+
+@pytest.mark.parametrize(("team_id", "case_id"), [("", "dev-rear-lamp"), ("team-09", "")])
+def test_a_submission_without_team_or_case_is_refused(team_id: str, case_id: str) -> None:
+    # validate.py accepts such a file; the platform would score it as nobody's.
+    with pytest.raises(ValueError, match="team_id and case_id"):
+        writer.submission(team_id, case_id, [])

@@ -72,7 +72,7 @@ async def test_an_approved_export_approves_the_drafts_and_the_file_is_valid(
     statuses = [r.status for r in await store.run_requirements(run_id)]
     assert statuses.count("approved") == 3 and statuses.count("rejected") == 1
     data = submitted(store, run_id)
-    assert data["case_id"] == "dev-rear-lamp"
+    assert (data["team_id"], data["case_id"]) == ("team-09", "dev-rear-lamp")
     kept = [r.ext_id for r in await store.run_requirements(run_id) if r.status != "rejected"]
     assert [r["id"] for r in data["requirements"]] == kept
     index = await store.regulation_index(ORG)

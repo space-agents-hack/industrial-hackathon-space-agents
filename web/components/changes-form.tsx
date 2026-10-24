@@ -40,7 +40,8 @@ export function ChangesForm({
   const [uploaded, setUploaded] = useState<Uploaded | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [caseId, setCaseId] = useState(loaded[0]?.caseId ?? "subgoal-heldout");
-  const [teamId, setTeamId] = useState("");
+  // Our team on the platform (Clemente, 2026-10-24); still editable for another team's run.
+  const [teamId, setTeamId] = useState("team-09");
   const [state, setState] = useState<State>({ phase: "idle" });
 
     const [regulationId, setRegulationId] = useState(
