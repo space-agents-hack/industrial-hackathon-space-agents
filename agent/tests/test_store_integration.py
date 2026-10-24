@@ -278,3 +278,30 @@ async def _sign_in(email: str, password: str) -> None:
     session = await client.auth.sign_in_with_password({"email": email, "password": password})
     assert session.user is not None
     await close(client)
+
+
+async def test_certivity_reference_is_replaced_and_read_back(store: SupabaseRunStore) -> None:
+    # The table is shared by the whole local stack: put back what a developer had loaded.
+    before = await store.certivity_reference()
+    rows_v1 = [
+        {"kind": "index", "case_id": "", "content": [], "certivity_commit": "test-1"},
+        {"kind": "expected", "case_id": "gone-case", "content": {}, "certivity_commit": "test-1"},
+    ]
+    rows_v2 = [
+        {
+            "kind": "index",
+            "case_id": "",
+            "content": [{"regulation": "UN R900"}],
+            "certivity_commit": "test-2",
+        },
+    ]
+    try:
+        await store.replace_certivity_reference(rows_v1)
+        await store.replace_certivity_reference(rows_v2)
+        stored = await store.certivity_reference()
+        assert [(r["kind"], r["case_id"], r["certivity_commit"]) for r in stored] == [
+            ("index", "", "test-2")
+        ]
+        assert stored[0]["content"] == [{"regulation": "UN R900"}]
+    finally:
+        await store.replace_certivity_reference(before)

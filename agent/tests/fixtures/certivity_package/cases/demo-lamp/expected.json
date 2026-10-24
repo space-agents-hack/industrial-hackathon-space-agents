@@ -1,0 +1,9 @@
+{
+  "team_id": "certivity",
+  "case_id": "demo-lamp",
+  "requirements": [
+    {"id": "G-1", "text": "The lamp shall be red.", "source": {"regulation": "UN R900", "version": "1.0.0", "page": 4, "paragraph": "5.1"}},
+    {"id": "G-2", "text": "The lamp shall be visible at 100 m.", "source": {"regulation": "UN R900", "version": "1.0.0", "page": 5, "paragraph": "5.2"}},
+    {"id": "G-3", "text": "The mirror shall not vibrate.", "source": {"regulation": "UN R901", "version": "2.0.0", "page": 7, "paragraph": "6.1"}}
+  ]
+}

@@ -23,7 +23,7 @@ Methods: **T** automated test in `make check`, **S** score, **D** demonstration,
 | V-13 | SYS-13 | T: the run pauses once before export and one approval releases the whole list | none yet |
 | V-14 | SYS-14 | D: production run from upload to validated file, no manual step, timed | none yet |
 | V-15 | SYS-15 | T: timed real run on the dev case, under `RUN_TIMEOUT_S`, with the time recorded | none yet |
-| V-16 | SYS-16 | I: `git ls-files` has no case files and no Certivity data outside `agent/certivity/`; T: purge empties tables and the `case-files` bucket | none yet |
+| V-16 | SYS-16 | I: `git ls-files` has no case files and no Certivity data (test_no_certivity_data_is_in_the_repository); T: purge empties tables, `certivity_reference` included, and the `case-files` bucket | none yet |
 | V-17 | SYS-17 | T: runner test with the in-memory fake records every step | template tests (to recheck) |
 | V-18 | SYS-18 | D: exported file imports into a requirements tool | none yet |
 | V-19 | SYS-19 | T: sub-goal file passes `validate.py --requirements-old`; S: platform sub-goal score | none yet |

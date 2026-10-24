@@ -13,7 +13,7 @@ DB ?= local
 USES_LOCAL_DB := $(shell grep -q '^SUPABASE_URL=http://127.0.0.1' agent/.env 2>/dev/null && echo yes)
 
 .PHONY: help setup dev check check-repo check-agent check-web check-db check-db-run test-integration types \
-        eval db-start db-reset db-stop user purge-data
+        eval certivity-load db-start db-reset db-stop user purge-data
 
 help: ## Show this list
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -78,6 +78,12 @@ types: ## Regenerate web/lib/database.types.ts after changing the schema
 
 eval: ## Run the evals with AGENT_MODEL (a real model spends tokens)
 	cd agent && uv run python -m evals.ecn_triage
+
+# Certivity's data is licensed for the hackathon only, so it goes to the database, not to git.
+# Writes to whatever agent/.env points at: the local stack, or the hosted project if you set it so.
+CERTIVITY ?= ../industrial-ai-hackathon
+certivity-load: ## Load Certivity's index and answer files into the database (CERTIVITY=path)
+	cd agent && uv run python -m agent_service.domain.load_certivity "$(abspath $(CERTIVITY))"
 
 db-start: ## Start the local Supabase stack if it is not running
 	@supabase status >/dev/null 2>&1 || supabase start -x $(SUPABASE_SKIP)

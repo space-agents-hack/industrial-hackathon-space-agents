@@ -257,8 +257,9 @@ async def list_provider_models(
 
 
 # ------------------------------------------------------------------------------------------
-# Certivity: validate a submission and score it where an expected file exists. No database and no
-# model: the web sends the text (a run's output or a file someone dropped) and shows the answer.
+# Certivity: validate a submission and score it where an expected file exists. The reference files
+# come from the database; nothing is written and no model is called. The web sends the text (a
+# run's output or a file someone dropped) and shows the answer.
 # ------------------------------------------------------------------------------------------
 
 
@@ -267,5 +268,11 @@ class SubmissionText(BaseModel):
 
 
 @app.post("/checks", dependencies=[Depends(require_secret)])
-def certivity_checks(body: SubmissionText) -> dict[str, Any]:
-    return certivity.check(body.text)
+async def certivity_checks(
+    body: SubmissionText, store: Annotated[RunStore, Depends(get_store)]
+) -> dict[str, Any]:
+    try:
+        reference = await certivity.load_reference(store)
+    finally:
+        await store.aclose()
+    return certivity.check(body.text, reference)

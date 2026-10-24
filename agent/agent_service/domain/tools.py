@@ -6,7 +6,7 @@ and waits for a person to approve or deny it in the web UI. Put it on anything t
 system of record. It is a pause, not a permission check: it does not verify WHO approved.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from pydantic_ai import FunctionToolset, ModelRetry, RunContext
@@ -18,6 +18,8 @@ from agent_service.domain.systems import Systems, UnknownRecord
 @dataclass
 class Deps:
     systems: Systems
+    # Certivity's reference files, read from the database when the run starts.
+    reference: certivity.Reference = field(default_factory=lambda: certivity.EMPTY)
 
 
 toolset = FunctionToolset[Deps]()
@@ -89,7 +91,7 @@ def certivity_check(ctx: RunContext[Deps], submission_json: str) -> dict[str, An
         submission_json: The whole submission, as JSON text.
     """
     # No score here on purpose (certivity.check): it would let the model tune to the worked example.
-    return certivity.check(submission_json, with_score=False)
+    return certivity.check(submission_json, ctx.deps.reference, with_score=False)
 
 
 @toolset.tool(requires_approval=True)

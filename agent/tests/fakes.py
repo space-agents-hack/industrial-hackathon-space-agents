@@ -21,6 +21,7 @@ ORG = UUID("00000000-0000-4000-8000-000000000001")
 class InMemoryRunStore:
     def __init__(self) -> None:
         self.runs: dict[UUID, Run] = {}
+        self.reference: list[dict[str, Any]] = []
         self.settings: dict[UUID, OrganizationSettings] = {}
         self.keys: dict[tuple[UUID, str], str] = {}
         # Cost already spent this month per organisation, standing in for older runs' usage.
@@ -111,6 +112,12 @@ class InMemoryRunStore:
 
     async def download(self, storage_path: str) -> bytes:
         return self.objects[storage_path]
+
+    async def certivity_reference(self) -> list[dict[str, Any]]:
+        return list(self.reference)
+
+    async def replace_certivity_reference(self, rows: list[dict[str, Any]]) -> None:
+        self.reference = list(rows)
 
     async def set_status(
         self,

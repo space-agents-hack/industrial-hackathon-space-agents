@@ -77,11 +77,10 @@ report the result. Finish with `git diff --check` and read the diff for secrets.
 - **Nothing from `data/` is committed**, quoted in a document, or pasted into a prompt file.
   Challenge and client material is confidential and has to be deletable
   (`scripts/purge-challenge-data.sh`).
-  One exception, decided by Clemente on 2026-10-24 because the repository is private: the files
-  Certivity's checks read (`regulations/index.json`, every `expected.json` and
-  `requirements_old.json`) are committed in `agent/certivity/`, copied by
-  `scripts/sync-certivity.sh`. Nothing else from the package goes there, and they are deleted
-  after the event like the rest.
+  Certivity's data that the checks read (`regulations/index.json`, every `expected.json` and
+  `requirements_old.json`) lives in the database, table `certivity_reference` (Clemente,
+  2026-10-24), loaded with `make certivity-load`. Only Certivity's MIT code is in
+  `agent/certivity/`; a test fails if any of their data appears there.
 - **A tool that writes to a system of record is marked `requires_approval=True`** and has a test
   showing the run pauses before it. No exceptions for "small" writes.
 - **Migrations are additive and never edited once on `main`.** They are applied before the code is

@@ -61,6 +61,7 @@ row to `audit_events`.
 | What the agent is for: prompt, tools, mock systems | `agent/agent_service/domain/` |
 | Which model runs it | `AGENT_MODEL` and the provider's key; no code |
 | Certivity's validate and score (copied, never edited) | `scripts/sync-certivity.sh`, then `agent/certivity/` |
+| Certivity's reference data (index, answer files) | `make certivity-load`, table `certivity_reference` |
 | The loop, limits, what gets logged | `agent/agent_service/runner.py`, `settings.py` |
 | Tables, who can read and write | `supabase/migrations/` and `supabase/tests/` |
 | Pages and the trace | `web/app/`, `web/lib/trace.ts` |
@@ -95,5 +96,6 @@ row to `audit_events`.
 - **Certivity checks are not stored.** `POST /checks` on the agent runs Certivity's `validate.py`
   and, for a case with an `expected.json`, `score_local.py`, on text the web sends (a succeeded
   run's output, or a file pasted on the Checks page). They take milliseconds, so they are
-  recomputed on each view instead of adding a table. The agent's own `certivity_check` tool gets
+  recomputed on each view. What they compare against (the regulation index, the answer files) is
+  read from the table `certivity_reference`, which only the agent can read. The agent's own `certivity_check` tool gets
   validation without the score, so the model cannot tune to the one case that has an answer key.

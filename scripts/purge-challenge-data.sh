@@ -22,8 +22,8 @@ if supabase status >/dev/null 2>&1; then
   # run_events, approvals and run_state go with their runs (on delete cascade).
   project="$(grep -E '^project_id' supabase/config.toml | cut -d'"' -f2)"
   docker exec -i "supabase_db_${project}" \
-    psql -U postgres -d postgres -q -c "delete from public.runs;"
-  echo "Deleted local runs."
+    psql -U postgres -d postgres -q -c "delete from public.runs; delete from public.certivity_reference;"
+  echo "Deleted local runs and Certivity's reference files."
 else
   echo "Local Supabase is not running; no local rows were deleted. Start it and run this again."
 fi
@@ -31,11 +31,12 @@ fi
 cat <<'NEXT'
 
 Still to do by hand:
-  [ ] Hosted Supabase: delete the project, or its rows and backups.
+  [ ] Hosted Supabase: delete the project, or its rows (runs, certivity_reference) and backups.
   [ ] Vercel: delete the projects, or at least their logs and environment variables.
   [ ] Model provider: check the data retention of the account that was used.
   [ ] Your machine: downloads, screenshots, coding-agent transcripts that quote the material.
   [ ] The repository: confirm nothing from the partner was committed (git log -p -- data/).
-  [ ] The repository: Certivity's index.json and expected files ARE committed, in agent/certivity/
-      (AGENTS.md). Deleting the folder leaves them in git history: delete or archive the repo.
+  [ ] The repository: Certivity's index.json and expected files were committed in agent/certivity/
+      from ac791c2 until they moved to the database; they stay in git history until the repository
+      is deleted or archived.
 NEXT

@@ -1,0 +1,7 @@
+{
+  "team_id": "certivity",
+  "case_id": "subgoal-demo",
+  "changes": [
+    {"requirement_id": "R-002", "change": "modified", "new_text": "The lamp shall be visible at 150 m.", "reason": "Paragraph 5.2 now says 150 m.", "source": {"page": 5, "paragraph": "5.2"}}
+  ]
+}

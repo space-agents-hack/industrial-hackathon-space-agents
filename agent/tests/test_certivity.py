@@ -1,66 +1,99 @@
 import hashlib
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
-from agent_service.api import app
-from agent_service.domain import certivity
+from agent_service.api import app, get_store
+from agent_service.domain import certivity, prepare_deps
 from agent_service.domain.tools import toolset
 from agent_service.settings import Settings, get_settings
+from tests.fakes import InMemoryRunStore
 
 AUTH = {"Authorization": "Bearer test-secret"}
-PACKAGE = certivity.PACKAGE_DIR
+# Made up, in the shape of Certivity's package: the real files are confidential and not in git.
+PACKAGE = Path(__file__).parent / "fixtures" / "certivity_package"
 
 
-def _expected_main() -> dict[str, Any]:
-    return json.loads((PACKAGE / "cases" / "dev-rear-lamp" / "expected.json").read_text())
+@pytest.fixture
+def ref() -> certivity.Reference:
+    return certivity.Reference.from_rows(certivity.read_package(PACKAGE))
 
 
-def test_the_copy_is_byte_for_byte_what_sync_certivity_recorded() -> None:
+def _expected() -> dict[str, Any]:
+    return json.loads((PACKAGE / "cases" / "demo-lamp" / "expected.json").read_text())
+
+
+def test_the_code_is_byte_for_byte_what_sync_certivity_recorded() -> None:
     # An edited validate.py would no longer be the platform's validate.py, silently.
-    lines = [line for line in (PACKAGE / "SOURCE").read_text().splitlines() if line[:1] != "#"]
+    root = certivity.PACKAGE_DIR
+    lines = [line for line in (root / "SOURCE").read_text().splitlines() if line[:1] != "#"]
     assert lines, "SOURCE lists no files: run scripts/sync-certivity.sh"
     for line in lines:
         digest, name = line.split(maxsplit=1)
-        actual = hashlib.sha256((PACKAGE / name).read_bytes()).hexdigest()
+        actual = hashlib.sha256((root / name).read_bytes()).hexdigest()
         assert actual == digest, f"agent/certivity/{name} differs from SOURCE; re-run the sync"
 
 
-def test_the_expected_answer_is_valid_and_scores_full_marks() -> None:
-    result = certivity.check(json.dumps(_expected_main()))
+def test_no_certivity_data_is_in_the_repository() -> None:
+    # Their data is for the hackathon only and must be deletable: it belongs in the database.
+    data = [p for p in certivity.PACKAGE_DIR.rglob("*.json") if "schemas" not in p.parts]
+    assert data == []
+
+
+def test_read_package_names_every_file_by_its_case() -> None:
+    rows = certivity.read_package(PACKAGE)
+    assert {(r["kind"], r["case_id"]) for r in rows} == {
+        ("index", ""),
+        ("expected", "demo-lamp"),
+        ("requirements_old", "subgoal-demo"),
+    }
+
+
+def test_the_expected_answer_is_valid_and_scores_full_marks(ref: certivity.Reference) -> None:
+    result = certivity.check(json.dumps(_expected()), ref)
 
     assert result["valid"] is True
-    assert (result["kind"], result["case_id"], result["items"]) == ("main", "dev-rear-lamp", 190)
+    assert (result["kind"], result["case_id"], result["items"]) == ("main", "demo-lamp", 3)
     for level in ("regulation_level", "page_level"):
         assert result["score"][level]["f1"] == 1.0
 
 
-def test_problems_come_with_their_json_path() -> None:
-    data = _expected_main()
+def test_problems_come_with_their_json_path(ref: certivity.Reference) -> None:
+    data = _expected()
     data["requirements"][1]["id"] = data["requirements"][0]["id"]
     data["requirements"][2]["source"]["regulation"] = "UN R999"
-    data["requirements"][3]["source"]["page"] = 0
+    data["requirements"][0]["source"]["page"] = 0
 
-    result = certivity.check(json.dumps(data))
+    result = certivity.check(json.dumps(data), ref)
 
     assert result["valid"] is False
     paths = [p["path"] for p in result["problems"]]
     assert paths == [
+        "$.requirements[0].source.page",
         "$.requirements[1].id",
         "$.requirements[2].source.regulation",
-        "$.requirements[3].source.page",
     ]
     # Still scored: a few bad rows do not make the rest of the file meaningless.
     assert result["score"] is not None
 
 
-def test_json_inside_a_model_answer_is_found_and_its_span_is_exact() -> None:
-    body = json.dumps(_expected_main())
+def test_a_version_that_is_not_in_the_index_is_named(ref: certivity.Reference) -> None:
+    data = _expected()
+    data["requirements"][0]["source"]["version"] = "9.9"
+    message = certivity.check(json.dumps(data), ref)["problems"][0]["message"]
+    assert "1.0.0" in message
+
+
+def test_json_inside_a_model_answer_is_found_and_its_span_is_exact(
+    ref: certivity.Reference,
+) -> None:
+    body = json.dumps(_expected())
     text = f"Here is the submission:\n```json\n{body}\n```\nTell me if you need more."
 
-    result = certivity.check(text)
+    result = certivity.check(text, ref)
 
     begin, end = result["json_span"]
     assert text[begin:end] == body
@@ -69,39 +102,69 @@ def test_json_inside_a_model_answer_is_found_and_its_span_is_exact() -> None:
 
 
 @pytest.mark.parametrize("text", ["", "The rear lamp needs UN R48.", "{not json"])
-def test_text_without_a_json_document_is_one_problem_not_a_crash(text: str) -> None:
-    result = certivity.check(text)
+def test_text_without_a_json_document_is_one_problem_not_a_crash(
+    text: str, ref: certivity.Reference
+) -> None:
+    result = certivity.check(text, ref)
     assert (result["valid"], result["kind"], result["problem_count"]) == (False, None, 1)
 
 
-def test_a_case_without_expected_file_is_validated_but_not_scored() -> None:
-    data = {**_expected_main(), "case_id": "held-out-case"}
-    result = certivity.check(json.dumps(data))
+def test_a_case_without_expected_file_is_validated_but_not_scored(
+    ref: certivity.Reference,
+) -> None:
+    data = {**_expected(), "case_id": "held-out-case"}
+    result = certivity.check(json.dumps(data), ref)
     assert result["valid"] is True
     assert result["score"] is None
     assert any("no local score" in note for note in result["notes"])
 
 
-def test_subgoal_checks_requirement_ids_against_the_old_requirements() -> None:
-    expected = json.loads((PACKAGE / "subgoal" / "dev" / "expected.json").read_text())
-    assert certivity.check(json.dumps(expected))["valid"] is True
+def test_subgoal_checks_requirement_ids_against_the_old_requirements(
+    ref: certivity.Reference,
+) -> None:
+    expected = json.loads((PACKAGE / "subgoal" / "demo" / "expected.json").read_text())
+    assert certivity.check(json.dumps(expected), ref)["valid"] is True
 
-    modified = next(c for c in expected["changes"] if c["change"] == "modified")
-    modified["requirement_id"] = "R-9999"
-    result = certivity.check(json.dumps(expected))
+    expected["changes"][0]["requirement_id"] = "R-9999"
+    result = certivity.check(json.dumps(expected), ref)
     assert result["valid"] is False
     assert "requirements_old.json" in result["problems"][0]["message"]
 
 
-def test_the_agent_tool_never_sees_the_score() -> None:
+def test_without_the_reference_in_the_database_the_check_says_so() -> None:
+    result = certivity.check(json.dumps(_expected()), certivity.EMPTY)
+    # The schema check still runs: it needs no data.
+    assert result["valid"] is True
+    assert result["score"] is None
+    assert any("not in the database" in note for note in result["notes"])
+
+
+def test_the_agent_tool_never_sees_the_score(ref: certivity.Reference) -> None:
     # A model shown the dev score can tune its answer to the one case that has an answer key.
-    assert certivity.check(json.dumps(_expected_main()), with_score=False)["score"] is None
+    assert certivity.check(json.dumps(_expected()), ref, with_score=False)["score"] is None
     assert "certivity_check" in toolset.tools
     assert not toolset.tools["certivity_check"].requires_approval
 
 
+@pytest.mark.anyio
+async def test_a_run_gets_the_reference_from_the_store(store: InMemoryRunStore) -> None:
+    await store.replace_certivity_reference(certivity.read_package(PACKAGE))
+    deps = await prepare_deps(store)
+    assert "demo-lamp" in deps.reference.expected
+
+
+@pytest.mark.anyio
+async def test_a_run_whose_store_cannot_read_the_reference_still_starts() -> None:
+    class Broken:
+        async def certivity_reference(self) -> list[dict[str, Any]]:
+            raise RuntimeError("relation does not exist")
+
+    assert (await prepare_deps(Broken())).reference is certivity.EMPTY
+
+
 @pytest.fixture
-def client(settings: Settings):
+def client(store: InMemoryRunStore, settings: Settings):
+    app.dependency_overrides[get_store] = lambda: store
     app.dependency_overrides[get_settings] = lambda: settings
     yield TestClient(app)
     app.dependency_overrides.clear()
@@ -111,8 +174,12 @@ def test_checks_endpoint_needs_the_secret(client: TestClient) -> None:
     assert client.post("/checks", json={"text": "{}"}).status_code == 401
 
 
-def test_checks_endpoint_returns_the_result(client: TestClient) -> None:
-    response = client.post("/checks", headers=AUTH, json={"text": json.dumps(_expected_main())})
+@pytest.mark.anyio
+async def test_checks_endpoint_scores_with_the_stored_reference(
+    client: TestClient, store: InMemoryRunStore
+) -> None:
+    await store.replace_certivity_reference(certivity.read_package(PACKAGE))
+    response = client.post("/checks", headers=AUTH, json={"text": json.dumps(_expected())})
     assert response.status_code == 200
     assert response.json()["valid"] is True
-    assert response.json()["score"]["page_level"]["n_expected"] == 53
+    assert response.json()["score"]["page_level"]["n_expected"] == 3

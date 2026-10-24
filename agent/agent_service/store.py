@@ -3,7 +3,7 @@ tested against an in-memory fake (tests/fakes.py) and the Supabase version again
 stack (tests/test_store_integration.py)."""
 
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from uuid import UUID
 
 from pydantic import TypeAdapter
@@ -59,6 +59,12 @@ class RunStore(Protocol):
         ...
 
     async def download(self, storage_path: str) -> bytes: ...
+
+    async def certivity_reference(self) -> list[dict[str, Any]]:
+        """Certivity's reference files (index, answer files), one row each."""
+        ...
+
+    async def replace_certivity_reference(self, rows: list[dict[str, Any]]) -> None: ...
 
     async def set_status(
         self,
@@ -197,6 +203,31 @@ class SupabaseRunStore:
 
     async def download(self, storage_path: str) -> bytes:
         return await self._db.storage.from_(CASE_FILES_BUCKET).download(storage_path)
+
+    async def certivity_reference(self) -> list[dict[str, Any]]:
+        res = (
+            await self._db.table("certivity_reference")
+            .select("kind, case_id, content, certivity_commit")
+            .execute()
+        )
+        return cast(list[dict[str, Any]], res.data)
+
+    async def replace_certivity_reference(self, rows: list[dict[str, Any]]) -> None:
+        # Upsert first, then delete what the new package no longer has: between the two, a check
+        # sees the new files plus at worst a stale one, never an empty table.
+        if rows:
+            await self._db.table("certivity_reference").upsert(rows).execute()
+        keep = {(r["kind"], r["case_id"]) for r in rows}
+        stored = await self.certivity_reference()
+        for r in stored:
+            if (r["kind"], r["case_id"]) not in keep:
+                await (
+                    self._db.table("certivity_reference")
+                    .delete()
+                    .eq("kind", r["kind"])
+                    .eq("case_id", r["case_id"])
+                    .execute()
+                )
 
     async def set_status(
         self,

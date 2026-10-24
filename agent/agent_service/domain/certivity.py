@@ -1,8 +1,10 @@
 """Certivity's own checks on a submission: `validate.py` (is the file accepted on upload?) and
 `score_local.py` (regulation- and page-level score, only where an expected file exists).
 
-Both tools are loaded from `agent/certivity/`, an unchanged copy of Certivity's package
-(certivity/README.md). They are imported, not reimplemented and not run as subprocesses: the
+Both tools are loaded from `agent/certivity/`, an unchanged copy of Certivity's code
+(certivity/README.md). What they compare against (the regulation index, the answer files) is
+Certivity's confidential data, so it lives in the database (table certivity_reference) and is
+passed in as a `Reference`. They are imported, not reimplemented and not run as subprocesses: the
 platform runs this same `validate.py`, and a function call takes milliseconds.
 
 What this does NOT do: score the requirement level (meaning). That needs Certivity's model and only
@@ -13,13 +15,15 @@ includes the held-out case that decides the ranking.
 import importlib.util
 import json
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, Protocol
 
+# Certivity's code (MIT), copied unchanged. Their data lives in the database, not here.
 PACKAGE_DIR = Path(__file__).resolve().parents[2] / "certivity"
 
 # More problems than this are not read by anyone; the count still says how many there are.
@@ -44,38 +48,77 @@ def _tool(name: str) -> ModuleType:
 
 @dataclass(frozen=True)
 class Reference:
-    """What the checks compare against, read once per process."""
+    """What the checks compare against: Certivity's reference files, as stored in the database
+    (table certivity_reference). Empty when nobody has loaded them yet."""
 
     commit: str
     index: list[dict[str, Any]] | None
     expected: dict[str, dict[str, Any]]  # main-goal case_id -> expected.json
     requirements_old: dict[str, list[dict[str, Any]]]  # sub-goal case_id -> requirements_old.json
 
+    @classmethod
+    def from_rows(cls, rows: list[dict[str, Any]]) -> "Reference":
+        index = next((r["content"] for r in rows if r["kind"] == "index"), None)
+        expected = {r["case_id"]: r["content"] for r in rows if r["kind"] == "expected"}
+        old = {r["case_id"]: r["content"] for r in rows if r["kind"] == "requirements_old"}
+        commits = sorted({r["certivity_commit"] for r in rows})
+        return cls(", ".join(commits) or "not loaded", index, expected, old)
 
-@cache
-def reference() -> Reference:
+    @property
+    def loaded(self) -> bool:
+        return self.index is not None or bool(self.expected) or bool(self.requirements_old)
+
+
+EMPTY = Reference("not loaded", None, {}, {})
+
+
+class _Store(Protocol):
+    async def certivity_reference(self) -> list[dict[str, Any]]: ...
+
+
+async def load_reference(store: _Store) -> Reference:
+    return Reference.from_rows(await store.certivity_reference())
+
+
+def read_package(root: Path) -> list[dict[str, Any]]:
+    """The rows to store, read from a clone of Certivity's package (the loader below)."""
     validate = _tool("validate")
-    index_path = PACKAGE_DIR / "regulations" / "index.json"
-    index = validate.load_index(index_path) if index_path.is_file() else None
+    commit = _git_commit(root)
+    rows: list[dict[str, Any]] = []
+    index_path = root / "regulations" / "index.json"
+    if index_path.is_file():
+        rows.append(_row("index", "", validate.load_index(index_path), commit))
 
-    expected: dict[str, dict[str, Any]] = {}
-    for path in sorted(PACKAGE_DIR.glob("cases/*/expected.json")):
+    for path in sorted(root.glob("cases/*/expected.json")):
         data = json.loads(path.read_text(encoding="utf-8"))
-        expected[data.get("case_id") or path.parent.name] = data
+        rows.append(_row("expected", data.get("case_id") or path.parent.name, data, commit))
 
     # A sub-goal case is named after its folder: subgoal/dev is "subgoal-dev" (README, section 3).
     # Its expected.json, when there is one, says so too; requirements_old.json does not.
-    old: dict[str, list[dict[str, Any]]] = {}
-    for path in sorted(PACKAGE_DIR.glob("subgoal/*/requirements_old.json")):
+    for path in sorted(root.glob("subgoal/*/requirements_old.json")):
         case_id = f"subgoal-{path.parent.name}"
         sibling = path.parent / "expected.json"
         if sibling.is_file():
             case_id = json.loads(sibling.read_text(encoding="utf-8")).get("case_id") or case_id
-        old[case_id] = validate.load_requirements_old(path)
+        rows.append(_row("requirements_old", case_id, validate.load_requirements_old(path), commit))
+    return rows
 
-    source = PACKAGE_DIR / "SOURCE"
-    match = re.search(r"at commit (\S+)\.", source.read_text()) if source.is_file() else None
-    return Reference(match.group(1) if match else "unknown", index, expected, old)
+
+def _row(kind: str, case_id: str, content: Any, commit: str) -> dict[str, Any]:
+    return {"kind": kind, "case_id": case_id, "content": content, "certivity_commit": commit}
+
+
+def _git_commit(root: Path) -> str:
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+    return out.stdout.strip() or "unknown"
 
 
 def extract_json(text: str) -> tuple[Any, tuple[int, int] | None, str | None]:
@@ -103,14 +146,14 @@ def extract_json(text: str) -> tuple[Any, tuple[int, int] | None, str | None]:
     return None, None, error or "Empty."
 
 
-def check(text: str, *, with_score: bool = True) -> dict[str, Any]:
+def check(text: str, ref: Reference, *, with_score: bool = True) -> dict[str, Any]:
     """Validate a submission the way the platform does, and score it where Certivity allows.
 
     `with_score=False` is for the agent's own tool: a model that sees the score on the worked
     example can tune its answer to that one case, and the dev score would stop telling us anything
     about the held-out case.
     """
-    validate, ref = _tool("validate"), reference()
+    validate = _tool("validate")
     result: dict[str, Any] = {
         "kind": None,
         "case_id": None,
@@ -159,10 +202,14 @@ def check(text: str, *, with_score: bool = True) -> dict[str, Any]:
         problem_count=len(problems),
     )
 
-    if ref.index is None:
+    if not ref.loaded:
         notes.append(
-            "regulations/index.json is missing: cited regulations and versions were not checked."
+            "Certivity's reference files are not in the database, so cited regulations, versions "
+            "and requirement ids were not checked and nothing was scored. Load them with "
+            "`make certivity-load CERTIVITY=<path to Certivity's package>`."
         )
+    elif ref.index is None:
+        notes.append("regulations/index.json is not loaded: cited regulations were not checked.")
     if kind == validate.SUBGOAL and old is None:
         notes.append(
             f"No requirements_old.json for case {case_id!r}: requirement ids were not checked."

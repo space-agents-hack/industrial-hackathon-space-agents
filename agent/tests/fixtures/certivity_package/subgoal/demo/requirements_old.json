@@ -1,0 +1,4 @@
+[
+  {"id": "R-001", "text": "The lamp shall be red.", "source": {"regulation": "UN R900", "page": 4, "paragraph": "5.1"}},
+  {"id": "R-002", "text": "The lamp shall be visible at 100 m.", "source": {"regulation": "UN R900", "page": 5, "paragraph": "5.2"}}
+]

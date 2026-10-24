@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Copy Certivity's checking tools and the files they read into agent/certivity/.
+# Copy Certivity's checking code into agent/certivity/. Only the code: their data (the regulation
+# index, the answer files) is licensed for the hackathon only and goes to the database instead,
+# with `cd agent && uv run python -m agent_service.domain.certivity load <same path>`.
 #
 #   scripts/sync-certivity.sh ../industrial-ai-hackathon
 #
@@ -8,9 +10,7 @@
 # on purpose: Certivity's platform runs this same validate.py, so an unchanged copy is what makes
 # "valid on our web" mean "accepted on upload".
 #
-# What it copies: tools/validate.py and tools/score_local.py, schemas/, regulations/index.json,
-# every expected.json and requirements_old.json. Not the specifications, drawings or PDFs: the
-# checks do not read them.
+# What it copies: tools/validate.py and tools/score_local.py, schemas/ and the two licence files.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -22,11 +22,8 @@ dest=agent/certivity
 find "$dest" -mindepth 1 ! -name README.md -delete 2>/dev/null || true
 mkdir -p "$dest"
 
-files=(LICENSE LICENSE-DATA.md tools/validate.py tools/score_local.py regulations/index.json)
-while IFS= read -r f; do files+=("$f"); done < <(
-  cd "$src" && find schemas -name '*.json' \
-    && find cases subgoal \( -name expected.json -o -name requirements_old.json \)
-)
+files=(LICENSE LICENSE-DATA.md tools/validate.py tools/score_local.py)
+while IFS= read -r f; do files+=("$f"); done < <(cd "$src" && find schemas -name '*.json')
 
 for f in "${files[@]}"; do
   mkdir -p "$dest/$(dirname "$f")"
@@ -37,7 +34,7 @@ commit="$(git -C "$src" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 {
   echo "# Copied by scripts/sync-certivity.sh from the Certivity package at commit $commit."
   echo "# agent/tests/test_certivity.py fails if a file below differs from its hash: edit upstream, not here."
-  (cd "$dest" && find . -type f ! -name README.md ! -name SOURCE | sed 's|^\./||' | sort | xargs sha256sum)
+  (cd "$dest" && find . -type f ! -name README.md ! -name SOURCE ! -path '*/__pycache__/*' | sed 's|^\./||' | sort | xargs sha256sum)
 } > "$dest/SOURCE"
 
 echo "Copied ${#files[@]} files from $src ($commit) to $dest."
