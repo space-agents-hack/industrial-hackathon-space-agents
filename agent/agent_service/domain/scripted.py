@@ -8,7 +8,8 @@ from them. What it writes is mechanical ("The product shall meet 5.4.2: ..."): i
 plumbing, never the quality of requirements. That is what `make eval` with a real model is for.
 
 Which agent is asking is told by the output tool it was given: `submit` (orchestrator),
-`record_requirements` (writer), `report_findings` (check).
+`record_requirements` (writer), `report_findings` (check). The run page's chat
+(domain/run_chat.py) has no output tool and answers in text; it is told by its `read_paragraph`.
 """
 
 import json
@@ -148,8 +149,47 @@ def _check(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
     return "", [("report_findings", {"response": findings})]
 
 
+# A requirement line as run_chat.requirement_lines writes it.
+_REQUIREMENT = re.compile(r"^- (R-\d+) \[\w+\] (.+) (\S+), paragraph (\S+), page (\d+): ", re.M)
+
+
+def _chat(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
+    """A requirement named in the question: read its paragraph, then quote it. Anything else:
+    search the library with the question, then say which hit a requirement cites."""
+    question, instructions = "", ""
+    for message in messages:
+        if isinstance(message, ModelRequest):
+            instructions = message.instructions or instructions
+            for part in message.parts:
+                if isinstance(part, UserPromptPart) and isinstance(part.content, str):
+                    question = part.content
+    returns, _ = _returns(messages[-1:])
+    cited = {m.group(1): m.groups()[1:] for m in _REQUIREMENT.finditer(instructions)}
+    if named := next((r for r in re.findall(r"R-\d+", question) if r in cited), None):
+        regulation, version, paragraph, page = cited[named]
+        if "read_paragraph" not in returns:
+            args = {"regulation": regulation, "paragraph": paragraph, "version": version}
+            return "", [("read_paragraph", args)]
+        text = returns["read_paragraph"][0].get("text", "")
+        return f"{named} cites {regulation} {version}, {paragraph}, page {page}: {text}", []
+    if "search_regulations" not in returns:
+        return "", [("search_regulations", {"query": question, "limit": 3})]
+    lines = []
+    for hit in returns["search_regulations"][0]:
+        by = [
+            r
+            for r, (reg, ver, para, _) in cited.items()
+            if (reg, ver, para) == (hit["regulation"], hit["version"], hit["paragraph"])
+        ]
+        where = f"{hit['regulation']} {hit['version']}, {hit['paragraph']}, page {hit['page']}"
+        lines.append(f"{where}: cited by {', '.join(by)}." if by else f"{where}: not cited.")
+    return "\n".join(lines) or "The library has nothing on this.", []
+
+
 def _next_step(messages: list[ModelMessage], info: AgentInfo) -> tuple[str, list[Call]]:
     outputs = {t.name for t in info.output_tools}
+    if not outputs and any(t.name == "read_paragraph" for t in info.function_tools):
+        return _chat(messages)
     if "record_requirements" in outputs:
         return _write(messages)
     if "report_findings" in outputs:

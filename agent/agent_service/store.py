@@ -26,7 +26,9 @@ from agent_service.records import (
     Requirement,
     RequirementStatus,
     Run,
+    RunEvent,
     RunFile,
+    RunOutcome,
     RunStatus,
 )
 
@@ -39,6 +41,7 @@ _case_files = TypeAdapter(list[CaseFile])
 _blocks = TypeAdapter(list[CaseFileBlock])
 _paragraphs = TypeAdapter(list[Paragraph])
 _requirements = TypeAdapter(list[Requirement])
+_events = TypeAdapter(list[RunEvent])
 
 # The private bucket the browser uploads case files to (migration 20261024160000_case_files).
 CASE_FILES_BUCKET = "case-files"
@@ -60,6 +63,14 @@ class RunStore(Protocol):
         ...
 
     async def add_event(self, run_id: UUID, kind: EventKind, payload: dict[str, Any]) -> None: ...
+
+    async def run_outcome(self, run_id: UUID) -> RunOutcome | None:
+        """The run's model, output and error; None if there is no such run."""
+        ...
+
+    async def run_events(self, run_id: UUID) -> list[RunEvent]:
+        """The run's trace, oldest first."""
+        ...
 
     async def request_approvals(
         self, run_id: UUID, requests: list[ApprovalRequest]
@@ -250,6 +261,34 @@ class SupabaseRunStore:
             .insert({"run_id": str(run_id), "kind": kind, "payload": payload})
             .execute()
         )
+
+    async def run_outcome(self, run_id: UUID) -> RunOutcome | None:
+        res = (
+            await self._db.table("runs")
+            .select("model, output, error")
+            .eq("id", str(run_id))
+            .limit(1)
+            .execute()
+        )
+        return RunOutcome.model_validate(res.data[0]) if res.data else None
+
+    async def run_events(self, run_id: UUID) -> list[RunEvent]:
+        found: list[RunEvent] = []
+        offset = 0
+        while True:
+            res = (
+                await self._db.table("run_events")
+                .select("kind, payload")
+                .eq("run_id", str(run_id))
+                .order("id")
+                .range(offset, offset + _PAGE - 1)
+                .execute()
+            )
+            page = _events.validate_python(res.data)
+            found += page
+            if len(page) < _PAGE:
+                return found
+            offset += _PAGE
 
     async def request_approvals(
         self, run_id: UUID, requests: list[ApprovalRequest]

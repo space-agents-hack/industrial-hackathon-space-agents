@@ -29,7 +29,9 @@ from agent_service.records import (
     Requirement,
     RequirementStatus,
     Run,
+    RunEvent,
     RunFile,
+    RunOutcome,
     RunStatus,
 )
 
@@ -224,6 +226,18 @@ class InMemoryRunStore:
 
     async def add_event(self, run_id: UUID, kind: EventKind, payload: dict[str, Any]) -> None:
         self.events.append((run_id, kind, payload))
+
+    async def run_outcome(self, run_id: UUID) -> RunOutcome | None:
+        if run_id not in self.runs:
+            return None
+        return RunOutcome(
+            model=self.models.get(run_id),
+            output=self.outputs.get(run_id),
+            error=self.errors.get(run_id),
+        )
+
+    async def run_events(self, run_id: UUID) -> list[RunEvent]:
+        return [RunEvent(kind=k, payload=p) for rid, k, p in self.events if rid == run_id]
 
     async def request_approvals(
         self, run_id: UUID, requests: list[ApprovalRequest]

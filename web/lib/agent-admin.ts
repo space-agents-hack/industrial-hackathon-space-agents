@@ -2,6 +2,7 @@ import "server-only";
 
 import { type EndpointInput, type ModelOption, type ProviderId, parseModelList } from "@/lib/admin";
 import { parseCheckResult } from "@/lib/certivity";
+import { type ChatAnswer, type ChatTurn, parseChatAnswer } from "@/lib/run-chat";
 import {
   type ChangesRequest,
   type ChangesResult,
@@ -212,6 +213,20 @@ export async function runCertivityChecks(
   });
   if (!parseCheckResult(body)) throw new AgentAdminError("The agent answered the checks in an unexpected form.", 200);
   return body;
+}
+
+// A question about a run's results (agent_service/domain/run_chat.py). The caller has checked that
+// the person acts in the run's organisation: the agent reads the run with the secret key. The
+// agent gives up at 100 s and says so; this waits a little longer so its sentence arrives.
+export async function askAboutRun(runId: string, messages: ChatTurn[]): Promise<ChatAnswer> {
+  const body = await call(`/runs/${encodeURIComponent(runId)}/chat`, {
+    method: "POST",
+    body: { messages },
+    timeoutMs: 115_000,
+  });
+  const answer = parseChatAnswer(body);
+  if (!answer) throw new AgentAdminError("The agent answered the question in an unexpected form.", 200);
+  return answer;
 }
 
 // The sub-goal cases whose requirements_old.json is loaded (certivity_reference). Never throws:

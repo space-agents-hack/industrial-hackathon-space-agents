@@ -34,6 +34,22 @@ class Run(BaseModel):
     requested_model: str | None = None
 
 
+class RunOutcome(BaseModel):
+    """What a run produced, as the run page shows it: the model it ran with (set when it was
+    claimed), the output when it succeeded and the error when it failed."""
+
+    model: str | None = None
+    output: str | None = None
+    error: str | None = None
+
+
+class RunEvent(BaseModel):
+    """A row of run_events: the trace, in the order it was written."""
+
+    kind: str
+    payload: dict[str, Any] = {}
+
+
 class ApprovalRequest(BaseModel):
     tool_call_id: str
     tool_name: str

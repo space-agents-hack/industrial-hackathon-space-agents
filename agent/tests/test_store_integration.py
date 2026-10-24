@@ -21,6 +21,7 @@ from postgrest.exceptions import APIError
 from supabase import AsyncClient, acreate_client
 
 from agent_service import runner
+from agent_service.domain import run_chat
 from agent_service.providers import Endpoint
 from agent_service.records import CaseFileBlock, NewRequirement, OrganizationSettings
 from agent_service.settings import Settings
@@ -228,6 +229,30 @@ async def test_pause_and_resume_through_the_real_schema(
     assert kinds[-1] == "status"
     assert kinds.count("approval_requested") == 1
     assert kinds.count("approval_resolved") == 1
+
+
+async def test_the_run_chat_reads_a_run_through_the_real_schema(
+    db: AsyncClient, store: SupabaseRunStore, org: str, user_id: str, settings: Settings
+) -> None:
+    case = await seed_case(db, org)
+    run_id = await insert_run(
+        db, org, user_id, case_id=case, task="Write the requirements for this rear position lamp."
+    )
+    plan = await runner.prepare(store, settings, run_id)
+    assert await runner.execute(store, settings, plan) == "awaiting_approval"
+
+    outcome = await store.run_outcome(run_id)
+    assert outcome is not None and outcome.model == "scripted"
+    events = await store.run_events(run_id)
+    assert events[0].kind == "status"
+    assert "approval_requested" in [e.kind for e in events]
+    assert await store.run_outcome(uuid4()) is None
+
+    [first, *_] = await store.run_requirements(run_id)
+    result = await run_chat.answer(
+        store, settings, run_id, [run_chat.Turn(role="user", content=f"Why {first.ext_id}?")]
+    )
+    assert result.text.startswith(f"{first.ext_id} cites ")
 
 
 async def test_a_run_reads_its_organisation(

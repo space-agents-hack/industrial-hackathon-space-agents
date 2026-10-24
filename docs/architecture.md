@@ -97,6 +97,7 @@ row to `audit_events`.
 | The regulation library and its import | `agent/agent_service/domain/regulations.py`, `web/app/(app)/regulations/`, `docs/regulations-store.md` |
 | Regulation PDFs split into paragraphs with pages | `agent/agent_service/domain/paragraphs.py`, table `regulation_paragraphs` |
 | Pages and the trace | `web/app/`, `web/lib/trace.ts` |
+| The run page's questions about a run | `agent/agent_service/domain/run_chat.py` and `run_chat.md`, `web/components/run-chat.tsx` |
 | What runs on a push | `.github/workflows/deploy.yml`, `Makefile` |
 
 ## How it fails
@@ -137,6 +138,13 @@ row to `audit_events`.
 - **Uploads that never become a row stay in the bucket.** If the `case_files` insert or
   `start_run()` fails after an upload, the object is linked to nothing, and only the agent's
   secret key can delete it. The purge empties the whole bucket (#16).
+- **Questions about a run are not stored, and their cost is not counted.** The bubble on a run's
+  page (SYS-39) sends the conversation the tab holds to `POST /api/runs/{id}/chat`, which checks
+  that the person is an admin or member of the run's organisation and calls the agent's
+  `POST /runs/{id}/chat`. The agent answers with the run's model and the organisation's key, from
+  the run's requirements, its trace and two read-only library tools. It refuses when the
+  organisation is over its monthly cap, but nothing records what an answer cost yet: the usage
+  ledger (#29) is to record it as process `chat`, through the same model wrapper as everything else.
 - **Certivity checks are not stored.** `POST /checks` on the agent runs Certivity's `validate.py`
   and, for a case with an `expected.json`, `score_local.py`, on text the web sends (a succeeded
   run's output, or a file pasted on the Checks page). They take milliseconds, so they are

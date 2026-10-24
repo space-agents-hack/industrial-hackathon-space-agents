@@ -29,7 +29,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from supabase_auth.errors import AuthApiError
 
 from agent_service import providers, runner
-from agent_service.domain import case_ingest, certivity, changes, regulation_search, regulations
+from agent_service.domain import (
+    case_ingest,
+    certivity,
+    changes,
+    regulation_search,
+    regulations,
+    run_chat,
+)
 from agent_service.domain.library_store import SupabaseLibraryStore
 from agent_service.domain.regulation_search import SearchStore
 from agent_service.domain.regulations import LibraryStore
@@ -169,6 +176,30 @@ async def advance(
             await store.aclose()
 
     return StreamingResponse(body(), media_type="application/x-ndjson")
+
+
+class ChatRequest(BaseModel):
+    # The whole conversation as the browser holds it, the question last (domain/run_chat.py).
+    messages: list[run_chat.Turn] = Field(min_length=1, max_length=200)
+
+
+# A question about a run's results (#28, SYS-39). Not streamed: one answer takes seconds, not
+# minutes, and nothing is written. The web has checked that the person acts in the run's
+# organisation; this reads that run only.
+@app.post("/runs/{run_id}/chat", dependencies=[Depends(require_secret)])
+async def chat(
+    run_id: UUID,
+    body: ChatRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+    store: Annotated[RunStore, Depends(get_store)],
+) -> dict[str, Any]:
+    try:
+        result = await run_chat.answer(store, settings, run_id, body.messages)
+    except run_chat.ChatRefused as exc:
+        raise HTTPException(exc.status, str(exc)) from None
+    finally:
+        await store.aclose()
+    return {"answer": result.text, "model": result.model, "usage": result.usage}
 
 
 # One slice of a regulation import (domain/regulations.py), streamed like a run: accepted at once,
