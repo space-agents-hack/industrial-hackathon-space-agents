@@ -190,6 +190,23 @@
   input[type="checkbox"] {
     accent-color: var(--primary);
   }
+  /* A native file input keeps its keyboard and screen-reader behaviour; only its button is drawn
+     like the app's outline buttons, so it does not look like a different program's control. */
+  input[type="file"]::file-selector-button {
+    margin-right: 0.625rem;
+    height: 2rem;
+    padding: 0 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) * 0.8);
+    background: var(--card);
+    color: var(--foreground);
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  input[type="file"]::file-selector-button:hover {
+    background: var(--muted);
+  }
 }
 
 /* Reduce Motion: the running pulse and the button press stop. Nothing on these pages carries
