@@ -97,11 +97,9 @@ the dev case on Sunday morning, and each sub-goal upload takes a slot from the m
 |---|---|
 | 13:00 | Full run-through of the demo on production, timed, with the real model |
 | 14:00 | Last push. After this nobody pushes without both of us agreeing |
-| 14:30 | Decide: real model or `AGENT_MODEL=scripted` for the stage |
 
-`AGENT_MODEL=scripted` plays a fixed run with no network. It only helps if `scripted.py` was
-rewritten for our challenge, so do that before the pipeline freeze. Say on stage that it is a
-recorded path if we use it.
+The stage shows the real model only (Clemente, 2026-10-24): no scripted replay. If the network
+fails, show a finished run from earlier that day, its trace and its requirements, and say so.
 
 ## The demo
 
