@@ -952,6 +952,98 @@ export type Database = {
           },
         ]
       }
+      requirements: {
+        Row: {
+          case_id: string
+          created_at: string
+          ext_id: string
+          findings: Json
+          id: string
+          organization_id: string
+          page: number
+          paragraph: string | null
+          paragraph_hash: string
+          paragraph_id: string | null
+          regulation: string
+          run_id: string
+          status: string
+          test_case: string | null
+          text: string
+          updated_at: string
+          version_id: string | null
+          version_label: string
+        }
+        Insert: {
+          case_id: string
+          created_at?: string
+          ext_id: string
+          findings?: Json
+          id?: string
+          organization_id: string
+          page: number
+          paragraph?: string | null
+          paragraph_hash: string
+          paragraph_id?: string | null
+          regulation: string
+          run_id: string
+          status?: string
+          test_case?: string | null
+          text: string
+          updated_at?: string
+          version_id?: string | null
+          version_label: string
+        }
+        Update: {
+          case_id?: string
+          created_at?: string
+          ext_id?: string
+          findings?: Json
+          id?: string
+          organization_id?: string
+          page?: number
+          paragraph?: string | null
+          paragraph_hash?: string
+          paragraph_id?: string | null
+          regulation?: string
+          run_id?: string
+          status?: string
+          test_case?: string | null
+          text?: string
+          updated_at?: string
+          version_id?: string | null
+          version_label?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "requirements_case_id_organization_id_fkey"
+            columns: ["case_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "requirements_paragraph_id_fkey"
+            columns: ["paragraph_id"]
+            isOneToOne: false
+            referencedRelation: "regulation_paragraphs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "requirements_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "requirements_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "regulation_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       run_events: {
         Row: {
           created_at: string
