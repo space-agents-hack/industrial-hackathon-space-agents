@@ -56,9 +56,15 @@ or paraphrase a limit, and it is tested per format; a model is the fallback for 
 read (scans, drawings, unknown layouts), and its output is marked as such.
 
 **Requirements.** `requirements`: `case_id, run_id, organization_id, ext_id ('R-001'), text,
-test_case, paragraph_id not null, regulation, version_label, page, paragraph, status ('draft' |
-'approved')`. Each requirement is linked to exactly one regulation paragraph (Clemente,
-2026-10-24), which is also what a Certivity submission cites. The four citation columns are
+test_case, paragraph_id, paragraph_hash, regulation, version_label, page, paragraph, status
+('draft' | 'approved' | 'rejected'), findings`. Each requirement is linked to exactly one
+regulation paragraph (Clemente, 2026-10-24), which is also what a Certivity submission cites.
+The link always points to a row that exists (SYS-34, Clemente 2026-10-24): a re-extraction marks
+a version's previous paragraphs `superseded_at` instead of deleting them, a trigger moves each
+requirement to the new row with the same label and text, and one whose text changed stays on the
+superseded row with `paragraph_superseded_at` set, which the check reports. The column is not
+declared `not null` only because rows from before the supersede migration may have lost theirs
+(20261024250000, 20261024270000); new rows always carry one. The four citation columns are
 copied by code from the paragraph row, never typed by the model, so SYS-5 and SYS-6 hold by
 construction; they are kept on the row because they are what Certivity scores, and a test
 asserts they still equal the paragraph's. An obligation that two regulations impose is two
