@@ -26,4 +26,6 @@ def settings() -> Settings:
         agent_model="scripted",
         agent_shared_secret="test-secret",
         heartbeat_s=0.01,
+        # No transcription model in tests; case_ingest tests pass a fake one.
+        ingest_model="",
     )

@@ -1,5 +1,6 @@
 """The loop end to end with the scripted model: start, pause for approval, resume."""
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -230,3 +231,26 @@ async def test_a_run_without_files_starts_from_the_task_alone(store, settings) -
     await advance(store, settings, run_id)
 
     assert store.payloads(run_id, "case_file") == []
+
+
+async def test_case_files_reach_the_model_in_the_order_they_were_added(store, settings) -> None:
+    run_id = store.add_run(HARMLESS)
+    for n in range(1, 12):
+        store.attach(run_id, f"part{n}.md", "md", f"Part {n}.".encode())
+
+    await advance(store, settings, run_id)
+
+    names = [p["filename"] for p in store.payloads(run_id, "case_file")]
+    assert names == [f"part{n}.md" for n in range(1, 12)]
+
+
+async def test_a_file_that_changed_since_upload_is_read_and_flagged(store, settings) -> None:
+    run_id = store.add_run(HARMLESS)
+    store.attach(run_id, "spec.md", "md", b"M1", sha256=hashlib.sha256(b"M2").hexdigest())
+    store.attach(run_id, "same.md", "md", b"M1", sha256=hashlib.sha256(b"M1").hexdigest())
+
+    await advance(store, settings, run_id)
+
+    changed, same = store.payloads(run_id, "case_file")
+    assert changed["characters"] == 2 and any("differs" in n for n in changed["notes"])
+    assert not any("differs" in n for n in same["notes"])

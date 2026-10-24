@@ -38,6 +38,15 @@ class Settings(BaseSettings):
     # A run marked running whose heartbeat is older than this is treated as dead.
     stale_after_s: float = 60
 
+    # Case ingestion (domain/case_ingest.py): the model that reads what the parsers cannot (a
+    # scanned page, a drawing, a file a parser fails on). Small and cheap on purpose: it
+    # transcribes, it does not reason. Empty or "scripted" means no fallback: the trace says what
+    # was left unread instead.
+    ingest_model: str = "anthropic:claude-haiku-5-5"
+    # Model transcriptions per file. A 200-page scan would otherwise cost 200 calls and outlast
+    # the function; the rest is reported as not transcribed.
+    ingest_max_model_pages: int = 12
+
     # Regulation imports (domain/regulations.py). One request starts new files for this long, then
     # leaves the import paused for the next request. The worst case is a file started just before
     # the end: 2 attempts of import_download_timeout_s plus its upload, about 260 s in all. That

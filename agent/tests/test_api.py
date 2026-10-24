@@ -485,3 +485,23 @@ def test_a_model_list_request_is_validated(
 ) -> None:
     assert client.get(f"/providers/models?{query}", headers=AUTH).status_code == 422
     assert provider_api.requests == []
+
+
+def test_ingest_parses_a_case_and_streams_the_counts(
+    client: TestClient, store: InMemoryRunStore
+) -> None:
+    case_id = uuid4()
+    store.add_case_file(case_id, "spec.md", "md", b"M1")
+    store.add_case_file(case_id, "broken.pdf", "pdf", b"not a pdf")
+
+    response = client.post(f"/cases/{case_id}/ingest", headers=AUTH)
+
+    lines = [json.loads(line) for line in response.text.splitlines()]
+    assert lines[0] == {"event": "accepted", "case_id": str(case_id)}
+    assert lines[-1] == {"event": "done", "parsed": "1", "failed": "1"}
+    assert store.closed
+
+
+def test_ingest_needs_the_secret_and_a_case_with_files(client: TestClient) -> None:
+    assert client.post(f"/cases/{uuid4()}/ingest").status_code == 401
+    assert client.post(f"/cases/{uuid4()}/ingest", headers=AUTH).status_code == 404

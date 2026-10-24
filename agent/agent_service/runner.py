@@ -17,8 +17,10 @@ an already-approved write a second time, and only the domain knows whether that 
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
+import sys
 import traceback
 from collections.abc import AsyncIterable
 from dataclasses import dataclass
@@ -48,7 +50,7 @@ from pydantic_ai.usage import RunUsage
 from pydantic_core import to_jsonable_python
 
 from agent_service import domain
-from agent_service.domain import ingest
+from agent_service.domain import case_ingest, ingest
 from agent_service.providers import build_model, provider_of, scrub
 from agent_service.records import Approval, ApprovalRequest, Run, RunFile, RunStatus
 from agent_service.settings import RunSettings, Settings, effective
@@ -300,7 +302,16 @@ async def _first_message(store: RunStore, run: Run) -> str | list[ingest.Part]:
     One `case_file` event per file, written before the model sees anything, says what was read
     and what was not, so a person can tell from the trace whether the agent had the whole case.
     """
-    rows = await store.run_files(run.id)
+    if run.case_id is not None:
+        # A case's files were parsed once, at upload (domain/case_ingest.py); read what is stored.
+        content = await case_ingest.case_content(store, run.case_id)
+        for report in content.reports:
+            await store.add_event(run.id, "case_file", report.payload())
+        if not content.reports:
+            return run.task
+        return ingest.first_message(run.task, content)
+
+    rows = sorted(await store.run_files(run.id), key=_upload_position)
     if not rows:
         return run.task
     files: list[ingest.CaseFile] = []
@@ -315,13 +326,26 @@ async def _first_message(store: RunStore, run: Run) -> str | list[ingest.Part]:
         except Exception as exc:
             failed.append(_unreadable(row, f"Download failed: {type(exc).__name__}: {exc}"[:500]))
             continue
-        files.append(ingest.CaseFile(row.filename, fmt, data))
+        notes: tuple[str, ...] = ()
+        if row.sha256 and hashlib.sha256(data).hexdigest() != row.sha256:
+            notes = ("The stored file differs from the one the browser hashed at upload.",)
+        files.append(ingest.CaseFile(row.filename, fmt, data, notes))
     # Parsing is CPU work; in a thread, the heartbeat keeps beating during a long PDF.
     content = await asyncio.to_thread(ingest.read_case, files)
     content.reports += failed
     for report in content.reports:
         await store.add_event(run.id, "case_file", report.payload())
     return ingest.first_message(run.task, content)
+
+
+def _upload_position(row: RunFile) -> tuple[int, str]:
+    """The web names each object `{n}-{name}` in the order the engineer added the files.
+
+    The rows cannot say it: start_run() inserts them in one transaction, so `created_at` is the
+    same for all and ordering by it falls back to the random id (found by the code review thread).
+    """
+    head, dash, _ = row.storage_path.rpartition("/")[2].partition("-")
+    return (int(head) if dash and head.isdigit() else sys.maxsize, row.filename)
 
 
 def _unreadable(row: RunFile, error: str) -> ingest.FileReport:

@@ -29,7 +29,7 @@ from pydantic import BaseModel
 from supabase_auth.errors import AuthApiError
 
 from agent_service import providers, runner
-from agent_service.domain import certivity, regulations
+from agent_service.domain import case_ingest, certivity, regulations
 from agent_service.domain.library_store import SupabaseLibraryStore
 from agent_service.domain.regulations import LibraryStore
 from agent_service.providers import Provider
@@ -191,6 +191,61 @@ async def advance_import(
             if not task.done():
                 await asyncio.shield(task)
             await library.aclose()
+
+    return StreamingResponse(body(), media_type="application/x-ndjson")
+
+
+# Parse a case's pending files once (domain/case_ingest.py). The web calls this after the files are
+# uploaded and their rows inserted; a requirements run never parses, it reads what is stored.
+# Streamed like a run, because a scanned PDF with model transcription can take a minute.
+@app.post("/cases/{case_id}/ingest", dependencies=[Depends(require_secret)])
+async def ingest_case(
+    case_id: UUID,
+    settings: Annotated[Settings, Depends(get_settings)],
+    store: Annotated[RunStore, Depends(get_store)],
+) -> StreamingResponse:
+    files = await store.case_files(case_id)
+    if not files:
+        await store.aclose()
+        raise HTTPException(404, "No files in this case.")
+
+    async def work() -> dict[str, int]:
+        name = settings.ingest_model.strip()
+        transcribe = None
+        key: str | None = None
+        if name and name != "scripted":
+            provider = providers.provider_of(name)
+            if provider is not None:
+                key = await store.provider_key(files[0].organization_id, provider)
+            transcribe = case_ingest.transcriber(providers.build_model(name, key))
+        try:
+            return await case_ingest.ingest_case(
+                store,
+                case_id,
+                transcribe=transcribe,
+                parser_name=f"model:{name}",
+                max_model_pages=settings.ingest_max_model_pages,
+            )
+        except Exception as exc:
+            # The files that failed say so in their rows; this keeps the key out of the log.
+            log.error("ingest of case %s failed: %s", case_id, providers.scrub(str(exc), key))
+            raise
+
+    async def body() -> AsyncIterator[str]:
+        yield _line(event="accepted", case_id=str(case_id))
+        task = asyncio.create_task(work())
+        try:
+            while True:
+                done, _ = await asyncio.wait({task}, timeout=settings.heartbeat_s)
+                if done:
+                    break
+                yield _line(event="heartbeat")
+            counts = task.result()
+            yield _line(event="done", parsed=str(counts["parsed"]), failed=str(counts["failed"]))
+        finally:
+            if not task.done():
+                await asyncio.shield(task)
+            await store.aclose()
 
     return StreamingResponse(body(), media_type="application/x-ndjson")
 

@@ -8,6 +8,9 @@ from uuid import UUID, uuid4
 from agent_service.records import (
     Approval,
     ApprovalRequest,
+    CaseFile,
+    CaseFileBlock,
+    CaseFileStatus,
     EventKind,
     OrganizationSettings,
     Run,
@@ -36,23 +39,74 @@ class InMemoryRunStore:
         self.conversations: dict[UUID, Any] = {}
         self.files: dict[UUID, list[RunFile]] = {}
         self.objects: dict[str, bytes] = {}
+        self.cases: dict[UUID, list[CaseFile]] = {}
+        self.blocks: dict[UUID, list[CaseFileBlock]] = {}
         self.closed = False
 
     # Helpers the tests use to play the web's part.
 
-    def add_run(self, task: str, status: RunStatus = "queued", org: UUID = ORG) -> UUID:
+    def add_run(
+        self,
+        task: str,
+        status: RunStatus = "queued",
+        org: UUID = ORG,
+        case_id: UUID | None = None,
+    ) -> UUID:
         run_id = uuid4()
         self.runs[run_id] = Run(
-            id=run_id, organization_id=org, task=task, status=status, updated_at=datetime.now(UTC)
+            id=run_id,
+            organization_id=org,
+            task=task,
+            status=status,
+            updated_at=datetime.now(UTC),
+            case_id=case_id,
         )
         return run_id
 
-    def attach(self, run_id: UUID, filename: str, fmt: str, data: bytes) -> None:
-        """What the browser upload and start_run() do: an object in the bucket and its row."""
-        path = f"{self.runs[run_id].organization_id}/{uuid4()}/{filename}"
+    def attach(
+        self, run_id: UUID, filename: str, fmt: str, data: bytes, sha256: str | None = None
+    ) -> None:
+        """What the browser upload and start_run() do: an object in the bucket and its row.
+
+        Rows come back newest first, as the database's random order may give them; the agent has
+        to restore the upload order from the `{n}-` prefix the web puts in the object's name.
+        """
+        files = self.files.setdefault(run_id, [])
+        path = f"{self.runs[run_id].organization_id}/{run_id}/{len(files) + 1}-{filename}"
         self.objects[path] = data
-        row = RunFile(id=uuid4(), storage_path=path, filename=filename, format=fmt, bytes=len(data))
-        self.files.setdefault(run_id, []).append(row)
+        row = RunFile(
+            id=uuid4(),
+            storage_path=path,
+            filename=filename,
+            format=fmt,
+            bytes=len(data),
+            sha256=sha256,
+        )
+        files.insert(0, row)
+
+    def add_case_file(
+        self, case_id: UUID, filename: str, fmt: str, data: bytes, org: UUID = ORG
+    ) -> UUID:
+        """What the case page does: an object in the case's folder and a pending case_files row."""
+        files = self.cases.setdefault(case_id, [])
+        path = f"{org}/{case_id}/{len(files) + 1}-{filename}"
+        self.objects[path] = data
+        row = CaseFile(
+            id=uuid4(),
+            case_id=case_id,
+            organization_id=org,
+            position=len(files),
+            storage_path=path,
+            filename=filename,
+            format=fmt,
+            bytes=len(data),
+            status="pending",
+        )
+        files.append(row)
+        return row.id
+
+    def case_file(self, file_id: UUID) -> CaseFile:
+        return next(f for fs in self.cases.values() for f in fs if f.id == file_id)
 
     def decide(self, run_id: UUID, status: str, note: str | None = None) -> None:
         self.approvals = [
@@ -112,6 +166,44 @@ class InMemoryRunStore:
 
     async def download(self, storage_path: str) -> bytes:
         return self.objects[storage_path]
+
+    async def upload(self, storage_path: str, data: bytes, media_type: str) -> None:
+        self.objects[storage_path] = data
+
+    async def case_files(self, case_id: UUID) -> list[CaseFile]:
+        return sorted(self.cases.get(case_id, []), key=lambda f: f.position)
+
+    async def set_case_file(
+        self,
+        file_id: UUID,
+        status: CaseFileStatus,
+        *,
+        only_if: CaseFileStatus,
+        notes: list[str] | None = None,
+        error: str | None = None,
+        pages: int | None = None,
+    ) -> bool:
+        for files in self.cases.values():
+            for i, f in enumerate(files):
+                if f.id == file_id:
+                    if f.status != only_if:
+                        return False
+                    changes: dict[str, Any] = {"status": status, "error": error}
+                    if notes is not None:
+                        changes["notes"] = notes
+                    if pages is not None:
+                        changes["pages"] = pages
+                    files[i] = f.model_copy(update=changes)
+                    return True
+        return False
+
+    async def replace_blocks(
+        self, file_id: UUID, organization_id: UUID, blocks: list[CaseFileBlock]
+    ) -> None:
+        self.blocks[file_id] = list(blocks)
+
+    async def case_blocks(self, case_id: UUID) -> list[CaseFileBlock]:
+        return [b for f in await self.case_files(case_id) for b in self.blocks.get(f.id, [])]
 
     async def certivity_reference(self) -> list[dict[str, Any]]:
         return list(self.reference)

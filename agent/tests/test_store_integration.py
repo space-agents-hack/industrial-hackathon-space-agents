@@ -19,7 +19,7 @@ from postgrest.exceptions import APIError
 from supabase import AsyncClient, acreate_client
 
 from agent_service import runner
-from agent_service.records import OrganizationSettings
+from agent_service.records import CaseFileBlock, OrganizationSettings
 from agent_service.settings import Settings
 from agent_service.store import SupabaseRunStore
 
@@ -305,3 +305,55 @@ async def test_certivity_reference_is_replaced_and_read_back(store: SupabaseRunS
         assert stored[0]["content"] == [{"regulation": "UN R900"}]
     finally:
         await store.replace_certivity_reference(before)
+
+
+async def test_a_case_files_parse_status_and_blocks_through_the_real_schema(
+    db: AsyncClient, store: SupabaseRunStore, org: str, user_id: str
+) -> None:
+    # Storage is not started in CI, so the rows are written as the agent would find them after
+    # an upload; the policies on uploads are pgTAP's (supabase/tests/cases_test.sql).
+    project = rows(
+        await db.table("projects").insert({"organization_id": org, "name": "Rear lamp"}).execute()
+    )[0]["id"]
+    case = rows(
+        await db.table("cases")
+        .insert({"project_id": project, "organization_id": org, "name": "dev"})
+        .execute()
+    )[0]["id"]
+    for position, name in [(1, "view.png"), (0, "spec.md")]:
+        await (
+            db.table("case_files")
+            .insert(
+                {
+                    "case_id": case,
+                    "organization_id": org,
+                    "position": position,
+                    "storage_path": f"{org}/{case}/{position + 1}-{name}",
+                    "filename": name,
+                    "format": name.rpartition(".")[2],
+                    "bytes": 10,
+                }
+            )
+            .execute()
+        )
+
+    spec, view = await store.case_files(UUID(case))
+    assert (spec.filename, view.filename) == ("spec.md", "view.png")
+    assert spec.status == "pending"
+
+    assert await store.set_case_file(spec.id, "parsing", only_if="pending")
+    # A second ingest request does not get the same file.
+    assert not await store.set_case_file(spec.id, "parsing", only_if="pending")
+    block = CaseFileBlock(file_id=spec.id, seq=0, kind="text", text="M1", parser="text")
+    await store.replace_blocks(spec.id, UUID(org), [block])
+    await store.replace_blocks(spec.id, UUID(org), [block])  # a re-parse replaces, not appends
+    assert await store.set_case_file(spec.id, "parsed", only_if="parsing", notes=["ok"], pages=1)
+
+    [stored] = await store.case_blocks(UUID(case))
+    assert (stored.text, stored.parser) == ("M1", "text")
+    [spec, _] = await store.case_files(UUID(case))
+    assert (spec.status, spec.notes, spec.pages) == ("parsed", ["ok"], 1)
+
+    run_id = await insert_run(db, org, user_id, case_id=case)
+    run = await store.get_run(run_id)
+    assert run is not None and run.case_id == UUID(case)

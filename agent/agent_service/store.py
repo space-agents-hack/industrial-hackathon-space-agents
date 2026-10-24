@@ -13,6 +13,9 @@ from supabase_auth.errors import AuthApiError
 from agent_service.records import (
     Approval,
     ApprovalRequest,
+    CaseFile,
+    CaseFileBlock,
+    CaseFileStatus,
     EventKind,
     OrganizationSettings,
     Run,
@@ -22,6 +25,8 @@ from agent_service.records import (
 
 _approvals = TypeAdapter(list[Approval])
 _files = TypeAdapter(list[RunFile])
+_case_files = TypeAdapter(list[CaseFile])
+_blocks = TypeAdapter(list[CaseFileBlock])
 
 # The private bucket the browser uploads case files to (migration 20261024160000_case_files).
 CASE_FILES_BUCKET = "case-files"
@@ -59,6 +64,36 @@ class RunStore(Protocol):
         ...
 
     async def download(self, storage_path: str) -> bytes: ...
+
+    async def upload(self, storage_path: str, data: bytes, media_type: str) -> None:
+        """Put an object in the case-files bucket, replacing one at that path."""
+        ...
+
+    async def case_files(self, case_id: UUID) -> list[CaseFile]:
+        """The case's files in upload order."""
+        ...
+
+    async def set_case_file(
+        self,
+        file_id: UUID,
+        status: CaseFileStatus,
+        *,
+        only_if: CaseFileStatus,
+        notes: list[str] | None = None,
+        error: str | None = None,
+        pages: int | None = None,
+    ) -> bool:
+        """Change a file's parse status only while it is still `only_if`: two ingest requests for
+        the same case must not both parse one file."""
+        ...
+
+    async def replace_blocks(
+        self, file_id: UUID, organization_id: UUID, blocks: list[CaseFileBlock]
+    ) -> None: ...
+
+    async def case_blocks(self, case_id: UUID) -> list[CaseFileBlock]:
+        """Every stored block of the case's files, by file and sequence."""
+        ...
 
     async def certivity_reference(self) -> list[dict[str, Any]]:
         """Certivity's reference files (index, answer files), one row each."""
@@ -118,7 +153,7 @@ class SupabaseRunStore:
     async def get_run(self, run_id: UUID) -> Run | None:
         res = (
             await self._db.table("runs")
-            .select("id, organization_id, task, status, updated_at")
+            .select("id, organization_id, task, status, updated_at, case_id")
             .eq("id", str(run_id))
             .limit(1)
             .execute()
@@ -193,7 +228,7 @@ class SupabaseRunStore:
     async def run_files(self, run_id: UUID) -> list[RunFile]:
         res = (
             await self._db.table("run_files")
-            .select("id, storage_path, filename, format, bytes")
+            .select("id, storage_path, filename, format, bytes, sha256")
             .eq("run_id", str(run_id))
             .order("created_at")
             .order("id")
@@ -203,6 +238,87 @@ class SupabaseRunStore:
 
     async def download(self, storage_path: str) -> bytes:
         return await self._db.storage.from_(CASE_FILES_BUCKET).download(storage_path)
+
+    async def upload(self, storage_path: str, data: bytes, media_type: str) -> None:
+        await self._db.storage.from_(CASE_FILES_BUCKET).upload(
+            storage_path, data, {"content-type": media_type, "upsert": "true"}
+        )
+
+    async def case_files(self, case_id: UUID) -> list[CaseFile]:
+        res = (
+            await self._db.table("case_files")
+            .select(
+                "id, case_id, organization_id, position, storage_path, filename, format, bytes,"
+                " sha256, status, notes, error, pages"
+            )
+            .eq("case_id", str(case_id))
+            .order("position")
+            .order("created_at")
+            .order("filename")
+            .execute()
+        )
+        return _case_files.validate_python(res.data)
+
+    async def set_case_file(
+        self,
+        file_id: UUID,
+        status: CaseFileStatus,
+        *,
+        only_if: CaseFileStatus,
+        notes: list[str] | None = None,
+        error: str | None = None,
+        pages: int | None = None,
+    ) -> bool:
+        changes: dict[str, Any] = {"status": status, "error": error}
+        if notes is not None:
+            changes["notes"] = notes
+        if pages is not None:
+            changes["pages"] = pages
+        if status in ("parsed", "failed"):
+            changes["parsed_at"] = datetime.now(UTC).isoformat()
+        res = (
+            await self._db.table("case_files")
+            .update(changes)
+            .eq("id", str(file_id))
+            .eq("status", only_if)
+            .execute()
+        )
+        return len(res.data) == 1
+
+    async def replace_blocks(
+        self, file_id: UUID, organization_id: UUID, blocks: list[CaseFileBlock]
+    ) -> None:
+        # A re-parse replaces the whole file's content, so no stale page survives a new version.
+        await self._db.table("case_file_blocks").delete().eq("file_id", str(file_id)).execute()
+        if blocks:
+            rows = [
+                {**b.model_dump(mode="json"), "organization_id": str(organization_id)}
+                for b in blocks
+            ]
+            await self._db.table("case_file_blocks").insert(rows).execute()
+
+    async def case_blocks(self, case_id: UUID) -> list[CaseFileBlock]:
+        files = await self.case_files(case_id)
+        if not files:
+            return []
+        order = {f.id: i for i, f in enumerate(files)}
+        blocks: list[CaseFileBlock] = []
+        offset = 0
+        while True:
+            res = (
+                await self._db.table("case_file_blocks")
+                .select("file_id, seq, kind, page, label, text, image_path, media_type, parser")
+                .in_("file_id", [str(f.id) for f in files])
+                .order("id")
+                .range(offset, offset + _PAGE - 1)
+                .execute()
+            )
+            page = _blocks.validate_python(res.data)
+            blocks += page
+            if len(page) < _PAGE:
+                break
+            offset += _PAGE
+        return sorted(blocks, key=lambda b: (order.get(b.file_id, 0), b.seq))
 
     async def certivity_reference(self) -> list[dict[str, Any]]:
         res = (

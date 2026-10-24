@@ -227,8 +227,8 @@ def test_past_the_limits_the_rest_is_reported_not_silently_dropped() -> None:
     )
 
     a, b, c, d = content.reports
-    assert a.characters == 30
-    assert b.characters == 10 and any("cut" in n for n in b.notes)
+    assert a.characters == 20 and b.characters == 20
+    assert all(any("cut" in n for n in r.notes) for r in (a, b))
     assert c.images == 1
     assert d.images == 0 and any("Not sent" in n for n in d.notes)
 
@@ -242,3 +242,45 @@ def test_the_first_message_starts_with_the_note_and_keeps_upload_order() -> None
     assert "2 case file(s)" in message[0]
     assert "spec.md" in str(message[1])
     assert isinstance(message[-1], BinaryContent) and message[-1].identifier == "v.png"
+
+
+def test_a_large_file_first_does_not_crowd_out_the_specification() -> None:
+    content = read_case(
+        [
+            CaseFile("bom.csv", "csv", b"part,qty\n" * 1000),
+            CaseFile("spec.md", "md", b"Rear lamp, category M1."),
+            CaseFile("drawing.txt", "txt", b"z" * 5000),
+        ],
+        Limits(max_text_chars=3000, max_images=0),
+    )
+
+    bom, spec, drawing = content.reports
+    assert spec.characters == len("Rear lamp, category M1.")
+    # The two large files split what the spec left, to within one character.
+    assert bom.characters + drawing.characters == 3000 - spec.characters
+    assert abs(bom.characters - drawing.characters) <= 1
+
+
+def test_only_the_pdf_pages_that_fit_the_image_limit_are_rendered(monkeypatch) -> None:
+    rendered: list[int] = []
+    real = ingest._render_pdf_page
+
+    def counting(data: bytes, number: int) -> ingest.ImageData:
+        rendered.append(number)
+        return real(data, number)
+
+    monkeypatch.setattr(ingest, "_render_pdf_page", counting)
+    content = read_case([CaseFile("scan.pdf", "pdf", pdf([""] * 6))], Limits(max_images=2))
+
+    assert rendered == [1, 2]
+    assert content.reports[0].images == 2
+    assert any("Not sent" in n and "page 6" in n for n in content.reports[0].notes)
+
+
+def test_a_hash_sign_inside_a_step_name_is_not_read_as_a_reference() -> None:
+    step = STEP.replace(b"'1','lens',''", b"'1','Lens #1 occurrence',''")
+    assert step != STEP
+
+    text = texts(read_case([CaseFile("lamp.stp", "step", step)]).parts)
+
+    assert "- LAMP / Rear lamp > LENS / Outer lens (x1)" in text
