@@ -72,7 +72,9 @@ async function Regulation({ params, searchParams }: PageProps<"/regulations/[id]
     let request = supabase
       .from("regulation_paragraphs")
       .select("id, label, heading, text, page_start, page_end")
-      .eq("version_id", version.id);
+      .eq("version_id", version.id)
+      // Superseded rows are kept for the requirements written from them, not shown as the library.
+      .is("superseded_at", null);
     // The import's full-text index: labels weigh most, then headings, then the text.
     if (q) request = request.textSearch("fts", q, { type: "websearch", config: "english" });
     const [{ data, error: e }, signed] = await Promise.all([

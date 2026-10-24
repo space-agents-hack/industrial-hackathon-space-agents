@@ -108,6 +108,7 @@ class SupabaseVersionStore:
                 await self._db.table("regulation_paragraphs")
                 .select("label, text, page_start")
                 .eq("version_id", str(version_id))
+                .is_("superseded_at", "null")
                 .not_.is_("label", "null")
                 .order("position")
                 .range(start, start + _PAGE - 1)

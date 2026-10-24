@@ -124,11 +124,15 @@ select public.replace_regulation_paragraphs((select id from v), repeat('a', 64),
 select is(
   (select r.paragraph_id = p.id from public.requirements r
    join public.regulation_paragraphs p on p.version_id = r.version_id and p.label = '5.4.2'
+     and p.superseded_at is null
    where r.ext_id = 'R-001'),
   true, 'a re-extraction keeps the requirement and links it to the same text again');
 select is(
-  (select (paragraph_id is null, paragraph, page)::text from public.requirements where ext_id = 'R-002'),
-  '(t,5.4.3,12)', 'a paragraph whose text changed leaves the link empty and the citation as written');
+  (select (p.superseded_at is not null, p.text, r.paragraph, r.page)::text
+   from public.requirements r join public.regulation_paragraphs p on p.id = r.paragraph_id
+   where r.ext_id = 'R-002'),
+  '(t,"5.4.3. The intensity shall not exceed 30 cd.",5.4.3,12)',
+  'a paragraph whose text changed keeps the link to the superseded text and the citation as written');
 select is((select count(*) from public.requirements), 2::bigint,
   'no requirement is lost to a re-extraction');
 

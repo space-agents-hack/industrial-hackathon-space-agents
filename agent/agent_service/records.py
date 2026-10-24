@@ -157,8 +157,9 @@ class NewRequirement(BaseModel):
 
 class Requirement(NewRequirement):
     id: UUID
-    # Null once the cited paragraph was re-extracted with different text (migration
-    # 20261024250000_requirements).
+    # Null only for a paragraph deleted before 20261024270000_superseded_paragraphs. Since then a
+    # re-extraction with different text keeps the link on the superseded row, which
+    # version_paragraphs does not return.
     version_id: UUID | None = None  # pyright: ignore[reportIncompatibleVariableOverride]
     paragraph_id: UUID | None = None  # pyright: ignore[reportIncompatibleVariableOverride]
     status: RequirementStatus = "draft"

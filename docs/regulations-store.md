@@ -287,7 +287,20 @@ files are stored, for every version of the library the current extractor (`EXTRA
 yet. So importing the same index again splits a library imported before this existed, and changing
 the splitter (and its `EXTRACTOR` value) re-splits the library on the next import. A version gets its
 paragraphs replaced in one transaction (`replace_regulation_paragraphs`), and a different file under
-the same version drops them (`record_regulation_version`).
+the same version leaves it with none until the next import splits it (`record_regulation_version`).
+
+Replaced paragraphs are not deleted: they are marked `superseded_at` (SYS-34, IF-3; Clemente and
+Ramón on #3, 2026-10-24; migration `20261024270000_superseded_paragraphs.sql`). The reason is the
+requirements: each cites a paragraph row, and deleting the row lost the text the requirement was
+written from. A requirement on a superseded row is moved to the new row with the same label and
+`content_hash`; one whose paragraph changed keeps the superseded row, and the check, which reads
+current paragraphs only, reports it as no longer in the library. Every reader of the library as it
+is now filters `superseded_at is null`: `match_regulation_paragraphs`, the embedding keys,
+`version_paragraphs`, the version diff and the web paragraph list. A new reader has to do the same,
+or it finds every paragraph once per split.
+
+What this does not do: purge superseded rows (each full re-split of the challenge library adds
+about 48,000), flag a requirement for re-check, or re-run the check on its own.
 
 How it works: pypdfium2 (already a dependency) gives the text of each page and the font size and
 weight of each line. The PDFs were rendered from HTML by headless Chrome, so headings are bigger

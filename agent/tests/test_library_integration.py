@@ -258,7 +258,7 @@ async def test_an_import_splits_its_pdfs_into_searchable_paragraphs(
     assert spanning == [{"page_start": 1, "page_end": 2}]
 
 
-async def test_a_new_file_under_the_same_version_drops_the_old_paragraphs(
+async def test_a_new_file_under_the_same_version_supersedes_the_old_paragraphs(
     db: AsyncClient, code: str, org: UUID
 ) -> None:
     first, second = b"%PDF-1.7 first", b"%PDF-1.7 second"
@@ -283,11 +283,13 @@ async def test_a_new_file_under_the_same_version_drops_the_old_paragraphs(
     )
     left = rows(
         await db.table("regulation_paragraphs")
-        .select("text")
+        .select("text, superseded_at")
         .eq("version_id", version["id"])
         .execute()
     )
-    assert left == []
+    # Kept for the requirements written from it (SYS-34), and no longer current.
+    assert [r["text"] for r in left] == ["%PDF-1.7 first"]
+    assert left[0]["superseded_at"] is not None
     job = rows(
         await db.table("regulation_imports")
         .select("status, error")

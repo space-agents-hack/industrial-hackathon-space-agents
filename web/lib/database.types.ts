@@ -792,6 +792,7 @@ export type Database = {
           page_start: number
           part: string | null
           position: number
+          superseded_at: string | null
           text: string
           version_id: string
         }
@@ -812,6 +813,7 @@ export type Database = {
           page_start: number
           part?: string | null
           position: number
+          superseded_at?: string | null
           text: string
           version_id: string
         }
@@ -832,6 +834,7 @@ export type Database = {
           page_start?: number
           part?: string | null
           position?: number
+          superseded_at?: string | null
           text?: string
           version_id?: string
         }

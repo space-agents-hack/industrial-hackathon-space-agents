@@ -478,6 +478,9 @@ class SupabaseRunStore:
                     " content_hash"
                 )
                 .eq("version_id", str(version_id))
+                # Superseded rows are the text older requirements were written from, not the
+                # library as it is (20261024270000_superseded_paragraphs).
+                .is_("superseded_at", "null")
                 .order("position")
                 .range(offset, offset + _PAGE - 1)
                 .execute()
