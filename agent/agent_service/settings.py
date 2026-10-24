@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     # does both, as before. Set WRITER_STAGES=one to go back without a code change if a run gets
     # too slow for run_timeout_s: two stages make about twice the calls.
     writer_stages: Literal["one", "two"] = "two"
+    # Check-agent calls in flight at once (domain/tools.py check_requirements). Higher than the
+    # writers': its calls are short, and 600 requirements are 40 of them. The sub-goal's reviewers
+    # run 16 at once on the same keys.
+    check_concurrency: int = 12
     # One writer, check or screen call that has not answered in this long is stopped and reported
     # as failed (its window can be written again), so one stalled provider request no longer holds
     # the whole run until RUN_TIMEOUT_S kills it before `submit` (#36). Under a third of the run's

@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { CheckFindings } from "@/components/check-findings";
 import { NoAccess } from "@/components/no-access";
 import { PageHeader } from "@/components/page-header";
 import { Breadcrumb } from "@/components/projects/breadcrumb";
 import { RunTrace } from "@/components/run-trace";
 import { hasNoAccess, permissionsIn } from "@/lib/access";
+import { flagged } from "@/lib/check-findings";
 import { getAccess } from "@/lib/current-org";
 import { fetchApprovals, fetchRun, fetchRunEvents } from "@/lib/runs";
 import { caseKind } from "@/lib/subgoal";
@@ -42,9 +44,18 @@ async function Run({ params, searchParams }: PageProps<"/runs/[id]">) {
   // The role in the run's own organisation, not in the one chosen in the header: a link to a run
   // can come from anywhere.
   const canAct = permissionsIn(access, run.organization_id).decideApprovals;
-  const { data: onCase } = run.case_id
-    ? await supabase.from("cases").select("id, name, project_id, kind, projects(name)").eq("id", run.case_id).maybeSingle()
-    : { data: null };
+  const [{ data: onCase }, { data: stored }] = await Promise.all([
+    run.case_id
+      ? supabase.from("cases").select("id, name, project_id, kind, projects(name)").eq("id", run.case_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    // What the check found (SYS-29), shown under the trace.
+    supabase
+      .from("requirements")
+      .select("ext_id, status, regulation, paragraph, text, findings")
+      .eq("run_id", run.id)
+      .order("ext_id"),
+  ]);
+  const requirements = stored ?? [];
 
   return (
     <>
@@ -74,6 +85,7 @@ async function Run({ params, searchParams }: PageProps<"/runs/[id]">) {
         agentUnreachable={query.agent === "unreachable"}
         canAct={canAct}
       />
+      <CheckFindings rows={flagged(requirements)} total={requirements.length} />
     </>
   );
 }

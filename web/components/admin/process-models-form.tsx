@@ -22,8 +22,8 @@ export const PROCESSES = [
   {
     id: "check",
     label: "Check agent",
-    help: "Verifies each requirement against the stored paragraph (SYS-29). Not built yet: the choice is kept for when it is.",
-    used: false,
+    help: "Reads each requirement next to the paragraph it cites and flags what is wrong or does not apply (SYS-29); the sub-goal's reviewers use it too. Unset, it is the run's own model. A model of another family catches what the writer's family misses.",
+    used: true,
   },
   {
     id: "summary",

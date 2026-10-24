@@ -33,9 +33,11 @@ from agent_service.records import LibraryVersion, Paragraph, Requirement, Run
 from agent_service.settings import Settings
 from agent_service.store import RunStore
 
-# Requirements per check-agent call: about 40 x 400 tokens of requirement and paragraph, plus the
-# case. Small enough that a model reads each one, large enough that 200 requirements are 5 calls.
-_CHECK_BATCH = 40
+# Requirements per check-agent call: about 15 x 400 tokens of requirement and paragraph, plus the
+# case. It was 40, and a call that also reads referenced tables could then run into the 240 s
+# sub-agent limit and fail the whole batch unread; the two-stage writer also gives more
+# requirements. 15 keeps an answer short; check_concurrency runs the calls side by side.
+_CHECK_BATCH = 15
 # A writer or check call that cannot produce a valid answer in this many requests gives up; its
 # window is reported as failed and can be written again with write_for_paragraphs.
 _SUB_REQUESTS = 4
@@ -428,7 +430,7 @@ async def check_requirements(ctx: RunContext[Deps]) -> dict[str, Any]:
 
     batches = [rows[i : i + _CHECK_BATCH] for i in range(0, len(rows), _CHECK_BATCH)]
     await _progress(deps, f"Checking {len(rows)} requirements in {len(batches)} batch(es).")
-    semaphore = asyncio.Semaphore(deps.concurrency)
+    semaphore = asyncio.Semaphore(deps.settings.check_concurrency)
     model = deps.check_model or ctx.model
     if isinstance(model, MeteredModel):
         # The run's own model doing the checking: counted as checking on the usage page.
