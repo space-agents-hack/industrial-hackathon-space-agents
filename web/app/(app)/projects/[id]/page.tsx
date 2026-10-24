@@ -154,8 +154,8 @@ async function Project({ params }: Pick<PageProps<"/projects/[id]">, "params">) 
           <Link href="/regulations" className="underline-offset-4 hover:underline">
             Regulations
           </Link>{" "}
-          page (admins). Runs do not use this choice yet: until the regulation search reads it (issue #24), every
-          run considers the whole library.
+          page (admins). The regulation search keeps to this choice for every case of the project; runs use it
+          once the requirement writer is built (issue #4).
         </p>
       </section>
 

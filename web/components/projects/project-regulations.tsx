@@ -14,8 +14,8 @@ export type LibraryRegulation = { id: string; code: string; title: string | null
 // left out cannot be found by the writer at all (F2 weighs a miss four times an extra). Choosing a
 // subset is for a client who knows their scope.
 //
-// What this does NOT do yet: make the writer or the search use the choice. That is a change to
-// IF-3 and waits for Ramón's agreement on issue #24; the page says so.
+// The regulation search keeps to the choice when given the run's case (IF-3 as agreed on #24,
+// agent domain/regulation_search.py). No run searches until the writer (#4) is built.
 export function ProjectRegulations({
   organizationId,
   projectId,
