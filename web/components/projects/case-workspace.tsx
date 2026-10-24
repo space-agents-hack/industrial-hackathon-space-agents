@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { type DragEvent, useEffect, useState } from "react";
 
 import { FilePickerButton } from "@/components/file-picker-button";
+import { UploadedFile } from "@/components/projects/uploaded-file";
 import { runBlockers } from "@/lib/run-readiness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,7 @@ import { createClient } from "@/lib/supabase/client";
 import { MODEL_PATTERN, TASK_MAX_LENGTH } from "@/lib/validation";
 
 // The case page's working part (SYS-31): the files, adding and removing them without starting a
-// run, what the parser or model read from each, and Find requirements. Adding files and running
+// run, each file as uploaded and what the parser or model read from it, and Find requirements. Adding files and running
 // are separate on purpose: a case is put together once and run many times (another model, a new
 // prompt), and before this page every upload cost a run.
 //
@@ -44,7 +45,8 @@ export function CaseWorkspace({
 }) {
   const router = useRouter();
   const [files, setFiles] = useState(initialFiles);
-  const [open, setOpen] = useState<string | null>(null);
+  // One file is open at a time, either as uploaded or as read: both can be long (#45).
+  const [open, setOpen] = useState<{ id: string; show: "file" | "read" } | null>(null);
   const [notes, setNotes] = useState("");
   const [model, setModel] = useState("");
   const [pending, setPending] = useState<string | null>(null);
@@ -141,7 +143,7 @@ export function CaseWorkspace({
     try {
       setWarning(await removeCaseFile(createClient(), file.id));
       setFiles((current) => current.filter((f) => f.id !== file.id));
-      if (open === file.id) setOpen(null);
+      if (open?.id === file.id) setOpen(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -195,20 +197,36 @@ export function CaseWorkspace({
             {files.map((f) => (
               <li key={f.id} className="grid gap-1 px-3 py-2">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 truncate text-left font-mono text-sm underline-offset-4 hover:underline"
-                    aria-expanded={open === f.id}
-                    onClick={() => setOpen(open === f.id ? null : f.id)}
-                  >
+                  <span className="min-w-0 flex-1 truncate font-mono text-sm" title={f.filename}>
                     {f.filename}
-                  </button>
+                  </span>
                   <span className="text-xs text-muted-foreground">{describeSize(f.bytes)}</span>
                   <span className={`text-sm ${f.status === "failed" ? "text-danger" : "text-muted-foreground"}`}>
                     {f.status}
                   </span>
+                  {(["file", "read"] as const).map((show) => {
+                    const shown = open?.id === f.id && open.show === show;
+                    return (
+                      <Button
+                        key={show}
+                        size="xs"
+                        variant="outline"
+                        aria-expanded={shown}
+                        aria-label={`${show === "file" ? "View" : "What was read from"} ${f.filename}`}
+                        onClick={() => setOpen(shown ? null : { id: f.id, show })}
+                      >
+                        {show === "file" ? "View" : "What was read"}
+                      </Button>
+                    );
+                  })}
                   {canEdit ? (
-                    <Button size="xs" variant="ghost" disabled={busy} onClick={() => void remove(f)}>
+                    <Button
+                      size="xs"
+                      variant="destructive"
+                      disabled={busy}
+                      aria-label={`Remove ${f.filename}`}
+                      onClick={() => void remove(f)}
+                    >
                       Remove
                     </Button>
                   ) : null}
@@ -219,7 +237,9 @@ export function CaseWorkspace({
                     {n}
                   </p>
                 ))}
-                {open === f.id ? <FileContent fileId={f.id} /> : null}
+                {open?.id === f.id ? (
+                  open.show === "file" ? <UploadedFile file={f} /> : <FileContent fileId={f.id} />
+                ) : null}
               </li>
             ))}
           </ul>
@@ -249,7 +269,7 @@ export function CaseWorkspace({
             <p className="text-xs text-muted-foreground">
               {subgoal
                 ? `.json and .pdf only; other files in the folder are left out. Up to ${MAX_FILES} files at a time, 25 MB each. Each file is checked once, when added; the note under it says what it was recognised as.`
-                : `.md .txt .csv .json, .png .jpg .webp, .pdf, .docx, .xlsx, CAD .step .iges .stl. Up to ${MAX_FILES} files at a time, 25 MB each. Each file is read once, when added; open it above to see what was read.`}
+                : `.md .txt .csv .json, .png .jpg .webp, .pdf, .docx, .xlsx, CAD .step .iges .stl. Up to ${MAX_FILES} files at a time, 25 MB each. Each file is read once, when added; View shows it as uploaded, What was read what the agent took from it.`}
             </p>
             {heldBack.map((message) => (
               <p key={message} role="status" className="text-sm text-attention">

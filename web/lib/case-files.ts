@@ -100,3 +100,60 @@ export type UploadedFile = {
   bytes: number;
   sha256: string | null;
 };
+
+// How the case page shows a file as it was uploaded (SYS-31, #45). The browser shows these by
+// itself; Word, Excel and CAD files it cannot, so for those the page offers the download and what
+// was read from them.
+export type FileView = "markdown" | "text" | "json" | "image" | "pdf" | "download";
+
+const VIEWS: Record<CaseFormat, FileView> = {
+  md: "markdown",
+  txt: "text",
+  csv: "text",
+  json: "json",
+  png: "image",
+  jpeg: "image",
+  webp: "image",
+  pdf: "pdf",
+  docx: "download",
+  xlsx: "download",
+  step: "download",
+  iges: "download",
+  stl: "download",
+};
+
+// The stored format, else the name's: a row from before the format column was read still opens.
+export function viewOf(format: string | null, filename: string): FileView {
+  const known = (CASE_FORMATS as readonly string[]).includes(format ?? "") ? (format as CaseFormat) : formatOf(filename);
+  return known ? VIEWS[known] : "download";
+}
+
+// The media type the page gives the bytes before showing them. Not the one stored with the
+// object: browsers report .md and CAD files as "" and the upload then stores
+// application/octet-stream, which an <iframe> or <img> would download instead of showing.
+export function displayType(view: FileView, format: string | null, filename: string): string {
+  if (view === "pdf") return "application/pdf";
+  if (view === "image") {
+    const known = format === "png" || format === "jpeg" || format === "webp" ? format : formatOf(filename);
+    return `image/${known === "jpeg" ? "jpeg" : known === "webp" ? "webp" : "png"}`;
+  }
+  return "text/plain;charset=utf-8";
+}
+
+// A text file is shown up to this many characters: 25 MB of CSV in one <pre> freezes the tab, and
+// past a screenful nobody reads it there. The download has all of it.
+export const TEXT_PREVIEW_CHARS = 200_000;
+
+export function textPreview(view: FileView, raw: string): { text: string; cut: boolean } {
+  let text = raw;
+  if (view === "json") {
+    try {
+      text = JSON.stringify(JSON.parse(raw), null, 2);
+    } catch {
+      // Shown as it is: a file the agent could not parse either is worth seeing raw.
+    }
+  }
+  return text.length > TEXT_PREVIEW_CHARS
+    ? { text: text.slice(0, TEXT_PREVIEW_CHARS), cut: true }
+    : { text, cut: false };
+}

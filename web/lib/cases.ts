@@ -11,6 +11,9 @@ export type CaseOption = { id: string; name: string; project_id: string };
 export type CaseFileView = {
   id: string;
   filename: string;
+  // What the case page needs to show the file as uploaded (#45): the stored format and its object.
+  format: string;
+  storage_path: string;
   position: number;
   bytes: number;
   status: string;
@@ -45,7 +48,7 @@ export async function fetchCases(
 export async function fetchCaseFiles(supabase: Client, caseId: string): Promise<CaseFileView[]> {
   const { data, error } = await supabase
     .from("case_files")
-    .select("id, filename, position, bytes, status, error, notes")
+    .select("id, filename, format, storage_path, position, bytes, status, error, notes")
     .eq("case_id", caseId)
     .order("position")
     .order("created_at");

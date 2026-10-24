@@ -7,11 +7,15 @@ import {
   CASE_FORMATS,
   MAX_FILE_BYTES,
   MAX_FILES,
+  TEXT_PREVIEW_CHARS,
   casePath,
+  displayType,
   formatOf,
   isSettled,
   refusal,
   storagePath,
+  textPreview,
+  viewOf,
 } from "./case-files.ts";
 
 const migration = readFileSync(
@@ -71,4 +75,28 @@ test("only parsed and failed files are settled", () => {
     ["pending", "parsing", "parsed", "failed"].map(isSettled),
     [false, false, true, true],
   );
+});
+
+test("every accepted format has a way to be viewed", () => {
+  for (const format of CASE_FORMATS) assert.ok(viewOf(format, "x"), format);
+  assert.equal(viewOf("md", "spec.md"), "markdown");
+  assert.equal(viewOf("jpeg", "photo.JPG"), "image");
+  assert.equal(viewOf("stl", "part.stl"), "download");
+  // A row without a known format falls back to the name, then to the download.
+  assert.equal(viewOf(null, "notes.markdown"), "markdown");
+  assert.equal(viewOf(null, "mystery.bin"), "download");
+});
+
+test("images and PDFs are shown with their own media type, not the stored octet-stream", () => {
+  assert.equal(displayType("pdf", "pdf", "a.pdf"), "application/pdf");
+  assert.equal(displayType("image", "jpeg", "a.jpg"), "image/jpeg");
+  assert.equal(displayType("image", null, "a.webp"), "image/webp");
+});
+
+test("JSON is indented, broken JSON is shown raw, and long text is cut", () => {
+  assert.equal(textPreview("json", '{"a":1}').text, '{\n  "a": 1\n}');
+  assert.equal(textPreview("json", "{broken").text, "{broken");
+  const long = textPreview("text", "x".repeat(TEXT_PREVIEW_CHARS + 1));
+  assert.equal(long.cut, true);
+  assert.equal(long.text.length, TEXT_PREVIEW_CHARS);
 });
