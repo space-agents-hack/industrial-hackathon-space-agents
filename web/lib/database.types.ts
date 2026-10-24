@@ -338,6 +338,38 @@ export type Database = {
           },
         ]
       }
+      organization_models: {
+        Row: {
+          model: string
+          organization_id: string
+          process: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          model: string
+          organization_id: string
+          process: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          model?: string
+          organization_id?: string
+          process?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_models_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_settings: {
         Row: {
           max_model_requests: number | null
@@ -394,8 +426,48 @@ export type Database = {
         }
         Relationships: []
       }
+      project_regulations: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          organization_id: string
+          project_id: string
+          regulation_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          organization_id: string
+          project_id: string
+          regulation_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          organization_id?: string
+          project_id?: string
+          regulation_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_regulations_project_id_organization_id_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "project_regulations_regulation_id_fkey"
+            columns: ["regulation_id"]
+            isOneToOne: false
+            referencedRelation: "regulations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
+          all_regulations: boolean
           created_at: string
           created_by: string | null
           id: string
@@ -403,6 +475,7 @@ export type Database = {
           organization_id: string
         }
         Insert: {
+          all_regulations?: boolean
           created_at?: string
           created_by?: string | null
           id?: string
@@ -410,6 +483,7 @@ export type Database = {
           organization_id: string
         }
         Update: {
+          all_regulations?: boolean
           created_at?: string
           created_by?: string | null
           id?: string
@@ -1000,6 +1074,7 @@ export type Database = {
           model: string | null
           organization_id: string
           output: string | null
+          requested_model: string | null
           status: string
           task: string
           updated_at: string
@@ -1014,6 +1089,7 @@ export type Database = {
           model?: string | null
           organization_id: string
           output?: string | null
+          requested_model?: string | null
           status?: string
           task: string
           updated_at?: string
@@ -1028,6 +1104,7 @@ export type Database = {
           model?: string | null
           organization_id?: string
           output?: string | null
+          requested_model?: string | null
           status?: string
           task?: string
           updated_at?: string
@@ -1216,6 +1293,10 @@ export type Database = {
           member_status?: string
           org: string
         }
+        Returns: undefined
+      }
+      set_organization_model: {
+        Args: { model_process: string; new_model: string; org: string }
         Returns: undefined
       }
       set_provider_endpoint: {
