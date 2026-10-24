@@ -16,10 +16,12 @@ import {
   modelName,
   modelSourceOf,
   parseAddPerson,
+  parseCreateOrganization,
   parseModelList,
   parseOrganizationName,
   parseProviderEndpoint,
   parseProviderKey,
+  parseRemoveMember,
   parseSetMember,
   parseSetPassword,
   parseSettings,
@@ -130,6 +132,14 @@ test("people and keys: bodies are checked before anything is called", () => {
   assert.equal(parseAddPerson({ ...person, password: "x".repeat(MAX_PASSWORD_BYTES + 1) }).ok, false);
   assert.equal(parseAddPerson({ ...person, role: "owner" }).ok, false);
   assert.equal(parseAddPerson({ ...person, email: "Ana" }).ok, false);
+  // No password: an existing account is added with the one it has.
+  assert.deepEqual(parseAddPerson({ ...person, password: "" }), {
+    ok: true,
+    value: { org: ORG, email: "ana@example.com", role: "member", password: null },
+  });
+  assert.equal(parseAddPerson({ org: ORG, email: "ana@example.com", role: "viewer" }).ok, true);
+  assert.equal(parseRemoveMember({ org: ORG, user_id: USER }).ok, true);
+  assert.equal(parseRemoveMember({ org: ORG, user_id: "ana@example.com" }).ok, false);
 
   assert.equal(parseSetMember({ org: ORG, user_id: USER, role: "viewer", status: "suspended" }).ok, true);
   assert.equal(parseSetMember({ org: ORG, user_id: USER, role: "viewer", status: "deleted" }).ok, false);
@@ -144,6 +154,16 @@ test("people and keys: bodies are checked before anything is called", () => {
 
   assert.deepEqual(parseOrganizationName({ name: "  Acme  " }), { ok: true, value: { name: "Acme" } });
   assert.equal(parseOrganizationName({ name: " " }).ok, false);
+  assert.deepEqual(parseCreateOrganization({ name: "Acme", admin_email: " Ana@Example.com " }), {
+    ok: true,
+    value: { name: "Acme", adminEmail: "ana@example.com" },
+  });
+  assert.deepEqual(parseCreateOrganization({ name: "Acme", admin_email: "" }), {
+    ok: true,
+    value: { name: "Acme", adminEmail: null },
+  });
+  assert.equal(parseCreateOrganization({ name: "Acme", admin_email: "ana" }).ok, false);
+  assert.equal(parseCreateOrganization({ name: "", admin_email: "ana@example.com" }).ok, false);
 });
 
 test("an Ollama server: URL and credentials are checked before anything is called", () => {
@@ -219,6 +239,10 @@ test("audit lines are readable sentences", () => {
   assert.equal(
     summarizeAuditEvent({ action: "member.set", detail: { user_id: USER, role: "admin", status: "active" } }, nameOf),
     "ana@example.com: admin, active.",
+  );
+  assert.equal(
+    summarizeAuditEvent({ action: "member.removed", detail: { user_id: ORG, email: "bo@example.com" } }, nameOf),
+    "Removed bo@example.com from the organisation.",
   );
   assert.equal(
     summarizeAuditEvent({ action: "member.set", detail: { user_id: ORG, role: "viewer", status: "suspended" } }, nameOf),

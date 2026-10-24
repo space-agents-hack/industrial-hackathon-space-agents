@@ -310,16 +310,34 @@ export function parseProviderDelete(body: unknown): Parsed<{ org: string; provid
   return { ok: true, value: { org: body.org, provider: body.provider } };
 }
 
+// The password is optional: an email that already has an account is added with it, and only an
+// email with no account needs one (the route then creates the account through the agent). Null
+// means none was typed; a short one typed is still refused, so a half-typed password is not
+// silently dropped.
 export function parseAddPerson(
   body: unknown,
-): Parsed<{ org: string; email: string; role: Role; password: string }> {
+): Parsed<{ org: string; email: string; role: Role; password: string | null }> {
   if (!isRecord(body) || !isUuid(body.org)) return { ok: false, error: "Unknown organisation." };
-  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-  if (!EMAIL.test(email) || email.length > 320) return { ok: false, error: "Enter a valid email." };
+  const email = parseEmail(body.email);
+  if (!email) return { ok: false, error: "Enter a valid email." };
   if (!isRole(body.role)) return { ok: false, error: "Choose a role." };
+  if (body.password === undefined || body.password === null || body.password === "") {
+    return { ok: true, value: { org: body.org, email, role: body.role, password: null } };
+  }
   const passwordError = checkPassword(body.password);
   if (passwordError) return { ok: false, error: passwordError };
   return { ok: true, value: { org: body.org, email, role: body.role, password: body.password as string } };
+}
+
+function parseEmail(value: unknown): string | null {
+  const email = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return EMAIL.test(email) && email.length <= 320 ? email : null;
+}
+
+export function parseRemoveMember(body: unknown): Parsed<{ org: string; userId: string }> {
+  if (!isRecord(body) || !isUuid(body.org)) return { ok: false, error: "Unknown organisation." };
+  if (!isUuid(body.user_id)) return { ok: false, error: "Unknown person." };
+  return { ok: true, value: { org: body.org, userId: body.user_id } };
 }
 
 export function parseSetMember(
@@ -347,6 +365,18 @@ export function parseOrganizationName(body: unknown): Parsed<{ name: string }> {
   if (name === "") return { ok: false, error: "Enter a name." };
   if (Array.from(name).length > 200) return { ok: false, error: "The name is longer than 200 characters." };
   return { ok: true, value: { name } };
+}
+
+// A new organisation and, optionally, the existing account that becomes its first admin. An
+// empty admin email creates it with nobody in it.
+export function parseCreateOrganization(body: unknown): Parsed<{ name: string; adminEmail: string | null }> {
+  const named = parseOrganizationName(body);
+  if (!named.ok) return named;
+  const raw = isRecord(body) && typeof body.admin_email === "string" ? body.admin_email.trim() : "";
+  if (raw === "") return { ok: true, value: { name: named.value.name, adminEmail: null } };
+  const adminEmail = parseEmail(raw);
+  if (!adminEmail) return { ok: false, error: "Enter a valid email for the first admin, or leave it empty." };
+  return { ok: true, value: { name: named.value.name, adminEmail } };
 }
 
 // For "Generate" in the add-person form. No 0/O, 1/l/I: the password is read aloud or copied by
@@ -377,6 +407,7 @@ const PLAIN_CODES: Record<string, number> = {
   "23514": 409, // check_violation: the last-admin rule
   "22023": 400, // invalid_parameter_value: "that does not look like an API key"
   "55000": 409, // object_not_in_prerequisite_state: "another import is still in progress"
+  "P0002": 404, // no_data_found: "no account has the email ...", "that person is not in this organisation"
 };
 
 export type DbError = { code?: string | null; message?: string | null };
@@ -487,6 +518,13 @@ export function summarizeAuditEvent(
       const status = text(detail.status);
       const roleText = role && isRole(role) ? ROLE_LABELS[role].toLowerCase() : (role ?? "?");
       return `${userId ? nameOf(userId) : "Someone"}: ${roleText}, ${status ?? "?"}.`;
+    }
+    case "member.removed": {
+      // The email is in the row because a removed person is no longer among the members the
+      // page names people from.
+      const userId = text(detail.user_id);
+      const who = text(detail.email) ?? (userId ? nameOf(userId) : "Someone");
+      return `Removed ${who} from the organisation.`;
     }
     default:
       return `${event.action} ${compactJson(event.detail, 160)}`;

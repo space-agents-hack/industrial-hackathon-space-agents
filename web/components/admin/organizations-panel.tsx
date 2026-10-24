@@ -19,33 +19,46 @@ export type OrganizationSummary = {
   isCurrent: boolean;
 };
 
-export function OrganizationsPanel({ organizations }: { organizations: OrganizationSummary[] }) {
+export function OrganizationsPanel({
+  organizations,
+  myEmail,
+}: {
+  organizations: OrganizationSummary[];
+  myEmail: string | null;
+}) {
   const router = useRouter();
   const [switching, startSwitch] = useTransition();
   const [name, setName] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // The organisation just created, waiting for its first admin.
-  const [created, setCreated] = useState<{ id: string; name: string } | null>(null);
+  // The organisation just created, and the email of its first admin if one was given; without
+  // one it waits for its first admin below.
+  const [created, setCreated] = useState<{ id: string; name: string; admin: string | null } | null>(null);
 
   async function create() {
     setBusy(true);
     setError(null);
-    const result = await sendJson<{ id: string }>("/api/admin/organizations", "POST", { name });
+    const result = await sendJson<{ id: string }>("/api/admin/organizations", "POST", {
+      name,
+      admin_email: adminEmail,
+    });
     setBusy(false);
     if (!result.ok) {
       setError(result.error);
       return;
     }
-    setCreated({ id: result.body.id, name: name.trim() });
+    setCreated({ id: result.body.id, name: name.trim(), admin: adminEmail.trim().toLowerCase() || null });
     setName("");
+    setAdminEmail("");
     router.refresh();
   }
 
   function open(id: string) {
     startSwitch(async () => {
       await switchOrganization(id);
-      router.push("/admin");
+      // People, because from the list of organisations the usual next step is who is in it.
+      router.push("/admin/people");
     });
   }
 
@@ -84,24 +97,39 @@ export function OrganizationsPanel({ organizations }: { organizations: Organizat
         <h2 className="text-sm font-semibold">Create an organisation</h2>
         {created ? (
           <div className="grid gap-2 rounded-md border bg-card p-3">
-            <p>
-              <strong>{created.name}</strong> exists. Add its first admin; they then add the rest of
-              their people themselves.
-            </p>
-            <AddPersonForm org={created.id} fixedRole="admin" submitLabel="Add admin" />
-            <Button variant="outline" size="sm" className="w-fit" onClick={() => setCreated(null)}>
-              Done
-            </Button>
+            {created.admin ? (
+              <p>
+                <strong>{created.name}</strong> exists, with <strong>{created.admin}</strong> as its admin. They
+                find it in the organisation switcher, with the account and password they already have, and add
+                the rest of their people themselves.
+              </p>
+            ) : (
+              <>
+                <p>
+                  <strong>{created.name}</strong> exists, with nobody in it. Add its first admin; they then add
+                  the rest of their people themselves. Someone who already has an account needs no password.
+                </p>
+                <AddPersonForm org={created.id} fixedRole="admin" submitLabel="Add admin" />
+              </>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" disabled={switching} onClick={() => open(created.id)}>
+                Manage {created.name}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setCreated(null)}>
+                Done
+              </Button>
+            </div>
           </div>
         ) : (
           <form
-            className="flex flex-wrap items-end gap-2"
+            className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
             onSubmit={(event) => {
               event.preventDefault();
               void create();
             }}
           >
-            <div className="grid min-w-0 flex-1 basis-64 gap-1">
+            <div className="grid min-w-0 gap-1">
               <Label htmlFor="org-name">Name</Label>
               <Input
                 id="org-name"
@@ -111,9 +139,31 @@ export function OrganizationsPanel({ organizations }: { organizations: Organizat
                 onChange={(event) => setName(event.target.value)}
               />
             </div>
+            <div className="grid min-w-0 gap-1">
+              <Label htmlFor="org-admin">First admin (optional)</Label>
+              <div className="flex gap-1.5">
+                <Input
+                  id="org-admin"
+                  type="email"
+                  autoComplete="off"
+                  placeholder="Email of an existing account"
+                  value={adminEmail}
+                  onChange={(event) => setAdminEmail(event.target.value)}
+                />
+                {myEmail ? (
+                  <Button type="button" variant="outline" onClick={() => setAdminEmail(myEmail)}>
+                    Me
+                  </Button>
+                ) : null}
+              </div>
+            </div>
             <Button type="submit" disabled={busy || name.trim() === ""}>
               {busy ? "Creating…" : "Create"}
             </Button>
+            <p className="text-xs text-muted-foreground sm:col-span-3">
+              The first admin must already have an account; nothing is created if the email has none. Leave
+              it empty to add the first admin afterwards, with a new account if they have none.
+            </p>
           </form>
         )}
         {error ? (

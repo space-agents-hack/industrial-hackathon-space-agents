@@ -57,6 +57,24 @@ function PersonRow({ org, person }: { org: string; person: Person }) {
     router.refresh();
   }
 
+  // Removing takes the person out of this organisation only; their account and their other
+  // organisations stay. Removing yourself ends your access here, so the page you are on would be
+  // refused: go to the start instead.
+  async function remove() {
+    const where = person.isYou ? "You will lose access to this organisation." : "Their account and other organisations stay.";
+    if (!window.confirm(`Remove ${person.email} from this organisation? ${where}`)) return;
+    setBusy(true);
+    setMessage(null);
+    const result = await sendJson("/api/admin/people", "DELETE", { org, user_id: person.userId });
+    setBusy(false);
+    if (!result.ok) {
+      setMessage({ ok: false, text: result.error });
+      return;
+    }
+    if (person.isYou) router.push("/");
+    else router.refresh();
+  }
+
   async function savePassword() {
     setBusy(true);
     setMessage(null);
@@ -117,6 +135,9 @@ function PersonRow({ org, person }: { org: string; person: Person }) {
           onClick={() => void setMember(role, suspended ? "active" : "suspended")}
         >
           {suspended ? "Reactivate" : "Suspend"}
+        </Button>
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => void remove()}>
+          Remove
         </Button>
         {person.canResetPassword && !passwordMode ? (
           <Button variant="outline" size="sm" disabled={busy} onClick={() => setPasswordMode(true)}>

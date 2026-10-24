@@ -5,7 +5,7 @@ import { AccessRequests } from "@/components/admin/access-requests";
 import { type OrganizationSummary, OrganizationsPanel } from "@/components/admin/organizations-panel";
 import { NoAccess } from "@/components/no-access";
 import { getCurrentOrg } from "@/lib/current-org";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getSessionUser } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Organisations" };
 
@@ -26,7 +26,7 @@ async function Organizations() {
 
   // RLS lets a platform admin read every organisation and membership.
   const supabase = await createClient();
-  const [orgs, memberships, requests] = await Promise.all([
+  const [orgs, memberships, requests, me] = await Promise.all([
     supabase.from("organizations").select("id, name, created_at").order("created_at"),
     supabase.from("memberships").select("organization_id, role").eq("status", "active"),
     supabase
@@ -35,6 +35,7 @@ async function Organizations() {
       .eq("kind", "create")
       .eq("status", "pending")
       .order("created_at"),
+    getSessionUser(supabase),
   ]);
   if (requests.error) console.error("Admin, organisations: access requests failed", requests.error);
   if (orgs.error || memberships.error) {
@@ -72,9 +73,10 @@ async function Organizations() {
           monthly cap unless you set one in its Models and limits.
         </p>
       </section>
-      <OrganizationsPanel organizations={organizations} />
+      <OrganizationsPanel organizations={organizations} myEmail={me?.email ?? null} />
       <p className="max-w-prose text-xs text-muted-foreground">
-        Organisations are not deleted or renamed from the app. Platform admins are added by whoever
+        One account can belong to several organisations, with a different role in each; its owner
+        switches between them in the organisation switcher. Organisations are not deleted or renamed from the app. Platform admins are added by whoever
         operates the deployment (scripts/create-user.sh --platform-admin), never from a page.
       </p>
     </div>

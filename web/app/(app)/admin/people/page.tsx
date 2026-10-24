@@ -83,8 +83,9 @@ async function People() {
             </li>
           ))}
           <li>
-            Suspended: keeps their history, cannot see or do anything here. An organisation always
-            keeps at least one active admin.
+            Suspended: still listed here, cannot see or do anything here. Remove: no longer listed;
+            their account, their other organisations and their past runs stay. An organisation
+            always keeps at least one active admin.
           </li>
           <li>
             Set password appears only where you manage every organisation the person belongs to.

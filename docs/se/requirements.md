@@ -27,6 +27,7 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-37 | gather setup and administration in one Settings area shown only to organisation admins, with the deployment-wide parts shown only to platform admins | N-9 | web, db | T | — | #26 |
 | SYS-38 | start a run only for a case with at least one file in a project that uses at least one regulation, and otherwise refuse it with the reason; runs from loose files with no case are not accepted | N-8, N-7 | web | T | 1, 3 | #27 |
 | SYS-39 | let an admin or member ask questions about one run's results on its page (why a requirement was written, whether an obligation is captured) and answer from that run's requirements, their cited paragraphs and its trace, with the run's own model and the organisation's key, writing nothing | N-2, N-1, N-8 | web, regs | T | — | #28 |
+| SYS-41 | let an organisation admin give an existing account a role in their organisation without creating a new account or password, change it, and remove it, keeping at least one active admin; let a platform admin create an organisation with an existing account as its first admin; one account may belong to several organisations with a different role in each | N-15, N-9 | web, db | T | — | #30 |
 | **Output** | | | | | | |
 | SYS-4 | output a main-goal JSON that `validate.py` accepts, with `team_id` and `case_id` | N-7 | regs, checks | T | 4 | #4 |
 | SYS-5 | cite only catalogue regulations, with the **base** `version_label` and a page of that PDF | N-2, N-7 | regs | T | 3, 5 | #3, #4 |
@@ -81,6 +82,7 @@ SYS-23 to SYS-39 are numbered out of order because they were added later. Ids ar
 | SYS-37 | Clemente, 2026-10-24 (UX thread): Setup and Admin joined. Deployment-wide settings (model keys, SYS-33 defaults) stay with platform admins, since they act on every organisation |
 | SYS-38 | Clemente's and Ramón's first experiments, 2026-10-24. A run with nothing to read or no regulation to cite can only fail after spending model time. Ends the loose-files path (`run_files`) noted under IF-1 |
 | SYS-39 | Ramón, 2026-10-24. An engineer checks a requirement list by asking about it, not by reading the trace. The run's own model, so an organisation on its own Ollama server (SYS-30) does not send its run to a hosted model by asking. Admins and members only: an answer costs model money. Not covered yet: an answer's cost is not recorded, so it is checked against the monthly cap but does not add to it; the usage ledger (#29) is to record it |
+| SYS-41 | Ramón, 2026-10-24: adding someone who already had an account still asked for a password, and a new organisation led straight into creating a new account for its admin. An admin of one organisation searches only people of organisations they manage, so one client's admin cannot list another client's people; they can still add any account by its exact email. Removing keeps the account, its other organisations, its runs and its audit lines |
 | SYS-26 | Clemente, 2026-10-24: only if time allows. Kept here so it is not lost; issue #17 holds it |
 | SYS-28 | Clemente, 2026-10-24: embeddings (Ramón, #18) narrow 56 regulations fast; the full read keeps recall, since a paragraph the top-k misses inside a chosen regulation would otherwise be lost. Top-k only picks, it never decides alone that a regulation does not apply: the miss risk is regulation-level recall (SYS-8) |
 | SYS-29 | Clemente, 2026-10-24. The check agent reads the DB, not the model's memory, so a hallucinated paragraph is caught before the file is uploaded. The uncovered-paragraph list is for recall, which F2 weighs most (Clemente, 18:29). It costs run time (SYS-15) |
@@ -109,13 +111,13 @@ SYS-23 to SYS-39 are numbered out of order because they were added later. Ids ar
 | N-6 Stale requirements | SYS-19 |
 | N-7 Accepted submission | SYS-4, 5, 10, 19, 20, 29, 38 |
 | N-8 End to end | SYS-14, 15, 28, 36, 38 |
-| N-9 Deployable | SYS-2, 13, 16, 17, 24, 33, 35, 37, 30 (future) |
+| N-9 Deployable | SYS-2, 13, 16, 17, 24, 33, 35, 37, 41, 30 (future) |
 | N-10 Fits their tooling | SYS-18 |
 | N-11 Submitted | SYS-21 |
 | N-12 Shows its weakness | SYS-11, 17, 22, 33 |
 | N-13 Reusable regulation set | SYS-23, 32, 34 |
 | N-14 More markets | SYS-26 (future) |
-| N-15 Shared work | SYS-24, 31, 35, 36 |
+| N-15 Shared work | SYS-24, 31, 35, 36, 41 |
 
 Every need has at least one requirement, and every requirement has at least one need.
 

@@ -1016,8 +1016,8 @@ export type Database = {
           page: number
           paragraph: string | null
           paragraph_hash: string
-          paragraph_superseded_at: string | null
           paragraph_id: string | null
+          paragraph_superseded_at: string | null
           regulation: string
           run_id: string
           status: string
@@ -1037,8 +1037,8 @@ export type Database = {
           page: number
           paragraph?: string | null
           paragraph_hash: string
-          paragraph_superseded_at?: string | null
           paragraph_id?: string | null
+          paragraph_superseded_at?: string | null
           regulation: string
           run_id: string
           status?: string
@@ -1058,8 +1058,8 @@ export type Database = {
           page?: number
           paragraph?: string | null
           paragraph_hash?: string
-          paragraph_superseded_at?: string | null
           paragraph_id?: string | null
+          paragraph_superseded_at?: string | null
           regulation?: string
           run_id?: string
           status?: string
@@ -1280,6 +1280,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_member_by_email: {
+        Args: { member_email: string; member_role: string; org: string }
+        Returns: string
+      }
       analyze_regulation_search: { Args: never; Returns: undefined }
       bootstrap_member: {
         Args: {
@@ -1293,17 +1297,37 @@ export type Database = {
       cancel_access_request: { Args: { request: string }; Returns: undefined }
       cancel_regulation_import: { Args: { job: string }; Returns: undefined }
       create_organization: { Args: { org_name: string }; Returns: string }
-      decide_access_request: {
-        Args: { approve: boolean; member_role?: string; request: string }
+      create_organization_with_admin: {
+        Args: { admin_email?: string; org_name: string }
         Returns: string
       }
       create_regulation_import: {
         Args: { org: string; regulation_index: Json; source_name: string }
         Returns: string
       }
+      decide_access_request: {
+        Args: { approve: boolean; member_role?: string; request: string }
+        Returns: string
+      }
       delete_provider_key: {
         Args: { key_provider: string; org: string }
         Returns: undefined
+      }
+      find_people: {
+        Args: { org: string; search: string }
+        Returns: {
+          email: string
+          role: string
+          status: string
+          user_id: string
+        }[]
+      }
+      joinable_organizations: {
+        Args: never
+        Returns: {
+          id: string
+          name: string
+        }[]
       }
       match_regulation_paragraphs: {
         Args: {
@@ -1331,13 +1355,6 @@ export type Database = {
           vector_rank: number
           version_id: string
           version_label: string
-        }[]
-      }
-      joinable_organizations: {
-        Args: never
-        Returns: {
-          id: string
-          name: string
         }[]
       }
       my_access: { Args: never; Returns: Json }
@@ -1435,6 +1452,10 @@ export type Database = {
           input: string
           input_sha256: string
         }[]
+      }
+      remove_member: {
+        Args: { member: string; org: string }
+        Returns: undefined
       }
       replace_regulation_paragraphs: {
         Args: {
