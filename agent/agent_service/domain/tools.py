@@ -155,13 +155,7 @@ async def screen_regulations(ctx: RunContext[Deps]) -> dict[str, Any]:
     texts say about replacing one another. Call it once, after `record_product_profile`."""
     deps = ctx.deps
     profile = await _require_profile(deps)
-    library = await _library(deps)
-    versions: list[LibraryVersion] = []
-    for code in dict.fromkeys(v.regulation for v in library):
-        try:
-            versions.append(writer.citable_version(library, code))
-        except UnknownRegulation:
-            continue
+    versions = _citable(await _library(deps))
     semaphore = asyncio.Semaphore(deps.concurrency)
 
     async def read(version: LibraryVersion) -> screen.Candidate:
@@ -230,7 +224,7 @@ async def screen_regulations(ctx: RunContext[Deps]) -> dict[str, Any]:
 async def search_regulations(
     ctx: RunContext[Deps], query: str, limit: int = 20
 ) -> list[dict[str, Any]]:
-    """Search every paragraph of the library's base versions, best match first: by meaning where
+    """Search every paragraph of the versions requirements cite, best match first: by meaning where
     the library has embeddings, and by words. Use it to find which regulations speak about this
     product: search for the product, its functions, its parts and its vehicle categories, one
     idea per query.
@@ -240,7 +234,9 @@ async def search_regulations(
         limit: How many paragraphs to return, at most 50.
     """
     deps = ctx.deps
-    base = [v.id for v in await _library(deps) if v.role == "base"]
+    # The versions the writer would cite, not only those marked base: a regulation whose only
+    # version has no role was writable but never found (#40).
+    base = [v.id for v in _citable(await _library(deps))]
     if not base:
         return []
     k = max(1, min(limit, 50))
@@ -558,6 +554,18 @@ async def submit(ctx: RunContext[Deps], summary: str) -> str:
 
 
 # ------------------------------------------------------------------------------------------
+
+
+def _citable(library: list[LibraryVersion]) -> list[LibraryVersion]:
+    """One version per regulation, the one requirements cite (writer.citable_version). A
+    regulation it refuses (several versions, none base) is left out: it cannot be cited."""
+    out: list[LibraryVersion] = []
+    for code in dict.fromkeys(v.regulation for v in library):
+        try:
+            out.append(writer.citable_version(library, code))
+        except UnknownRegulation:
+            continue
+    return out
 
 
 async def _library(deps: Deps) -> list[LibraryVersion]:

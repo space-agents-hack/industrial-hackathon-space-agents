@@ -1,6 +1,6 @@
-"""The writer tools around the model calls: what a call that never answers leaves, and what a
-failed window hands back for a retry (#36, #39). Made-up library (tests/fakes.py); the models are
-pydantic-ai's FunctionModel, so no provider is reached."""
+"""The writer tools around the model calls: what a call that never answers leaves, what a failed
+window hands back for a retry, and which versions a search reads (#36, #39, #40). Made-up library
+(tests/fakes.py); the models are pydantic-ai's FunctionModel, so no provider is reached."""
 
 import asyncio
 from types import SimpleNamespace
@@ -93,3 +93,19 @@ async def test_a_failed_window_names_its_labels_and_they_retry_it(store, setting
 
     assert again == {"requirements": 1, "failed": [], "labels_not_found": []}
     assert len(await store.run_requirements(d.run.id)) == 2
+
+
+async def test_the_search_finds_a_regulation_whose_only_version_has_no_role(
+    store, settings
+) -> None:
+    d = deps(store, settings)
+    store.add_version(
+        "UN R<z>", "00", [("3.1", "3.1. The made-up widget shall glow.", 3)], role=None
+    )
+
+    hits = await tools.search_regulations(ctx(d, stalls_on("no marker")), "widget glow")
+
+    assert [(h["regulation"], h["paragraph"]) for h in hits] == [("UN R<z>", "3.1")]
+    # A regulation's latest version is still not searched when a base exists.
+    latest = await tools.search_regulations(ctx(d, stalls_on("no marker")), "four lamps")
+    assert all(h["text"] != "6.10.1. Two or four lamps must be fitted." for h in latest)
