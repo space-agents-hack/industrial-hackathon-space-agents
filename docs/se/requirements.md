@@ -16,8 +16,9 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-1 | accept a case as several files: .md .txt .pdf .png .jpg .docx, CAD .step/.stp .iges/.igs .stl | N-3 | web, ingest, db | T | 1 | #8 |
 | SYS-2 | pass every accepted file to the model as text or image, and list in the trace what was read, skipped or truncated per file | N-1, N-3, N-9 | ingest | T | 1 | #8 |
 | SYS-3 | hand the regulation step the case content tagged by file and page, plus optional free-form notes from a cheap model | N-1, N-2, N-4 | ingest, regs | T, S | 2 | #4, #8 |
-| SYS-23 | ingest a regulations `index.json` automatically: download, verify checksums, store by version, page and paragraph, with embeddings for retrieval | N-13, N-1, N-2 | regs, db | T, I | 3 | #3 |
-| SYS-24 | store every case (files, extracted content, notes, outputs) in the database and Storage under the user's organisation, readable only by that organisation's members; nothing case-specific in the repository | N-3, N-9 | db, ingest, web | T | 1, 2 | #8 |
+| SYS-23 | ingest a regulations `index.json` automatically: download, verify checksums, store by version, page and paragraph, with embeddings for retrieval | N-13, N-1, N-2 | regs, db | T, I | 3 | #3, #18 |
+| SYS-24 | store all case data in the database and Storage as organisation → projects → cases → requirements, shared by every member of that organisation and readable by no one else; nothing case-specific in the repository | N-3, N-9, N-15 | db, ingest, web | T | 1, 2 | #8, #19 |
+| SYS-27 | ingest each case file with a deterministic parser first, send any file or part the parser fails on or does not recognise to a model, and store both results as the same standardised content blocks in the database | N-1, N-3 | ingest, db | T | 1, 2 | #8, #19 |
 | **Output** | | | | | | |
 | SYS-4 | output a main-goal JSON that `validate.py` accepts, with `team_id` and `case_id` | N-7 | regs, checks | T | 4 | #4 |
 | SYS-5 | cite only catalogue regulations, with the **base** `version_label` and a page of that PDF | N-2, N-7 | regs | T | 3, 5 | #3, #4 |
@@ -25,7 +26,7 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-7 | state one engineering obligation per requirement | N-1, N-4, N-5 | regs | S, I | — | #4 |
 | SYS-8 | reach regulation-level recall ≥ `TBD` and page-level recall ≥ `TBD` on the dev case | N-1, N-4 | ingest, regs | S | — | #4 |
 | SYS-9 | (should) give a test case per requirement | N-5 | regs | I | — | #4 |
-| SYS-25 | write requirements from a case's content and the paragraphs of the regulations linked to it, each requirement stored with a link to the catalogue paragraph it comes from | N-1, N-2, N-5 | regs, db | T, S | 2, 3, 4 | #4 |
+| SYS-25 | write requirements from a case's content and the paragraphs of the regulations linked to it, each requirement stored with a link to exactly one regulation, at the catalogue paragraph it comes from | N-1, N-2, N-5 | regs, db | T, S | 2, 3, 4 | #4, #19 |
 | **Checks** | | | | | | |
 | SYS-10 | run `validate.py` (unchanged) automatically on each run's output JSON and show every problem with its JSON path | N-7 | checks, web | T | 5 | #15 (built) |
 | SYS-11 | for `dev-rear-lamp` only, score the output JSON against its `expected.json` with `score_local.py` and show regulation and page scores | N-1, N-12 | checks, web | D | 5 | #15 (built) |
@@ -46,7 +47,7 @@ db = `supabase/` · ops = deploy, uploads, people.
 | **Future work (not built this weekend)** | | | | | | |
 | SYS-26 | (may) find regulations for a given country or industry on the web and other sources, and write them as an `index.json` in Certivity's format, which SYS-23 then ingests | N-14 | regs | D | 3 | #17 |
 
-SYS-23 to SYS-26 are numbered out of order because they were added later. Ids are never renumbered.
+SYS-23 to SYS-27 are numbered out of order because they were added later. Ids are never renumbered.
 
 ## Rationale and notes
 
@@ -56,8 +57,9 @@ SYS-23 to SYS-26 are numbered out of order because they were added later. Ids ar
 | SYS-2 | A page the model never saw is a requirement nobody finds, and the engineer cannot tell |
 | SYS-3 | Certivity could not confirm fixed product attributes (2026-10-24), so there is no fixed schema. The notes are a help, not a contract. Was "case profile" until 2026-10-24 |
 | SYS-23 | The same mechanism loads any customer's regulation set (Clemente, 2026-10-24). Ramón owns the ingestion and vectorisation (#3) |
-| SYS-24 | Clemente, 2026-10-24: "it shall be DB". Today there is one organisation (the default). Reference data follows the same rule (SYS-16) |
-| SYS-25 | The link to the catalogue paragraph (not only the citation strings) is what lets a requirement be traced to a regulation paragraph later, and lets SYS-19 find the requirements a changed paragraph affects. One agent or several is a design decision, still open |
+| SYS-24 | Clemente, 2026-10-24: "it shall be DB", and several engineers of one company work on the same cases (for example the same car part). Projects group cases. Today there is one organisation (the default), and files hang off runs, not cases (#19). Reasons in ADR-0006 |
+| SYS-27 | Clemente, 2026-10-24: parser first because it is cheap, repeatable and cites pages exactly. The model covers what the parser cannot read. One block format, so the regulation step does not care which one produced a block |
+| SYS-25 | The link to the catalogue paragraph (not only the citation strings) is what lets a requirement be traced to a regulation paragraph later, and lets SYS-19 find the requirements a changed paragraph affects. One agent or several is a design decision, still open. Exactly one regulation per requirement (Clemente, 2026-10-24, correcting "at least one"), which matches the one `source` per requirement in Certivity's format |
 | SYS-26 | Clemente, 2026-10-24: only if time allows. Kept here so it is not lost; issue #17 holds it |
 | SYS-4 | CR1. The platform runs the same check, and a rejected file does not count |
 | SYS-5 | CR2. A page of the `latest` version counts as a wrong page. **Same-name risk:** `validate.py` checks against the `index.json` file, not our database, so the catalogue keeps its exact strings and the file stays available to the checks |
@@ -75,9 +77,9 @@ SYS-23 to SYS-26 are numbered out of order because they were added later. Ids ar
 
 | Need | Satisfied by |
 |---|---|
-| N-1 Completeness | SYS-2, 3, 6, 7, 8, 11, 23, 25 |
+| N-1 Completeness | SYS-2, 3, 6, 7, 8, 11, 23, 25, 27 |
 | N-2 Checkable source | SYS-3, 5, 6, 12, 23, 25 |
-| N-3 Input as I have it | SYS-1, 2, 24 |
+| N-3 Input as I have it | SYS-1, 2, 24, 27 |
 | N-4 No noise | SYS-3, 7, 8 |
 | N-5 Actionable wording | SYS-7, 9, 25 |
 | N-6 Stale requirements | SYS-19 |
@@ -89,6 +91,7 @@ SYS-23 to SYS-26 are numbered out of order because they were added later. Ids ar
 | N-12 Shows its weakness | SYS-11, 17, 22 |
 | N-13 Reusable regulation set | SYS-23 |
 | N-14 More markets | SYS-26 (future) |
+| N-15 Shared work | SYS-24 |
 
 Every need has at least one requirement, and every requirement has at least one need.
 
@@ -97,8 +100,8 @@ Every need has at least one requirement, and every requirement has at least one 
 | Part | Requirements |
 |---|---|
 | web | SYS-1, 10, 11, 12, 13, 14, 18, 24 |
-| ingest | SYS-1, 2, 3, 8, 14, 15, 24 |
+| ingest | SYS-1, 2, 3, 8, 14, 15, 24, 27 |
 | regs | SYS-3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 17, 19, 23, 25, 26 |
 | checks | SYS-4, 10, 11, 14, 19 |
-| db | SYS-1, 16, 17, 23, 24, 25 |
+| db | SYS-1, 16, 17, 23, 24, 25, 27 |
 | ops | SYS-15, 16, 20, 21, 22 |

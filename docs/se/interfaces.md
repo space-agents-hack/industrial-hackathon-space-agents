@@ -7,8 +7,8 @@ them in on their behalf. A change needs both owners to agree on the issue before
 
 | IF | From → To | Carries | Owner (from / to) | SYS | Issue |
 |---|---|---|---|---|---|
-| IF-1 | web → db/Storage → ingest | Case files | Clemente / Clemente | 1, 2, 16, 24 | #8 |
-| IF-2 | ingest → regs | Case content tagged by file and page, plus optional notes | Clemente / `UNASSIGNED` | 2, 3, 8, 24, 25 | #4 |
+| IF-1 | web → db/Storage → ingest | Case files, under organisation → project → case | Clemente / Clemente | 1, 2, 16, 24, 27 | #8, #19 |
+| IF-2 | ingest → regs | Standardised content blocks stored per case (file, page), plus optional notes | Clemente / `UNASSIGNED` | 2, 3, 8, 24, 25, 27 | #4, #19 |
 | IF-3 | regs catalogue → requirement writer | Paragraphs with regulation, version, page, paragraph | `UNASSIGNED` / `UNASSIGNED` | 5, 6, 15, 23, 25 | #3 |
 | IF-4 | agent → db → web, checks | Run output: `submission_main` JSON | `UNASSIGNED` / `UNASSIGNED` | 4, 14, 25 | #4 |
 | IF-5 | Certivity → checks, regs | `validate.py`, `score_local.py`, schemas, `index.json`, `expected.json` | `UNASSIGNED` | 10, 11, 16, 19 | — |
@@ -30,7 +30,7 @@ them in on their behalf. A change needs both owners to agree on the issue before
 | IF | Decided | Open |
 |---|---|---|
 | IF-1 | Storage bucket `case-files` + table `run_files` (path, name, media type, bytes, sha256) instead of #8's table of bytes (Clemente, 2026-10-24). Reason: Vercel rejects bodies over 4.5 MB. A check constraint on media type is the single list of formats | Size limits per file and per run. Purge must empty the bucket. Later: use Ramón's PDF layer (#3) for case PDFs |
-| IF-2 | No fixed profile, because Certivity could not confirm the attributes (2026-10-24). Blocks of text or image, each with file and page. Notes are free-form and cite a block | Block format. Which cheap model writes the notes (the template runs one model per run) |
+| IF-2 | No fixed profile, because Certivity could not confirm the attributes (2026-10-24). Blocks of text or image, each with file and page, stored once per case in the DB; parser first, model fallback, same block schema (SYS-27, ADR-0006). Notes are free-form and cite a block | Block format. Which cheap model writes the notes (the template runs one model per run) |
 | IF-3 | Catalogue loaded from `index.json` (SYS-23). `regulation` and `version_label` strings are kept exactly as in the file | Query and response shape. Pre-computed or built during the run (`RUN_TIMEOUT_S`, SYS-15) |
 | IF-4 | Output is the Certivity JSON itself, as a typed output, never free text | Source of `team_id` (a setting) and `case_id` |
 | IF-5 | Tools and schemas copied unchanged into `agent/certivity/` by `scripts/sync-certivity.sh` (ac791c2); the reference data (index, answer files) in table `certivity_reference`, loaded by `make certivity-load`, read by the agent only. No bucket. Check results are not stored per run | — |

@@ -53,7 +53,8 @@ These are written CR-, never R-, because Certivity's output requirements use the
 | N-11 | Submitted on the organisers' platform | S-5 | CR4 | gate |
 | N-12 | Shows its weakness, with how it was measured | S-2 | Brief 07 | 10% |
 | N-13 | Reusable regulation set: load an index once, use it for any customer or model | S-3 | Clemente | 15% |
+| N-15 | Shared work: several engineers of one company work on the same projects and cases | S-1, S-3 | Clemente | 15% |
 | N-14 | More markets: regulations for other countries and industries, not only the 56 UN Regulations given | S-3 | Pitch (85+ markets), Clemente | future |
 
 "Weight" is the grading criterion a need feeds into, which helps prioritise. It is not a score.
-N-3, N-13 and N-14 come from Clemente's product direction, not from Certivity's grading.
+N-3, N-13, N-14 and N-15 come from Clemente's product direction, not from Certivity's grading.
