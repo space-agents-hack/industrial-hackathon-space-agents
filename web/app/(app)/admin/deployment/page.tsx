@@ -6,6 +6,7 @@ import { GithubAppMissing } from "@/components/admin/github-app-missing";
 import { DeploymentForm } from "@/components/admin/deployment-form";
 import { NoAccess } from "@/components/no-access";
 import { RelativeTime } from "@/components/relative-time";
+import { SCRIPTED_MODEL } from "@/lib/admin";
 import { getCurrentOrg } from "@/lib/current-org";
 import { EDITABLE_SECRETS, RELEASE_SECRETS } from "@/lib/deployment";
 import { deploymentState } from "@/lib/github";
@@ -93,6 +94,12 @@ async function Deployment() {
             Default model <code className="font-mono text-xs text-muted-foreground">AGENT_MODEL</code>
           </dt>
           <dd className="font-mono text-xs">{state.model ?? "scripted (not set)"}</dd>
+          {(state.model ?? SCRIPTED_MODEL) === SCRIPTED_MODEL ? (
+            <dd className="col-span-full text-xs text-attention">
+              The scripted model is a test stand-in: organisations without their own model get
+              placeholder requirements. Set a provider:model below.
+            </dd>
+          ) : null}
         </dl>
       </section>
 

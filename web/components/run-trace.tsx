@@ -11,6 +11,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { StoredSubmission } from "@/components/stored-submission";
 import { Timeline } from "@/components/timeline";
 import { Button } from "@/components/ui/button";
+import { SCRIPTED_MODEL } from "@/lib/admin";
 import { looksLikeSubmission } from "@/lib/certivity";
 import { fetchApprovals, fetchRun, fetchRunEvents } from "@/lib/runs";
 import { createClient } from "@/lib/supabase/client";
@@ -249,6 +250,15 @@ export function RunTrace({
           </span>
         )}
       </div>
+      {/* The scripted model is kept for tests (no key, no cost) and is the default when no model
+          is set, so a run on it looks like any other run. Its output is mechanical, never a
+          submission. */}
+      {run.model === SCRIPTED_MODEL ? (
+        <p className="text-sm text-attention">
+          Test model: this run used the scripted model, not a real one. Its requirements are
+          placeholders. Do not upload them. Set a model in Settings and run again.
+        </p>
+      ) : null}
 
       {finished ? null : (
         // What the run is doing now and for how long: the trace below is complete but long, and
