@@ -384,6 +384,17 @@ async def submit(ctx: RunContext[Deps], summary: str) -> str:
         lines.append(f"validate.py finds {checked['problem_count']} problem(s): {problems}")
     if not deps.team_id:
         lines.append("CERTIVITY_TEAM_ID is not set: replace team_id in the file before uploading.")
+    # case_id is the case's name in the app. Clemente's first dev-case run was named otherwise and
+    # the platform would have scored it against nothing; the run is where he looks, not /checks.
+    # Only a warning: the held-out case has no answer key and is still named correctly.
+    ref = await _reference(deps)
+    if ref.answer_keys_loaded and data["case_id"] not in ref.expected:
+        known = ", ".join(sorted(ref.expected)) or "none"
+        lines.append(
+            f"case_id {data['case_id']!r} has no answer key (those with one: {known}). Fine for "
+            "the held-out case if it is named after its folder; otherwise rename the case to "
+            "Certivity's id and run again."
+        )
     await _progress(deps, "\n".join(lines))
     return text
 

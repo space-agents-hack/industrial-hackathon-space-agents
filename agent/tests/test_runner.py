@@ -99,6 +99,22 @@ async def test_a_denied_export_approves_nothing_and_still_gives_the_file(store, 
     assert "3 not approved" in said
 
 
+async def test_a_case_named_other_than_certivitys_id_is_named_in_the_run(store, settings) -> None:
+    # case_id is the case's name in the app; a wrong one is scored against nothing.
+    seed_library(store)
+    await store.replace_certivity_reference(
+        [{"kind": "expected", "case_id": "dev-rear-lamp", "content": {}, "certivity_commit": "x"}]
+    )
+    case_id = store.add_parsed_case("Rear lamp RPL-2", "A red rear position lamp.")
+    run_id = store.add_run(TASK, case_id=case_id)
+    await advance(store, settings, run_id)
+    store.decide(run_id, "approved")
+    await advance(store, settings, run_id)
+
+    said = " ".join(p["text"] for p in store.payloads(run_id, "text"))
+    assert "case_id 'Rear lamp RPL-2' has no answer key (those with one: dev-rear-lamp)" in said
+
+
 async def test_a_regulation_that_does_not_speak_about_the_product_is_not_read(
     store, settings
 ) -> None:
