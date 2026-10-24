@@ -41,6 +41,9 @@ Methods: **T** automated test in `make check`, **S** score, **D** demonstration,
 | V-32 | SYS-32 | T: a project limited to some regulations gives the writer only those; a new import reaches an "all" project | none yet |
 | V-33 | SYS-33 | T: the model set per process by the admin is the one each agent uses, and a per-run override wins for writer and check | none yet |
 | V-34 | SYS-34 | T (pgTAP): after re-extracting a regulation version, every requirement's paragraph link is set and points to an existing row; the old rows are still there, marked superseded; an unchanged paragraph's requirements point to the new row; a changed or missing one's requirements are marked for re-check and the check agent re-runs on them | none yet |
+| V-35 | SYS-35 | T (pgTAP): a join request gives no access until an admin of that organisation approves it; a declined or pending person reads none of its rows; an admin of another organisation cannot approve it; a new-organisation request makes the requester its admin (once the approval rule is decided) | none yet |
+| V-36 | SYS-36 | T: navigation rules, no project selected shows only project choice or creation, and Runs, Regulations, Changes and Checks only appear with a project; D: sign in, pick a project, see its sections | none yet |
+| V-37 | SYS-37 | T: Settings is hidden from and refused to a non-admin member; deployment-wide parts are hidden from and refused to an organisation admin who is not a platform admin | none yet |
 | V-26 | SYS-26 | D: a generated `index.json` passes the same loader as Certivity's (future) | none yet |
 
 ## Score log
