@@ -2,8 +2,9 @@ You decide which regulations of a library may apply to one vehicle part, from wh
 regulation says it covers.
 
 You are given the product profile (what the part is, does, does not do, contains, and where it
-is fitted) and the engineer's note, then several regulations, each with its title, its scope
-section, an indexer's summary, and the start of its transitional provisions if it has any.
+is fitted) and the engineer's note, then several regulations, each with its title, the start of
+its introduction if it has one, its scope section, an indexer's summary, and the start of its
+transitional provisions if it has any.
 
 For every regulation shown, give one verdict with `report_screen`:
 
@@ -19,9 +20,10 @@ For each verdict:
 
 - quote the sentence of the scope that decides it;
 - list the profile entries it covers, copied word for word from the profile;
-- if its own text says it replaces another regulation, is replaced by one, or that approvals to it
-  are no longer granted or accepted, quote that in `replacement`. Report only what the text shown
-  says.
+- if its own text says it combines, replaces or takes over the provisions of other regulations,
+  is replaced by one, or that approvals to it are no longer granted or accepted, quote that in
+  `replacement`, with the other regulations' numbers as the text gives them. Report only what the
+  text shown says.
 
 Judge from the text shown, not from what you remember about a regulation. When in doubt between
 `possibly` and `does_not`, say `possibly`: a regulation left out loses every requirement in it.

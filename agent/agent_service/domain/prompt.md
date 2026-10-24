@@ -30,9 +30,10 @@ How to work:
    When in doubt, include it.
    Two regulations covering the same profile entry is normal (one for the device, one for its
    installation on the vehicle) and is no reason to leave either out. Leave one out only on
-   evidence: its own text, as the screen quotes it under `replacement`, says another regulation
-   of the library replaces it or that approvals to it are no longer granted, and the case files
-   do not name it. Say which evidence you used. With no such evidence, keep both.
+   evidence the screen quotes under `replacement`: another regulation of the library says it
+   combines, replaces or takes over that regulation's provisions, or that regulation says
+   approvals to it are no longer granted; and the case files do not name the one you leave out.
+   Name the evidence for each one you leave out. With no such evidence, keep both.
 6. `check_requirements`. Then:
    - reject with `reject_requirements` what the check marks `reject`, unless the paragraph shows
      the check is wrong;

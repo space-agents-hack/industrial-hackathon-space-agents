@@ -120,3 +120,19 @@ async def test_a_run_screens_the_library_after_the_profile_and_before_writing(
         p for p in store.payloads(run_id, "tool_result") if p["tool_name"] == "screen_regulations"
     ]
     assert not result["is_error"]
+
+
+def test_the_screen_reads_the_introduction_where_a_regulation_says_what_it_took_over() -> None:
+    c = screen.candidate(
+        VERSION,
+        [
+            paragraph(1, None, "Introduction. This Regulation combines Regulations Nos. A and B."),
+            paragraph(2, "1", "Scope. This applies to made-up panels."),
+            paragraph(3, None, "Unnumbered text inside the scope."),
+        ],
+    )
+
+    assert c.introduction == "Introduction. This Regulation combines Regulations Nos. A and B."
+    assert c.render().index("Introduction (start):") < c.render().index("Scope section:")
+    # Without a section 1 the opening text is shown as the scope, not twice.
+    assert screen.candidate(VERSION, [paragraph(1, None, "Opening.")]).introduction == ""
