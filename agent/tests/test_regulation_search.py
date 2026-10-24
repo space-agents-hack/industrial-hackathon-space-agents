@@ -21,6 +21,8 @@ from agent_service.domain.regulation_search import (
     EmbeddingError,
     EmbeddingModel,
     ProjectScope,
+    SearchTimeout,
+    VectorSearchTimeout,
     _batches,  # pyright: ignore[reportPrivateUsage]
     embed,
     index_library,
@@ -538,3 +540,30 @@ async def test_summaries_are_written_even_when_the_embedding_key_is_refused(
         with pytest.raises(EmbeddingError, match="rejected the API key"):
             await index_library(store, http, index_settings, ORG)
     assert version.id in store.summaries
+
+
+# ---------------------------------------------------------------------------------- timeouts
+
+
+async def test_a_search_by_meaning_cancelled_for_time_is_an_embedding_error(
+    settings: Settings,
+) -> None:
+    # Every caller already answers an EmbeddingError with a search by words and a warning; in
+    # production the cancelled search was an unhandled error that failed the run (#44).
+    store = InMemorySearchStore(keys={"openai": KEY}, vector_search_times_out=True)
+    async with Provider().client as http:
+        with pytest.raises(VectorSearchTimeout) as caught:
+            await search(store, http, settings, ORG, "stop lamp")
+        assert isinstance(caught.value, EmbeddingError)
+        assert "longer than the database allows" in str(caught.value)
+        assert await search(store, http, settings, ORG, "stop lamp", mode="text") == []
+
+
+async def test_a_search_by_words_cancelled_for_time_is_not_hidden(settings: Settings) -> None:
+    class Slow(InMemorySearchStore):
+        async def match(self, *args: Any, **kwargs: Any) -> list[Any]:
+            raise SearchTimeout("canceling statement due to statement timeout")
+
+    async with Provider().client as http:
+        with pytest.raises(SearchTimeout):
+            await search(Slow(), http, settings, ORG, "stop lamp", mode="text")

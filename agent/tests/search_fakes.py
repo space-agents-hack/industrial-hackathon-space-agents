@@ -11,6 +11,7 @@ from agent_service.domain.regulation_search import (
     Hit,
     ProjectScope,
     ScopeSummary,
+    SearchTimeout,
     VersionToSummarize,
 )
 
@@ -38,6 +39,8 @@ class InMemorySearchStore:
     refreshes: int = 0
     analyses: int = 0
     matches: list[dict[str, object]] = field(default_factory=list)
+    # The database cancels a search that uses vectors, as the hosted one did at 8 s (#44).
+    vector_search_times_out: bool = False
     # model_usage rows (agent_service/metering.py).
     usage: list[dict[str, Any]] = field(default_factory=list)
     closed: bool = False
@@ -118,6 +121,8 @@ class InMemorySearchStore:
         self.matches.append(
             {"query": query, "embedding": embedding, "model": model, "versions": version_ids}
         )
+        if self.vector_search_times_out and embedding is not None:
+            raise SearchTimeout("canceling statement due to statement timeout")
         return []
 
     async def aclose(self) -> None:

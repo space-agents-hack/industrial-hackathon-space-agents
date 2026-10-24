@@ -62,6 +62,16 @@ class EmbeddingError(Exception):
     message never contains the key."""
 
 
+class SearchTimeout(Exception):
+    """The database cancelled the search: it took longer than its statement timeout (8 s on the
+    hosted database)."""
+
+
+class VectorSearchTimeout(EmbeddingError):
+    """A search by meaning and words was cancelled for time; the words alone were not. Raised as
+    an EmbeddingError so every caller already falls back to words and says so (WORDS_ONLY)."""
+
+
 class EmbeddingBusy(EmbeddingError):
     """The provider asked to slow down (429) or failed on its side (5xx): worth asking again."""
 
@@ -642,6 +652,17 @@ async def search(
         )[0]
         if meter is None:
             await own.flush(store)
-    return await store.match(
-        org, query if mode != "vector" else None, embedding, model.key, version_ids, k
-    )
+    try:
+        return await store.match(
+            org, query if mode != "vector" else None, embedding, model.key, version_ids, k
+        )
+    except SearchTimeout:
+        # In production the first run after the library was indexed failed here: a cancelled
+        # search was an error that ended the run. Words alone answered before vectors existed,
+        # so the caller searches by words and the person is told (#44).
+        if embedding is None:
+            raise
+        log.warning("Search by meaning cancelled for time: %r", query[:200])
+        raise VectorSearchTimeout(
+            "the search by meaning took longer than the database allows"
+        ) from None

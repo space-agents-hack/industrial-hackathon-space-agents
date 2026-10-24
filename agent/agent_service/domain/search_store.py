@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
 
+from postgrest.exceptions import APIError
 from postgrest.types import ReturnMethod
 from supabase import AsyncClient, acreate_client
 
@@ -13,6 +14,7 @@ from agent_service.domain.regulation_search import (
     Hit,
     ProjectScope,
     ScopeSummary,
+    SearchTimeout,
     VersionToSummarize,
 )
 from agent_service.domain.regulations import BUCKET
@@ -206,17 +208,23 @@ class SupabaseSearchStore:
         version_ids: list[UUID] | None,
         k: int,
     ) -> list[Hit]:
-        res = await self._db.rpc(
-            "match_regulation_paragraphs",
-            {
-                "p_organization_id": str(org),
-                "p_query": query,
-                "p_query_embedding": vector_literal(embedding) if embedding else None,
-                "p_model": model,
-                "p_version_ids": [str(v) for v in version_ids] if version_ids else None,
-                "p_k": k,
-            },
-        ).execute()
+        try:
+            res = await self._db.rpc(
+                "match_regulation_paragraphs",
+                {
+                    "p_organization_id": str(org),
+                    "p_query": query,
+                    "p_query_embedding": vector_literal(embedding) if embedding else None,
+                    "p_model": model,
+                    "p_version_ids": [str(v) for v in version_ids] if version_ids else None,
+                    "p_k": k,
+                },
+            ).execute()
+        except APIError as exc:
+            # 57014: cancelled by the statement timeout. The search decides what to do with it.
+            if exc.code == "57014":
+                raise SearchTimeout(exc.message) from exc
+            raise
         return [Hit.model_validate(r) for r in _rows(res)]
 
     async def aclose(self) -> None:
