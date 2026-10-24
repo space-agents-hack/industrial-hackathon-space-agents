@@ -403,3 +403,40 @@ async def test_a_failed_batch_is_tried_again_then_keeps_the_rules_answer() -> No
     assert report.changes == rules
     assert report.failed and all("provider down" in f for f in report.failed)
     assert report.reviewed == 0
+
+
+async def test_each_batch_reports_when_it_ends_so_a_slow_review_is_visible() -> None:
+    lines: list[str] = []
+    old, new, rules = aligned()
+    found = subgoal_review.candidates(REQUIREMENTS, old, new)
+
+    async def progress(text: str) -> None:
+        lines.append(text)
+
+    await subgoal_review.review(
+        found,
+        old,
+        new,
+        rules,
+        answering([]),
+        subgoal_review.Limits(batch_size=2),
+        progress,
+        {},
+    )
+
+    assert sum(line.startswith("Batch ") for line in lines) == 2
+    assert any("Batch 1 of 2: 0 of 2 verdicts in" in line for line in lines)
+
+
+async def test_a_reviewer_that_cannot_be_reached_leaves_the_rules_file(store, settings) -> None:
+    # A real provider model with no key and no network (tests forbid model requests): every
+    # batch fails, twice, and the run still writes the rules' file.
+    case_id = subgoal_case(
+        store, requirements_file(), ("old.pdf", "pdf", b"old-pdf"), ("new.pdf", "pdf", b"new-pdf")
+    )
+    run_id = store.add_run("x", case_id=case_id)
+    real = settings.model_copy(update={"agent_model": "anthropic:claude-opus-5-5"})
+
+    assert await advance(store, real, run_id) == "succeeded"
+    assert json.loads(store.outputs[run_id] or "null") == rules_file()
+    assert any("failed after" in p["text"] for p in store.payloads(run_id, "text"))

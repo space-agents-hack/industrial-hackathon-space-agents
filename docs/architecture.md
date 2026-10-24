@@ -103,7 +103,7 @@ differs is inside the agent:
   checks and offers for download like any submission.
 
 Code orchestrates rather than a model, because every choice between the steps has a rule that
-can be tested. The reviewer runs on the organisation's `check` model, else the run's model. With
+can be tested. The reviewer runs on the organisation's `check` model, else `SUBGOAL_REVIEW_MODEL` (Sonnet), never the writer's model by default, and each call may search at most twice. With
 `SUBGOAL_REVIEW=false`, or when the reviewer fails, the rules' answer stands, and the trace says so.
 
 ## Where things live

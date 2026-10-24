@@ -56,6 +56,11 @@ _NEW_CHARS = 6000
 # A quote this short ("the vehicle") is found anywhere and proves nothing.
 _MIN_QUOTE_WORDS = 4
 _SEARCH_HITS = 5
+# Per reviewer call: the answer plus at most two searches. Each search resends the whole prompt,
+# so the first production run (2026-10-24), with 8 allowed, spent minutes and dollars on a
+# 15-requirement case while the trace showed nothing. A cap on input tokens backs it up.
+_REQUESTS = 3
+_INPUT_TOKENS = 60_000
 
 
 @dataclass(frozen=True)
@@ -279,31 +284,48 @@ async def review(
     def has_time() -> bool:
         return limits.deadline is None or loop.time() + limits.timeout_s < limits.deadline
 
-    async def one(batch: list[Candidate]) -> list[Verdict] | str | None:
+    async def one(batch: list[Candidate], label: str) -> list[Verdict] | str | None:
         async with semaphore:
             if not has_time():
                 return None
+            started = loop.time()
             try:
                 async with asyncio.timeout(limits.timeout_s):
                     result = await reviewer_agent.run(
                         render(batch, by_rule),
                         model=model,
                         deps=deps,
-                        usage_limits=UsageLimits(request_limit=8),
+                        usage_limits=UsageLimits(
+                            request_limit=_REQUESTS, input_tokens_limit=_INPUT_TOKENS
+                        ),
                     )
             except Exception as exc:
                 if isinstance(exc, TimeoutError):
-                    return f"TimeoutError: no answer within {limits.timeout_s:g} s"
-                return f"{type(exc).__name__}: {exc}"[:300]
+                    failure = f"TimeoutError: no answer within {limits.timeout_s:g} s"
+                else:
+                    failure = f"{type(exc).__name__}: {exc}"[:300]
+                await progress(
+                    f"Batch {label} failed after {loop.time() - started:.0f} s: {failure}"
+                )
+                return failure
             usage.incr(result.usage)
             ids = {c.id for c in batch}
-            return [v for v in result.output if v.requirement_id in ids]
+            got = [v for v in result.output if v.requirement_id in ids]
+            # One line per batch, so a slow review shows where it is instead of looking stuck.
+            await progress(
+                f"Batch {label}: {len(got)} of {len(batch)} verdicts in "
+                f"{loop.time() - started:.0f} s, {result.usage.input_tokens} tokens in, "
+                f"{result.usage.output_tokens} out."
+            )
+            return got
 
     verdicts: dict[str, Verdict] = {}
     report = Report(list(rules), usage)
     pending = batches
     for attempt in (1, 2):
-        outcomes = await asyncio.gather(*(one(b) for b in pending))
+        outcomes = await asyncio.gather(
+            *(one(b, f"{i} of {len(pending)}") for i, b in enumerate(pending, 1))
+        )
         retry: list[list[Candidate]] = []
         for batch, outcome in zip(pending, outcomes, strict=True):
             ids = ", ".join(c.id for c in batch)

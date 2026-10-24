@@ -25,7 +25,7 @@ not from the others. For each requirement:
 
 If the new text shown does not contain the old sentence or its rewording, it may have moved: call
 `search_new_version` with a few distinctive words of the old sentence before you decide that it
-was removed.
+was removed. Search at most twice per answer; each search is costly.
 
 The comparison's finding is a hint, not the answer. It tells which words changed, not whether
 the obligation changed, and it can attach a requirement to the wrong sentence of its paragraph.

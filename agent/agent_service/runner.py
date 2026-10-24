@@ -200,8 +200,13 @@ async def _execute(store: RunStore, settings: Settings, plan: Plan) -> RunStatus
         case_id = plan.run.case_id
         if case_id is not None and await store.case_kind(case_id) == subgoal.KIND:
             # The reviewer is a check (SYS-29's kind of work): the organisation's check model if
-            # it chose one in Admin, else the run's own; billed as checking either way.
-            name = await store.organization_model(plan.run.organization_id, "check") or name
+            # it chose one in Admin, else SUBGOAL_REVIEW_MODEL; billed as checking either way.
+            # The scripted model stays scripted, so tests and a key-less stage never call out.
+            chosen = await store.organization_model(plan.run.organization_id, "check")
+            if chosen:
+                name = chosen
+            elif name != "scripted":
+                name = settings.subgoal_review_model
             key, endpoint = await credentials(store, plan.run.organization_id, name)
             credential = Credential.for_model(name, key, endpoint.root() if endpoint else None)
             model = metered(build_model(name, key, endpoint), meter, "check", name, credential)

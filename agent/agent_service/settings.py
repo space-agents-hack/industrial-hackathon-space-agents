@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     # regulation with 300 such requirements is then about 38 calls, 6 at a time. Off means the
     # rules diff alone, at no model cost. An estimate, not measured on a real model yet.
     subgoal_review: bool = True
+    # The reviewer's model when the organisation chose no check model in Admin. Not the run's
+    # model: that is the writer's, often the largest one, and the reviewer only compares short
+    # passages. The first production run on the run's model (Opus) was slow and costly.
+    subgoal_review_model: str = "anthropic:claude-sonnet-5-5"
     subgoal_review_batch: int = 8
 
     # Case ingestion (domain/case_ingest.py): the model that reads what the parsers cannot (a
