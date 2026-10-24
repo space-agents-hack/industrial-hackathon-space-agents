@@ -30,7 +30,10 @@ Methods: **T** automated test in `make check`, **S** score, **D** demonstration,
 | V-20 | SYS-20 | I: upload log on #7, last upload = best file, before 13:00 | none yet |
 | V-21 | SYS-21 | I: confirmation from the organisers' platform | none yet |
 | V-22 | SYS-22 | I: pitch slide numbers match the recorded scores | none yet |
-| V-23 | SYS-23 | T: a small index ingests end to end; I: rows per regulation match the index | none yet |
+| V-23 | SYS-23 | T: a small index ingests end to end, embeddings included; I: rows per regulation match the index | none yet |
+| V-24 | SYS-24 | T (pgTAP): a member of another organisation cannot read the case's rows or files; I: `git ls-files` has no case data | none yet |
+| V-25 | SYS-25 | T: every stored requirement points to an existing catalogue paragraph whose regulation, version and page match its citation; S: requirement-level score | none yet |
+| V-26 | SYS-26 | D: a generated `index.json` passes the same loader as Certivity's (future) | none yet |
 
 ## Score log
 
