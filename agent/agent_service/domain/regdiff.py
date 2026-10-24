@@ -41,6 +41,8 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
+from agent_service.domain import certivity
+
 Status = Literal["unchanged", "modified", "removed", "added"]
 
 # Below this, two segments are different text, not a rewording of each other. Set on the worked
@@ -700,10 +702,20 @@ def _main(argv: list[str]) -> int:
         args.out.write_text(text + "\n", encoding="utf-8")
     else:
         print(text)
+    # The same check production runs on every file (POST /checks, the agent's certivity_check),
+    # with the requirement ids checked against this requirements_old.json.
+    ref = certivity.Reference("local", None, {}, {args.case_id: reqs})
+    check = certivity.check(text, ref, with_score=False)
+    for problem in check["problems"]:
+        print(f"{problem['path']}: {problem['message']}", file=sys.stderr)
+    print(
+        f"validate.py: {'valid' if check['valid'] else 'INVALID'}, {check['items']} changes",
+        file=sys.stderr,
+    )
     if args.expected:
         expected = json.loads(args.expected.read_text(encoding="utf-8"))
         print(json.dumps(score(result, expected), indent=2), file=sys.stderr)
-    return 0
+    return 0 if check["valid"] else 1
 
 
 if __name__ == "__main__":
