@@ -174,15 +174,14 @@ class ScopeSummary(BaseModel):
     summary: str = Field(
         description=(
             "At most 120 words: which products, devices or vehicle categories the regulation "
-            "applies to, which aspects it governs (for example photometry, colour, installation, "
+            "applies to, which aspects it governs (for example performance limits, installation, "
             "approval marking, test procedures), and what it explicitly excludes."
         )
     )
     keywords: list[str] = Field(
         description=(
-            "5 to 20 short terms an engineer describing a component would use, including common "
-            "names the regulation itself does not use (for example 'tail light' for 'rear position "
-            "lamp'). No regulation numbers."
+            "5 to 20 short terms an engineer describing a component would use, including the "
+            "everyday names of things the regulation names formally. No regulation numbers."
         )
     )
 

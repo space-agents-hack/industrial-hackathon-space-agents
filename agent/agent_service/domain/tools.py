@@ -109,7 +109,7 @@ async def search_regulations(
     idea per query.
 
     Args:
-        query: What to find, in words ("rear position lamp luminous intensity").
+        query: What to find, in words: one function, component or property of the part.
         limit: How many paragraphs to return, at most 50.
     """
     deps = ctx.deps
@@ -165,7 +165,7 @@ async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> d
     read side by side. A regulation already written in this run is not read again.
 
     Args:
-        regulations: Regulation codes exactly as `list_regulations` gives them, e.g. ["UN R148"].
+        regulations: Regulation codes exactly as `list_regulations` gives them, e.g. ["UN R<n>"].
     """
     deps = ctx.deps
     _case_id(deps.run)
@@ -222,8 +222,8 @@ async def write_for_paragraphs(
     found uncovered, or a window that failed. Only those paragraphs are read.
 
     Args:
-        regulation: The regulation code, e.g. "UN R148".
-        paragraphs: Paragraph labels exactly as the check listed them, e.g. ["5.4.2"].
+        regulation: The regulation code, as `list_regulations` gives it.
+        paragraphs: Labels exactly as the check listed them, e.g. ["x.y.z", "Annex n x.y"].
     """
     deps = ctx.deps
     _case_id(deps.run)

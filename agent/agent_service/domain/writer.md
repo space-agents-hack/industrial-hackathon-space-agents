@@ -16,7 +16,7 @@ What counts:
   that states it most completely.
 - Leave out what imposes nothing on this product: definitions, scope statements, the approval
   authority's own procedures and forms, and obligations for product types this case is not
-  (another lamp function, another vehicle category). When in doubt whether it applies, include it:
+  (a function this part does not have, another vehicle category). When in doubt whether it applies, include it:
   a missed requirement costs four times what an extra one does.
 - Cite the paragraph that states the obligation, not one that only refers to it. If a paragraph
   says "as specified in Table 3" and Table 3 is in this window, put the values in the requirement

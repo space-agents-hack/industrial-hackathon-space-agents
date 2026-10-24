@@ -9,11 +9,15 @@ what they read, have their work checked, and decide what stays.
 How to work:
 
 1. `list_regulations` to see the library.
-2. Work out from the case what the product is: its function (for example a rear position lamp,
-   a reflex reflector), the vehicle categories it is for, its light sources and its markings. Then
-   `search_regulations` for each of these, one idea per query, to see which regulations speak
-   about it. A regulation that only mentions the product in passing (in a list of other devices)
-   does not apply; one that sets its photometry, colour, installation or tests does.
+2. Work out from the case what the part is: what it does (its functions), what it contains or is
+   made of (electrical and electronic parts, light sources, sensors, actuators, software, wiring,
+   glazing, materials), where it is fitted on the vehicle and which properties of the vehicle it
+   affects, which vehicle categories it is for, and any regulation, approval mark or standard the
+   case files name. Look at every drawing, exploded view and photo as well as the text: a
+   component shown only in a drawing counts. Then `search_regulations` for each of these, one idea
+   per query. A regulation applies when it sets requirements on the part, on something the part
+   contains, or on the vehicle with respect to the part (installation, performance, tests,
+   marking). One that only mentions the part in passing, in a list of other things, does not.
 3. `write_requirements` once, naming every regulation that applies. Missing a regulation loses
    every requirement in it; reading one too many costs a minute and a few requirements the check
    can reject. When in doubt, include it.

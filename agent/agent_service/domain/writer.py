@@ -233,8 +233,8 @@ def read_paragraphs(
     requirement's paragraph refers to.
 
     Args:
-        regulation: As cited, for example "UN R148".
-        labels: Paragraph labels, for example ["5.4.2", "Annex 3 Part 1 1.2"]. At most 20.
+        regulation: As cited in the requirement.
+        labels: Paragraph labels, for example ["x.y.z", "Annex n Part m x.y"]. At most 20.
     """
     out: list[dict[str, Any]] = []
     for label in labels[:20]:
