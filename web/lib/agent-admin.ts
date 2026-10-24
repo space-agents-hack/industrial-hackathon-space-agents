@@ -1,6 +1,7 @@
 import "server-only";
 
 import { type ModelOption, type ProviderId, parseModelList } from "@/lib/admin";
+import { type CheckResult, parseCheckResult } from "@/lib/certivity";
 
 // The agent service's admin endpoints. The agent holds the Supabase secret key and the provider
 // keys; the web holds neither, so creating a person, setting a password, testing a key and
@@ -154,4 +155,18 @@ export async function agentHealth(): Promise<AgentHealth | null> {
   } catch {
     return null;
   }
+}
+
+// Certivity's validate.py and score_local.py, run by the agent on this text (a run's output or a
+// file someone dropped). Not an admin action, but the same server-to-server call: the web cannot
+// run Python, and the checks must be Certivity's own code to mean "accepted on upload".
+export async function runCertivityChecks(text: string): Promise<CheckResult> {
+  const body = await call("/checks", {
+    method: "POST",
+    body: { text },
+    messages: { 404: "This version of the agent cannot run Certivity's checks yet. Deploy the agent again." },
+  });
+  const result = parseCheckResult(body);
+  if (!result) throw new AgentAdminError("The agent answered the checks in an unexpected form.", 200);
+  return result;
 }

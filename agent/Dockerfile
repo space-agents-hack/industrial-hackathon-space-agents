@@ -12,6 +12,8 @@ RUN uv sync --locked --no-dev
 
 COPY main.py ./
 COPY agent_service ./agent_service
+# Certivity's checks and the files they read (certivity/README.md).
+COPY certivity ./certivity
 
 EXPOSE 8000
 CMD ["uv", "run", "--no-sync", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
