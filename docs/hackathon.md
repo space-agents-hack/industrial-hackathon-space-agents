@@ -87,8 +87,9 @@ platform's scores once they appear.
 Why so early: if the final upload were at 12:50 and its score arrived worse, there would be no
 time to put the best file back, and the worse file would count.
 
-Assumption, not checked: dev-case uploads use the same hourly quota as held-out uploads of the
-same challenge. If so, do not upload the dev case on Sunday morning. Ask Certivity on Saturday.
+One quota for everything: the 5 valid uploads per hour cover every goal and case of the
+challenge, dev and held-out, main goal and sub-goal (Clemente, 2026-10-24). So nobody uploads
+the dev case on Sunday morning, and each sub-goal upload takes a slot from the main goal's hour.
 
 ### Demo freeze
 
