@@ -491,7 +491,6 @@ def added_changes(new: Version, consumed: set[int]) -> list[Change]:
             and s.index not in consumed
             and not s.heading
             and bool(s.label)
-            and not s.label.startswith("Annex")
             and s.label.split(".")[0] not in excluded
         )
 

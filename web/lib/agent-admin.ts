@@ -2,6 +2,13 @@ import "server-only";
 
 import { type ModelOption, type ProviderId, parseModelList } from "@/lib/admin";
 import { type CheckResult, parseCheckResult } from "@/lib/certivity";
+import {
+  type ChangesRequest,
+  type ChangesResult,
+  type SubgoalCase,
+  parseChangesResult,
+  parseSubgoalCases,
+} from "@/lib/changes";
 
 // The agent service's admin endpoints. The agent holds the Supabase secret key and the provider
 // keys; the web holds neither, so creating a person, setting a password, testing a key and
@@ -31,6 +38,7 @@ type CallOptions = {
   body?: unknown;
   // What a given status means for this endpoint, in words.
   messages?: Record<number, string>;
+  timeoutMs?: number;
 };
 
 async function call(path: string, options: CallOptions = {}): Promise<unknown> {
@@ -53,7 +61,7 @@ async function call(path: string, options: CallOptions = {}): Promise<unknown> {
       },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
       cache: "no-store",
-      signal: AbortSignal.timeout(ADMIN_CALL_TIMEOUT_MS),
+      signal: AbortSignal.timeout(options.timeoutMs ?? ADMIN_CALL_TIMEOUT_MS),
     });
   } catch (cause) {
     const timedOut = cause instanceof DOMException && cause.name === "TimeoutError";
@@ -168,5 +176,38 @@ export async function runCertivityChecks(text: string): Promise<CheckResult> {
   });
   const result = parseCheckResult(body);
   if (!result) throw new AgentAdminError("The agent answered the checks in an unexpected form.", 200);
+  return result;
+}
+
+// The sub-goal cases whose requirements_old.json is loaded (certivity_reference). Never throws:
+// the page still works with an uploaded requirements file when the agent cannot list them.
+export async function listSubgoalCases(): Promise<SubgoalCase[] | null> {
+  try {
+    return parseSubgoalCases(await call("/subgoal/cases"));
+  } catch {
+    return null;
+  }
+}
+
+// Downloading two PDFs and extracting them takes a few seconds (about one per 200-page version,
+// measured 2026-10-24); a minute leaves room for a slow bucket without holding the click forever.
+const CHANGES_TIMEOUT_MS = 60_000;
+
+export async function runSubgoalChanges(request: ChangesRequest): Promise<ChangesResult> {
+  const body = await call("/subgoal/changes", {
+    method: "POST",
+    body: {
+      organization_id: request.organizationId,
+      old_version_id: request.oldVersionId,
+      new_version_id: request.newVersionId,
+      case_id: request.caseId,
+      team_id: request.teamId,
+      requirements_old: request.requirementsOld,
+    },
+    timeoutMs: CHANGES_TIMEOUT_MS,
+    messages: { 404: "This version of the agent cannot compare versions yet. Deploy the agent again." },
+  });
+  const result = parseChangesResult(body);
+  if (!result) throw new AgentAdminError("The agent answered in an unexpected form.", 200);
   return result;
 }

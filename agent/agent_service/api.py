@@ -25,11 +25,11 @@ import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from supabase_auth.errors import AuthApiError
 
 from agent_service import providers, runner
-from agent_service.domain import case_ingest, certivity, regulations
+from agent_service.domain import case_ingest, certivity, changes, regulations
 from agent_service.domain.library_store import SupabaseLibraryStore
 from agent_service.domain.regulations import LibraryStore
 from agent_service.providers import Provider
@@ -391,3 +391,87 @@ async def certivity_checks(
     finally:
         await store.aclose()
     return certivity.check(body.text, reference)
+
+
+# ------------------------------------------------------------------------------------------
+# Sub-goal: which requirements derived from one version of a regulation change in another
+# (domain/changes.py). Reads the library and Certivity's reference files, writes nothing, calls no
+# model. The web shows the result and sends it through POST /checks like any other file.
+# ------------------------------------------------------------------------------------------
+
+
+async def get_versions(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> changes.VersionStore:
+    if not settings.supabase_url or not settings.supabase_secret_key:
+        raise HTTPException(503, "SUPABASE_URL and SUPABASE_SECRET_KEY are not configured.")
+    return await changes.SupabaseVersionStore.connect(
+        settings.supabase_url, settings.supabase_secret_key
+    )
+
+
+@app.get("/subgoal/cases", dependencies=[Depends(require_secret)])
+async def subgoal_cases(
+    store: Annotated[RunStore, Depends(get_store)],
+) -> dict[str, list[dict[str, str | None]]]:
+    try:
+        rows = await store.certivity_reference()
+    finally:
+        await store.aclose()
+    return {"cases": changes.subgoal_cases(rows)}
+
+
+# The fields regdiff reads. Anything else in an uploaded file is kept and ignored, as
+# Certivity's own format allows.
+class OldRequirement(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    id: str = Field(min_length=1, max_length=200)
+    text: str = Field(max_length=20_000)
+    source: dict[str, Any] | None = None
+
+
+class ChangesRequest(BaseModel):
+    organization_id: UUID
+    old_version_id: UUID
+    new_version_id: UUID
+    case_id: str = Field(min_length=1, max_length=200)
+    team_id: str = Field(min_length=1, max_length=200)
+    # None: Certivity's requirements_old.json for case_id, from the database.
+    requirements_old: list[OldRequirement] | None = Field(
+        default=None, max_length=changes.MAX_REQUIREMENTS
+    )
+
+
+@app.post("/subgoal/changes", dependencies=[Depends(require_secret)])
+async def subgoal_changes(
+    body: ChangesRequest,
+    store: Annotated[RunStore, Depends(get_store)],
+    versions: Annotated[changes.VersionStore, Depends(get_versions)],
+) -> dict[str, Any]:
+    try:
+        if body.requirements_old is not None:
+            requirements = [r.model_dump(exclude_none=True) for r in body.requirements_old]
+        else:
+            reference = await certivity.load_reference(store)
+            found = reference.requirements_old.get(body.case_id)
+            if found is None:
+                raise HTTPException(
+                    404,
+                    f"No requirements are loaded for case {body.case_id!r}. Upload a "
+                    "requirements file, or load Certivity's package (make certivity-load).",
+                )
+            requirements = found
+        return await changes.build(
+            versions,
+            organization_id=body.organization_id,
+            old_version_id=body.old_version_id,
+            new_version_id=body.new_version_id,
+            requirements_old=requirements,
+            team_id=body.team_id,
+            case_id=body.case_id,
+        )
+    except changes.ChangesRefused as exc:
+        raise HTTPException(exc.status, str(exc)) from None
+    finally:
+        await store.aclose()
+        await versions.aclose()
