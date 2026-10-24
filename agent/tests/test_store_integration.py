@@ -217,8 +217,9 @@ async def test_pause_and_resume_through_the_real_schema(
     assert submitted["case_id"] == "dev-rear-lamp"
     assert [r["source"]["paragraph"] for r in submitted["requirements"]] == ["5.4.2", "5.4.3"]
     assert run["model"] == "scripted"
-    # list, search, write, check, export; then submit. The writers and the check do not count.
-    assert run["usage"]["requests"] == 6
+    # list, profile, screen, search, write, check, export; then submit. The screen call, the
+    # writers and the check do not count.
+    assert run["usage"]["requests"] == 8
     stored = rows(
         await db.table("requirements").select("status").eq("run_id", str(run_id)).execute()
     )
