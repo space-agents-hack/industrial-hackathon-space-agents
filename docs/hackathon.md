@@ -74,7 +74,7 @@ file sha256, commit, model, and the platform's scores once they appear.
 
 | When, Sunday | What |
 |---|---|
-| 08:00 | Held-out released: `git pull` in the Certivity repo, or unzip the second package if it comes as a zip (brief 06, 08); then `fetch_regulations.py` and `make certivity-load` again |
+| 08:00 | Held-out released: `git pull` in the Certivity repo, or unzip the second package if it comes as a zip (brief 06, 08); then `fetch_regulations.py`. If it came by `git pull` upstream, Actions > Deploy > Run workflow reloads the answer and index files into production; if by zip, `make certivity-load` with `agent/.env` pointing at the hosted project |
 | by 08:45 | First valid held-out upload with whatever the pipeline produces. A floor, in case all else fails |
 | 08:45 to 11:00 | Improve and upload. Keep every uploaded file with its score; mark the best |
 | 11:00 | **Pipeline freeze.** No more changes to code or prompts that generate the submission |

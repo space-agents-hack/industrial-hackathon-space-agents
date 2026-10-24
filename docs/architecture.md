@@ -79,7 +79,7 @@ row to `audit_events`.
 | What the agent is for: prompt, tools, mock systems | `agent/agent_service/domain/` |
 | Which model runs it | `AGENT_MODEL` and the provider's key; no code |
 | Certivity's validate and score (copied, never edited) | `scripts/sync-certivity.sh`, then `agent/certivity/` |
-| Certivity's reference data (index, answer files) | `make certivity-load`, table `certivity_reference` |
+| Certivity's reference data (index, answer files) | Reloaded on every release; `make certivity-load` locally; table `certivity_reference` |
 | The loop, limits, what gets logged | `agent/agent_service/runner.py`, `settings.py` |
 | Tables, who can read and write | `supabase/migrations/` and `supabase/tests/` |
 | The regulation library and its import | `agent/agent_service/domain/regulations.py`, `web/app/(app)/regulations/`, `docs/regulations-store.md` |

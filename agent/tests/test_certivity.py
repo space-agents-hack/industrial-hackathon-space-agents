@@ -52,6 +52,16 @@ def test_read_package_names_every_file_by_its_case() -> None:
     }
 
 
+def test_the_release_gets_the_same_rows_as_json(capsys: pytest.CaptureFixture[str]) -> None:
+    # The release workflow writes these with psql (scripts/load-certivity.sql), keyed the same way.
+    from agent_service.domain import load_certivity
+
+    assert load_certivity._json_command(PACKAGE) == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert rows == json.loads(json.dumps(certivity.read_package(PACKAGE)))
+    assert set(rows[0]) == {"kind", "case_id", "content", "certivity_commit"}
+
+
 def test_the_expected_answer_is_valid_and_scores_full_marks(ref: certivity.Reference) -> None:
     result = certivity.check(json.dumps(_expected()), ref)
 

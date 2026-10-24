@@ -10,8 +10,9 @@ so the copy is what makes "valid on our web" mean "accepted on upload".
 
 **No data here.** What the tools compare against (`regulations/index.json`, every `expected.json`
 and `requirements_old.json`) is for the Certivity hackathon only (`LICENSE-DATA.md`), so it lives
-in the database, table `certivity_reference`, where it can be deleted. Load it, locally or into
-the database `agent/.env` points at, and again after every pull of the package:
+in the database, table `certivity_reference`, where it can be deleted. Production gets it on
+every release, cloned fresh from Certivity's package (`.github/workflows/deploy.yml`). Locally, or
+into whatever database `agent/.env` points at, load it by hand, again after every pull:
 
     make certivity-load CERTIVITY=../industrial-ai-hackathon
 

@@ -325,6 +325,45 @@ jobs:
             supabase db push
           fi
 
+      # Certivity's reference files (regulations/index.json, every expected.json and
+      # requirements_old.json) are licensed for the event only, so they live in the table
+      # certivity_reference, not in git (AGENTS.md, "Limits"). Every release reloads them from
+      # Certivity's package, so production's checks have them, and Sunday's held-out case is in
+      # after `git pull` upstream plus one release (Actions > Deploy > Run workflow is enough).
+      # Through psql because GitHub holds the database password, not the API's secret key.
+      # A failure warns and does not stop the release: the code does not depend on this data, and
+      # the checks say "not loaded" rather than give a wrong answer.
+      - uses: astral-sh/setup-uv@v10.3.0
+        if: steps.head.outputs.current == 'true' && steps.config.outputs.database == 'true'
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Load Certivity's reference files
+        if: steps.head.outputs.current == 'true' && steps.config.outputs.database == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          CERTIVITY_REPO: ${{ vars.CERTIVITY_REPO || 'https://github.com/Certivity/industrial-ai-hackathon' }}
+        run: |
+          if [[ -z "$SUPABASE_POOLER_URL" ]]; then
+            echo "::warning::SUPABASE_POOLER_URL is not set: Certivity's reference files were not loaded. Run make certivity-load against the hosted project."
+            exit 0
+          fi
+          if [[ ! "$SUPABASE_POOLER_URL" =~ ^postgresql://postgres\.${SUPABASE_PROJECT_REF}@[a-z0-9.-]+\.pooler\.supabase\.com:[0-9]+/[a-z_]+$ ]]; then
+            echo "::warning::SUPABASE_POOLER_URL is not this project's Supabase pooler. Certivity's reference files were not loaded."
+            exit 0
+          fi
+          # Outside the checkout and deleted at the end: on a self-hosted runner the workspace
+          # stays, and the data must not outlive the event on a machine nobody purges.
+          pkg="$RUNNER_TEMP/certivity" rows="$RUNNER_TEMP/certivity-rows.json"
+          trap 'rm -rf "$pkg" "$rows"' EXIT
+          git clone --quiet --depth 1 "$CERTIVITY_REPO" "$pkg"
+          (cd agent && uv run --quiet python -m agent_service.domain.load_certivity --json "$pkg") > "$rows"
+          db_url="$(python3 -c 'import os, urllib.parse as u; a = os.environ["SUPABASE_POOLER_URL"]; print(a.replace("@", ":" + u.quote(os.environ["SUPABASE_DB_PASSWORD"], safe="") + "@", 1))')"
+          echo "::add-mask::$db_url"
+          psql "$db_url" -v ON_ERROR_STOP=1 -q -v rows_file="$rows" -f scripts/load-certivity.sql
+          echo "Certivity's reference files loaded from $CERTIVITY_REPO at $(git -C "$pkg" rev-parse --short HEAD)." >> "$GITHUB_STEP_SUMMARY"
+
       # Vercel can refuse a deployment whose commit author is not a member of the team that owns
       # the project. The amend exists only on this runner: it is never pushed and does not change
       # the commit on GitHub. Set the two repository variables to the Vercel owner's identity.

@@ -1,9 +1,14 @@
 """Write Certivity's reference files (regulation index, answer files) to the database that
 agent/.env points at, local or hosted: `make certivity-load CERTIVITY=<package clone>`.
 
-Run it again after every `git pull` of the package: the held-out case arrives that way."""
+Run it again after every `git pull` of the package: the held-out case arrives that way.
+
+`--json` prints the rows instead of writing them, for the release workflow: it holds the
+database password, not the API's secret key, so it writes them with psql
+(scripts/load-certivity.sql)."""
 
 import asyncio
+import json
 import sys
 from pathlib import Path
 
@@ -35,11 +40,23 @@ async def _load_command(root: Path) -> int:
     return 0
 
 
+def _json_command(root: Path) -> int:
+    rows = certivity.read_package(root)
+    if not rows:
+        print(f"No reference files found under {root}.", file=sys.stderr)
+        return 1
+    json.dump(rows, sys.stdout)
+    return 0
+
+
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    args = sys.argv[1:]
+    if args[:1] == ["--json"] and len(args) == 2:
+        raise SystemExit(_json_command(Path(args[1])))
+    if len(args) != 1:
         print(
-            "usage: python -m agent_service.domain.load_certivity <Certivity package>",
+            "usage: python -m agent_service.domain.load_certivity [--json] <Certivity package>",
             file=sys.stderr,
         )
         raise SystemExit(2)
-    raise SystemExit(asyncio.run(_load_command(Path(sys.argv[1]))))
+    raise SystemExit(asyncio.run(_load_command(Path(args[0]))))

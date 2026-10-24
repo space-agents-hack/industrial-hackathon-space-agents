@@ -12,11 +12,15 @@ off in both Vercel projects, so the only path is `.github/workflows/deploy.yml`.
       Markdown under `agent/` is code: the agent reads `domain/prompt.md` at run time, so a
       prompt change runs the checks and is released like any other change.
    2. Apply new migrations to the hosted database.
-   3. Deploy the agent **without** the production domain, smoke-test it, promote it.
-   4. Build and deploy the web **without** the production domain, then smoke-test it, including
+   3. Reload Certivity's reference files (`index.json`, the answer files) into
+      `certivity_reference` from a fresh clone of their package (`vars.CERTIVITY_REPO`, default
+      Certivity's public repository), through `scripts/load-certivity.sql`. A failure is a
+      warning, not a stopped release: the checks then say the files are not loaded.
+   4. Deploy the agent **without** the production domain, smoke-test it, promote it.
+   5. Build and deploy the web **without** the production domain, then smoke-test it, including
       `/api/health/deep`, which checks the web reaches the agent with the shared secret and the
       agent reaches the database.
-   5. Promote the web.
+   6. Promote the web.
 
 To follow a release job by job and step by step, with the reason when one fails: the Setup page
 under `make dev` (read with your `gh` sign-in), or **Admin › Releases** in production for platform

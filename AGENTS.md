@@ -79,7 +79,8 @@ report the result. Finish with `git diff --check` and read the diff for secrets.
   (`scripts/purge-challenge-data.sh`).
   Certivity's data that the checks read (`regulations/index.json`, every `expected.json` and
   `requirements_old.json`) lives in the database, table `certivity_reference` (Clemente,
-  2026-10-24), loaded with `make certivity-load`. Only Certivity's MIT code is in
+  2026-10-24), reloaded from their package on every release (`.github/workflows/deploy.yml`) or
+  by hand with `make certivity-load`. Only Certivity's MIT code is in
   `agent/certivity/`; a test fails if any of their data appears there.
 - **Case and regulation data live in Supabase, per organisation, never in the repo** (Clemente,
   2026-10-24; SYS-16, SYS-24). The files go to the private buckets (`case-files`, `regulations`);
