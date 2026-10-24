@@ -15,14 +15,17 @@ A run, step by step, each step a `tool_call` and `tool_result` pair in the trace
    16/17 added on the dev pair, and robust on 14 other version pairs (subgoal-gaps.md).
 4. `review_changes`: reviewer agents re-read the requirements whose cited paragraph changed in any
    way (`subgoal_review.py`). Only what code can verify in the PDFs' text changes the answer.
-5. The changes file, as the run's output. The run page checks it with Certivity's validate.py
+5. `write_changes`: a writer step writes each change's text as a requirement, one per obligation
+   for added text (`subgoal_write.py`). Code checks each text against the regulation and keeps
+   the rules' wording where it fails. Detection does not change here, only the text.
+6. The changes file, as the run's output. The run page checks it with Certivity's validate.py
    and scores it where an answer key is loaded, as for any submission.
 
 Why code orchestrates and no model does: every decision between the steps (which requirements to
 review, in what batches, what to do with a verdict) has a rule that can be stated and tested. A
 model choosing them would make the run slower, costlier and different on each run, and nothing
 measured says it would decide better. The model is used where rules are weakest: tracing a
-reworded requirement back to the sentence it came from.
+reworded requirement back to the sentence it came from, and writing a change as a requirement.
 
 What this does NOT do: read the answer key. An uploaded `expected.json` is marked as not used at
 ingest and skipped here (SYS-42); the checks read Certivity's copy from `certivity_reference`. It
@@ -44,7 +47,7 @@ import httpx
 from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
 
-from agent_service.domain import paragraphs, regdiff, subgoal_review
+from agent_service.domain import paragraphs, regdiff, subgoal_review, subgoal_write
 from agent_service.records import CaseFile, Run
 from agent_service.store import RunStore
 
@@ -182,6 +185,7 @@ async def execute(
     reviewer: Model | str | None,
     reviewer_note: str | None,
     review: subgoal_review.Limits,
+    writer: Model | str | None = None,
     http: Callable[[], httpx.AsyncClient] | None = None,
 ) -> Outcome:
     """The changes file of the run's sub-goal case. Raises SubgoalRefused with a message for the
@@ -282,6 +286,9 @@ async def execute(
     await step("compare_versions", {"regulation": regulation}, compare)
     rules: list[regdiff.Change] = holder["rules"]
 
+    async def progress(text: str) -> None:
+        await store.add_event(run.id, "text", {"text": text})
+
     usage = RunUsage()
     final = rules
     candidates = subgoal_review.candidates(inputs.requirements, old_v, new_v)
@@ -296,9 +303,6 @@ async def execute(
             {"text": f"Not reviewed: {reviewer_note or 'no model'}. The rules' answer stands."},
         )
     else:
-
-        async def progress(text: str) -> None:
-            await store.add_event(run.id, "text", {"text": text})
 
         async def reviewing() -> dict[str, Any]:
             report = await subgoal_review.review(
@@ -322,6 +326,21 @@ async def execute(
         report: subgoal_review.Report = holder["review"]
         final = report.changes
         usage = report.usage
+
+    texts = sum(1 for c in final if c.change != "removed")
+    if writer is not None and texts:
+
+        async def writing() -> dict[str, Any]:
+            written = await subgoal_write.write(
+                final, inputs.requirements, new_v, writer, review, progress
+            )
+            holder["write"] = written
+            return written.summary()
+
+        await step("write_changes", {"changes": texts, "batch_size": review.batch_size}, writing)
+        wrote: subgoal_write.Report = holder["write"]
+        final = wrote.changes
+        usage.incr(wrote.usage)
 
     submission = regdiff.submission(team_id, case_name, final)
     await store.add_event(

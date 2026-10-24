@@ -11,7 +11,14 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from agent_service.domain import assistant, case_ingest, regulation_search, subgoal_review, writer
+from agent_service.domain import (
+    assistant,
+    case_ingest,
+    regulation_search,
+    subgoal_review,
+    subgoal_write,
+    writer,
+)
 from agent_service.domain.tools import toolset
 
 DOMAIN = Path(writer.__file__).parent
@@ -47,6 +54,7 @@ def _field_texts() -> dict[str, str]:
         writer.Finding,
         regulation_search.ScopeSummary,
         subgoal_review.Verdict,
+        subgoal_write.Written,
     ]
     return {f"fields of {m.__name__}": str(m.model_json_schema()) for m in models}
 
@@ -65,6 +73,7 @@ def test_the_texts_are_found() -> None:
     # The sub-goal's reviewer is held to the same rule (Clemente, 2026-10-24: #32 holds for the
     # sub-goal prompts too).
     assert "subgoal_review.md" in texts
+    assert "subgoal_write.md" in texts
     assert any(k.startswith("sub-goal reviewer tool search_new_version") for k in texts)
 
 

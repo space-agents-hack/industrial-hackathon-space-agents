@@ -258,6 +258,7 @@ async def _run_subgoal(
             reviewer=model if settings.subgoal_review else None,
             reviewer_note=None if settings.subgoal_review else "review is off (SUBGOAL_REVIEW)",
             review=limits,
+            writer=model if settings.subgoal_write else None,
         )
     except subgoal.SubgoalRefused as exc:
         return await _fail(store, run.id, str(exc))

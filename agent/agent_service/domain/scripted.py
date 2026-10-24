@@ -9,7 +9,8 @@ plumbing, never the quality of requirements. That is what `make eval` with a rea
 
 Which agent is asking is told by the output tool it was given: `submit` (orchestrator),
 `record_requirements` (writer), `report_findings` (check), `report_verdicts` (the sub-goal's
-reviewer, domain/subgoal_review.py). The assistant
+reviewer, domain/subgoal_review.py), `record_texts` (the sub-goal's writer step,
+domain/subgoal_write.py). The assistant
 (domain/assistant.py) has no output tool and answers in text; it is told by its `read_paragraph`.
 """
 
@@ -266,6 +267,25 @@ def _review(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
     return "", [("report_verdicts", {"response": verdicts})]
 
 
+def _write_changes(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
+    """Writes each change as the regulation's new text, as printed. So a scripted sub-goal run
+    gives the rules' file, and a text over the schema's cap fails the check and keeps the rules'
+    shortened one; rewriting it as a requirement is what a real model is for."""
+    written: list[dict[str, Any]] = []
+    for block in _prompt_text(messages).split("\n### ")[1:]:
+        cid = block.split(" ", 1)[0].strip()
+        text = next(
+            (
+                ln.split(": ", 1)[1]
+                for ln in block.splitlines()
+                if ln.startswith("New regulation text: ")
+            ),
+            "",
+        )
+        written.append({"id": cid, "texts": [text]})
+    return "", [("record_texts", {"response": written})]
+
+
 # A requirement line as assistant.requirement_lines writes it.
 _REQUIREMENT = re.compile(r"^- (R-\d+) \[\w+\] (.+) (\S+), paragraph (\S+), page (\d+): ", re.M)
 
@@ -317,6 +337,8 @@ def _next_step(messages: list[ModelMessage], info: AgentInfo) -> tuple[str, list
         return _check(messages)
     if "report_verdicts" in outputs:
         return _review(messages)
+    if "record_texts" in outputs:
+        return _write_changes(messages)
     if "report_screen" in outputs:
         return _screen(messages)
     return _orchestrate(messages)

@@ -393,6 +393,8 @@ def _quoted(c: Candidate, v: Verdict, new: regdiff.Version) -> regdiff.Change | 
         f"{why}.",
         s.page,
         s.label,
+        old_text=v.old_quote,
+        source_text=v.new_quote.strip(),
     )
 
 

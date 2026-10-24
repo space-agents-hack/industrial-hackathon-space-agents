@@ -187,6 +187,7 @@ async def test_a_run_on_two_uploaded_pdfs_gives_the_rules_file_through_the_main_
         "extract_versions",
         "compare_versions",
         "review_changes",
+        "write_changes",
     ]
     # No pause: nothing is submitted, a person uploads the file (SYS-13).
     assert store.approvals == []

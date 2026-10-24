@@ -145,6 +145,11 @@ def _words(norm: str) -> set[str]:
     return {w for w in norm.split() if w not in _STOPWORDS}
 
 
+def content_words(norm: str) -> set[str]:
+    """The words of a normalised text that carry meaning: no stopwords."""
+    return _words(norm)
+
+
 def _split_sentences(text: str) -> list[str]:
     protected = text
     for i, abbr in enumerate(_ABBREVIATIONS):
@@ -317,6 +322,11 @@ class Change:
     reason: str
     page: int | None
     paragraph: str | None
+    # Not in the file. What the sub-goal's writer step (subgoal_write.py) rewrites from and checks
+    # against: the old text the requirement was traced to, and the regulation's new wording in
+    # full, before any shortening to fit the schema.
+    old_text: str | None = None
+    source_text: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {"requirement_id": self.requirement_id, "change": self.change}
@@ -378,6 +388,33 @@ def _word_diff(old_text: str, new_text: str, limit: int = 1200) -> str:
 
 def _cap(text: str) -> str:
     return text if len(text) <= _TEXT_MAX else text[: _TEXT_MAX - 1] + "…"
+
+
+def _fit(shown: list[Segment]) -> str:
+    """The new text of a modified requirement within the schema's cap. Cutting at 2,000
+    characters lost the very change on dev: a long condition list was cut just before the
+    items that had changed, so the file said nothing about them. Over the cap, unchanged
+    sentences are left out, longest first, until it fits; the changed ones stay whole."""
+    keep = [True] * len(shown)
+
+    def text() -> str:
+        parts: list[str] = []
+        for k, n in enumerate(shown):
+            if keep[k]:
+                parts.append(n.text)
+            elif parts and parts[-1] != "[...]":
+                parts.append("[...]")
+        return " ".join(parts)
+
+    spare = sorted(
+        (k for k, n in enumerate(shown) if k and n.status == "unchanged"),
+        key=lambda k: -len(shown[k].text),
+    )
+    for k in spare:
+        if len(text()) <= _TEXT_MAX:
+            break
+        keep[k] = False
+    return _cap(text())
 
 
 def _short(text: str, n: int = 100) -> str:
@@ -462,6 +499,7 @@ def requirement_changes(
                     f"'{excerpt}' no longer appears.",
                     None,
                     None,
+                    old_text=" ".join(s.text for s in judged),
                 )
             )
             continue
@@ -475,10 +513,12 @@ def requirement_changes(
             Change(
                 "modified",
                 req["id"],
-                _cap(new_text),
+                _fit(shown),
                 f"Paragraph {where} of {reg} was amended in version {ver}: {diff}.",
                 shown[0].page,
                 new_label,
+                old_text=old_text,
+                source_text=new_text,
             )
         )
     return changes, consumed
@@ -544,6 +584,7 @@ def _added(text: str, s: Segment, reg: str, ver: str) -> Change:
         f"Paragraph {s.label} of {reg} is new in version {ver}: '{_short(s.text)}'.",
         s.page,
         s.label,
+        source_text=text,
     )
 
 

@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     subgoal_review_batch: int = 4
     subgoal_review_concurrency: int = 16
     subgoal_review_timeout_s: float = 90
+    # Whether a writer step (domain/subgoal_write.py) writes each change's text as a requirement,
+    # on the reviewer's model and limits. Off means the regulation's wording as printed, which
+    # lost change accuracy on the dev upload of 2026-10-24.
+    subgoal_write: bool = True
 
     # Case ingestion (domain/case_ingest.py): the model that reads what the parsers cannot (a
     # scanned page, a drawing, a file a parser fails on). Small and cheap on purpose: it

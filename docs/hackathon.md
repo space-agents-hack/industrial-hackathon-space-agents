@@ -110,14 +110,15 @@ freeze.
    - each PDF fetched, with its checksum checked;
    - both versions' pages and printed version;
    - the rules' counts;
-   - the reviewer batches.
+   - the reviewer batches;
+   - the writer batches, and which texts kept the regulation's wording.
 
-   A rewritten regulation takes a few minutes, most of it the reviewer.
+   Aimed at about a minute: the reviewer and the writer each run as one round of parallel calls.
 5. On the run page, check that validation passes, then **Download** and upload to the platform.
    Log the upload on #7 like a main-goal one.
 
-If the reviewer fails (no key, provider down), the run still succeeds with the rules' answer, and
-the trace says which requirements were not reviewed. That is the answer that scored 7/7 and
+If the reviewer or the writer fails (no key, provider down), the run still succeeds with the rules'
+answer, and the trace says which requirements were not reviewed or rewritten. That is the answer that scored 7/7 and
 16/17 on dev. If the web is down, the rules alone run from a laptop:
 `uv run python -m agent_service.domain.regdiff old.pdf new.pdf requirements_old.json --team-id
 <team> --case-id subgoal-heldout --out changes.json`.

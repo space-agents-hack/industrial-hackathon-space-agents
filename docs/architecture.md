@@ -98,13 +98,20 @@ differs is inside the agent:
   - extract both versions;
   - the rules diff (`domain/regdiff.py`);
   - reviewer agents (`domain/subgoal_review.py`), in parallel batches, on the requirements whose
-    cited paragraph changed. Code keeps a verdict only if its quotes are found in the PDFs' text.
+    cited paragraph changed. Code keeps a verdict only if its quotes are found in the PDFs' text;
+  - a writer step (`domain/subgoal_write.py`) writes each change's text as a requirement: the old
+    requirement updated, or one requirement per new obligation. Code checks every text against the
+    regulation (the changed words and numbers present, deleted numbers gone, nothing the
+    regulation does not say, at most 2,000 characters) and keeps the regulation's wording where a
+    text fails.
 - **No pause** and no saved conversation. The output is the changes file, which the run page
   checks and offers for download like any submission.
 
 Code orchestrates rather than a model, because every choice between the steps has a rule that
-can be tested. The reviewer runs on the organisation's `check` model, else `SUBGOAL_REVIEW_MODEL` (Sonnet), never the writer's model by default, and each call may search at most twice. With
-`SUBGOAL_REVIEW=false`, or when the reviewer fails, the rules' answer stands, and the trace says so.
+can be tested. The reviewer runs on the organisation's `check` model, else `SUBGOAL_REVIEW_MODEL` (Sonnet), never the writer's model by default, and each call may search at most twice. The writer step
+uses the same model and limits. With `SUBGOAL_REVIEW=false`, or when the reviewer fails, the rules'
+answer stands, and the trace says so; with `SUBGOAL_WRITE=false`, or when the writer fails, the
+texts are the regulation's wording as printed.
 
 ## Where things live
 
