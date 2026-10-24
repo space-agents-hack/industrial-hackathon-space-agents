@@ -75,6 +75,8 @@ class Deps:
     read: set[UUID] = field(default_factory=set[UUID])
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     next_number: int | None = None
+    # Recorded by `record_product_profile` (SYS-43), and read back from the trace after a pause.
+    profile: writer.ProductProfile | None = None
 
 
 toolset = FunctionToolset[Deps]()
@@ -97,6 +99,51 @@ async def list_regulations(ctx: RunContext[Deps]) -> list[dict[str, Any]]:
         }
         for v in await _library(ctx.deps)
     ]
+
+
+@toolset.tool
+async def record_product_profile(
+    ctx: RunContext[Deps],
+    part: str,
+    does: list[str],
+    does_not: list[str],
+    contains: list[str],
+    mounted: list[str],
+    vehicles: list[str],
+    markets: list[str],
+    named_in_case: list[str],
+) -> dict[str, Any]:
+    """Record what the part is, from the whole case: its text and every drawing, exploded view and
+    photo. Every writer and the check judge applicability against this one statement, so state
+    only what the case shows, and say where (file and page) when it is not obvious. Call it once,
+    before searching; call it again only to correct it.
+
+    Args:
+        part: One sentence: what the part is.
+        does: Each function it performs.
+        does_not: Functions of the same family of parts that the case shows it does not have.
+        contains: What it contains or is made of: electrical and electronic parts, light
+            sources, sensors, actuators, software, wiring, glazing, materials, moving parts.
+            Include what only a drawing shows.
+        mounted: Where it is fitted on the vehicle, and which properties of the vehicle it
+            affects (outer shape, impact behaviour, field of view, signalling, ...).
+        vehicles: Vehicle categories it is for, as the case gives them.
+        markets: Markets or approval systems the case names.
+        named_in_case: Each regulation, approval mark or standard the case files name, with
+            file and page. Empty if none.
+    """
+    deps = ctx.deps
+    deps.profile = writer.ProductProfile(
+        part=part,
+        does=does,
+        does_not=does_not,
+        contains=contains,
+        mounted=mounted,
+        vehicles=vehicles,
+        markets=markets,
+        named_in_case=named_in_case,
+    )
+    return {"recorded": True, "read_by": "every writer and the check"}
 
 
 @toolset.tool
@@ -169,6 +216,7 @@ async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> d
     """
     deps = ctx.deps
     _case_id(deps.run)
+    await _require_profile(deps)
     library = await _library(deps)
     done = await _versions_written(deps)
     jobs: list[Window] = []
@@ -227,6 +275,7 @@ async def write_for_paragraphs(
     """
     deps = ctx.deps
     _case_id(deps.run)
+    await _require_profile(deps)
     try:
         version = writer.citable_version(await _library(deps), regulation)
     except UnknownRegulation as exc:
@@ -257,6 +306,7 @@ async def check_requirements(ctx: RunContext[Deps]) -> dict[str, Any]:
     rows = [r for r in await deps.store.run_requirements(deps.run.id) if r.status != "rejected"]
     if not rows:
         raise ModelRetry("There are no requirements to check yet. Write them first.")
+    await _require_profile(deps)
     versions = {v.id: v for v in await _library(deps)}
     version_ids = {r.version_id for r in rows if r.version_id} | deps.read
     by_id: dict[UUID, Paragraph] = {}
@@ -444,10 +494,35 @@ async def _progress(deps: Deps, text: str) -> None:
 
 
 def _case(deps: Deps) -> list[ingest.Part]:
-    return [
+    """The case as writers and the check read it, with the profile last: one statement of what
+    the part is, so 25 writers do not each conclude it differently from the files (SYS-43)."""
+    parts: list[ingest.Part] = [
         "# The case\n\nThe engineer's note:\n" + deps.run.task,
         *deps.case_parts,
     ]
+    if deps.profile is not None:
+        parts.append(deps.profile.render())
+    return parts
+
+
+async def _require_profile(deps: Deps) -> writer.ProductProfile:
+    """The run's profile; after a pause for approval, the last one recorded in the trace."""
+    if deps.profile is None:
+        for event in reversed(await deps.store.run_events(deps.run.id)):
+            if event.kind == "tool_call" and event.payload.get("tool_name") == (
+                "record_product_profile"
+            ):
+                try:
+                    deps.profile = writer.ProductProfile.model_validate(event.payload["args"])
+                except (KeyError, ValueError):
+                    continue
+                break
+    if deps.profile is None:
+        raise ModelRetry(
+            "Record what the part is with `record_product_profile` first: the writers judge "
+            "what applies against it."
+        )
+    return deps.profile
 
 
 async def _write_windows(ctx: RunContext[Deps], jobs: list[Window]) -> list[tuple[int, str | None]]:

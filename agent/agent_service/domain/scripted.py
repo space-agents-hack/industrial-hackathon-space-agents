@@ -77,6 +77,20 @@ def _orchestrate(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
     if not codes:
         summary = "The library has no regulations, so no requirements were written."
         return summary, [("submit", {"summary": summary})]
+    if "record_product_profile" not in returns:
+        # The engineer's note as the whole profile: a real model reads the files and drawings.
+        lines = _prompt_text(messages).strip().splitlines()
+        profile = {
+            "part": (lines[0] if lines else "the part")[:500],
+            "does": [],
+            "does_not": [],
+            "contains": [],
+            "mounted": [],
+            "vehicles": [],
+            "markets": [],
+            "named_in_case": [],
+        }
+        return "Recording what the part is.", [("record_product_profile", profile)]
     if "search_regulations" not in returns:
         # Any long word of the engineer's note: "rear position lamp" finds the lamp regulations
         # and not the one about glazing. A real model reads the case; this only keeps the

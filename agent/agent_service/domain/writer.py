@@ -126,6 +126,56 @@ def citable_version(versions: Sequence[LibraryVersion], regulation: str) -> Libr
 
 
 # ------------------------------------------------------------------------------------------
+# The product profile (SYS-43)
+# ------------------------------------------------------------------------------------------
+
+
+class ProductProfile(BaseModel):
+    """What the part is, stated once by the orchestrator from the whole case.
+
+    Why one statement: each of ~25 writers used to decide "does this apply to this product" from
+    the raw case files on its own, and they decided differently; obligations for functions the
+    part does not have got in. `contains` is where a regulation that applies because of what the
+    part is made of (and not what it does) becomes visible to the selection.
+    """
+
+    part: str = Field(max_length=500)
+    does: list[str] = Field(default_factory=list[str])
+    does_not: list[str] = Field(default_factory=list[str])
+    contains: list[str] = Field(default_factory=list[str])
+    mounted: list[str] = Field(default_factory=list[str])
+    vehicles: list[str] = Field(default_factory=list[str])
+    markets: list[str] = Field(default_factory=list[str])
+    named_in_case: list[str] = Field(default_factory=list[str])
+
+    def render(self) -> str:
+        def items(title: str, values: list[str]) -> list[str]:
+            return [f"{title}:", *(f"- {v}" for v in values or ["(nothing stated)"]), ""]
+
+        return "\n".join(
+            [
+                "# The product profile",
+                "",
+                "Stated by the orchestrator from the case. Judge whether an obligation applies "
+                "against this; the case files above are the evidence for it.",
+                "",
+                f"The part: {self.part}",
+                "",
+                *items("What it does", self.does),
+                *items("Functions of its family it does NOT have", self.does_not),
+                *items("What it contains or is made of", self.contains),
+                *items("Where it is fitted, and what of the vehicle it affects", self.mounted),
+                *items("Vehicle categories", self.vehicles),
+                *items("Markets", self.markets),
+                *items(
+                    "Regulations, approval marks or standards the case files name",
+                    (self.named_in_case),
+                ),
+            ]
+        ).rstrip()
+
+
+# ------------------------------------------------------------------------------------------
 # The writer
 # ------------------------------------------------------------------------------------------
 
