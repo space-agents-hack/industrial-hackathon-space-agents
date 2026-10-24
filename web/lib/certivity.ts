@@ -50,6 +50,9 @@ export type CheckResult = {
   jsonSpan: [number, number] | null;
   score: { regulation: Level; page: Level } | null;
   breakdown: RegulationRow[];
+  // The requirement level estimated by counting (certivity.requirement_estimate in the agent): the
+  // platform judges it with a model, so this is a bound times a measured rate, not a judgement.
+  requirementEstimate: Level | null;
   subgoalScore: SubgoalScore | null;
   notes: string[];
   certivityCommit: string;
@@ -139,6 +142,7 @@ export function parseCheckResult(body: unknown): CheckResult | null {
       ? body.breakdown.map(parseRow).filter((r): r is RegulationRow => r !== null)
       : [],
     // An older agent sends none; a malformed one is dropped like a malformed main score.
+    requirementEstimate: parseLevel(body.requirement_estimate),
     subgoalScore: parseSubgoalScore(body.subgoal_score),
     notes: Array.isArray(body.notes) ? body.notes.filter((n): n is string => typeof n === "string") : [],
     certivityCommit: typeof body.certivity_commit === "string" ? body.certivity_commit : "unknown",
@@ -183,7 +187,8 @@ export function formatRatio(value: number): string {
 
 // F-beta with beta 2, the measure the leaderboard uses at the requirement level ("Req F2"): recall
 // weighs four times precision. score_local.py gives P and R only for regulations and pages, so
-// this is F2 at those levels; the requirement level is computed on the platform only.
+// this is F2 at those levels, and at the requirement level only of the count estimate: the real one
+// is computed on the platform.
 export function f2(level: Pick<Level, "precision" | "recall">): number {
   const { precision: p, recall: r } = level;
   return p + r === 0 ? 0 : (5 * p * r) / (4 * p + r);

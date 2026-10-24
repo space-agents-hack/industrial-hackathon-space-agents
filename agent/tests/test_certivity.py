@@ -205,10 +205,38 @@ def test_the_score_is_split_by_regulation(ref: certivity.Reference) -> None:
     assert (rows["UN R902"]["expected_requirements"], rows["UN R902"]["pages_correct"]) == (0, 0)
 
 
+def test_the_requirement_estimate_credits_one_per_expected_obligation(
+    ref: certivity.Reference,
+) -> None:
+    # Matching is one to one: one requirement on a paragraph where two are expected is credited
+    # once, and two on a paragraph where one is expected are too.
+    expected = _expected()
+    expected["requirements"].append({**expected["requirements"][0], "id": "G-4"})  # two on 5.1
+    data = _expected()
+    data["requirements"].append({**data["requirements"][1], "id": "R-9"})  # two on 5.2
+    data["requirements"].append(  # no paragraph: never credited
+        {
+            "id": "R-10",
+            "text": "x",
+            "source": {"regulation": "UN R900", "version": "1.0.0", "page": 4},
+        }
+    )
+
+    estimate = certivity.requirement_estimate(data, expected)
+
+    assert estimate["ceiling"] == 3  # 5.1 once, 5.2 once, 6.1 once
+    assert (estimate["n_submitted"], estimate["n_expected"]) == (5, 4)
+    rate = certivity.REQUIREMENT_JUDGE_RATE
+    assert estimate["recall"] == pytest.approx(3 * rate / 4)
+    assert estimate["precision"] == pytest.approx(3 * rate / 5)
+    assert certivity.check(json.dumps(_expected()), ref)["requirement_estimate"]["ceiling"] == 3
+
+
 def test_the_agent_tool_never_sees_the_score(ref: certivity.Reference) -> None:
     # A model shown the dev score can tune its answer to the one case that has an answer key.
     checked = certivity.check(json.dumps(_expected()), ref, with_score=False)
     assert (checked["score"], checked["breakdown"]) == (None, None)
+    assert checked["requirement_estimate"] is None
 
 
 def test_the_agent_tool_never_sees_the_subgoal_score(ref: certivity.Reference) -> None:

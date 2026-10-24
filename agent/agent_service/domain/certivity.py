@@ -10,8 +10,9 @@ platform runs this same `validate.py`, and a function call takes milliseconds.
 A sub-goal file is scored by `regdiff.score` against the sub-goal's expected.json: Certivity ships
 that answer but no scorer for it.
 
-What this does NOT do: score the requirement level (meaning), or judge whether a sub-goal change
-states the right thing. That needs Certivity's model and only happens on their platform. And there
+What this does NOT do: score the requirement level by meaning, or judge whether a sub-goal change
+states the right thing. That needs Certivity's model and only happens on their platform; the
+requirement level here is a count estimate (`requirement_estimate`), not a judgement. And there
 is no score for a case without `expected.json`, which includes the held-out cases that decide the
 ranking.
 """
@@ -21,6 +22,7 @@ import json
 import re
 import subprocess
 import sys
+from collections import Counter
 from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
@@ -33,6 +35,12 @@ PACKAGE_DIR = Path(__file__).resolve().parents[2] / "certivity"
 
 # More problems than this are not read by anyone; the count still says how many there are.
 _MAX_PROBLEMS = 200
+
+# Share of the paragraph slots the platform's judge credited, on the one upload where we know both:
+# 2026-10-24 21:11 UTC, 409 requirements, 109 slots shared with the answer key, 91 matched (#48).
+# One point is all it rests on: re-measure it from every platform upload with a requirement level
+# (score log, docs/se/verification.md). Changing it moves the estimate, never the output.
+REQUIREMENT_JUDGE_RATE = 91 / 109
 
 _FENCED = re.compile(r"```(?:json)?\s*\n(.*?)\n\s*```", re.DOTALL)
 
@@ -195,6 +203,7 @@ def check(
         "json_span": None,
         "score": None,
         "breakdown": None,
+        "requirement_estimate": None,
         "subgoal_score": None,
         "notes": [],
         "certivity_commit": ref.commit,
@@ -279,6 +288,7 @@ def check(
     try:
         result["score"] = _tool("score_local").score(data, expected)
         result["breakdown"] = breakdown(data, expected)
+        result["requirement_estimate"] = requirement_estimate(data, expected)
     except Exception as exc:
         # The scorer assumes a well-formed file; on a broken one the validation problems say why.
         notes.append(
@@ -291,9 +301,14 @@ def check(
             f"(its case_id: {expected.get('case_id')!r}), not the one in the database."
         )
     notes.append(
-        "Regulation and page level only, as Certivity's score_local.py computes them. The platform "
-        "uses full page ranges, so its numbers can differ slightly; the requirement level is "
-        "platform-only."
+        "Regulation and page level as Certivity's score_local.py computes them. The platform "
+        "uses full page ranges, so its numbers can differ slightly."
+    )
+    notes.append(
+        "Requirement level: an estimate, not the platform's judgement. Per cited paragraph it "
+        "counts min(yours, expected) and credits the share the platform's judge accepted on a "
+        f"past upload ({REQUIREMENT_JUDGE_RATE:.2f}). It sees how many obligations you wrote on "
+        "each paragraph, not what they say."
     )
     return result
 
@@ -381,3 +396,47 @@ def breakdown(submission: dict[str, Any], expected: dict[str, Any]) -> list[dict
             }
         )
     return rows
+
+
+def requirement_estimate(submission: dict[str, Any], expected: dict[str, Any]) -> dict[str, Any]:
+    """The requirement level, estimated by counting, in the shape of score_local's levels.
+
+    The platform matches requirements one to one, by meaning, with a model. Two requirements on one
+    expected obligation are credited once, and one requirement stating two obligations matches one
+    of them. Counting per (regulation, version, paragraph) bounds that from above:
+    min(submitted, expected) on each paragraph is the most the judge can credit there if it pairs
+    requirements on the same paragraph. The share it did credit is REQUIREMENT_JUDGE_RATE.
+
+    Why counts and not a model: it costs nothing, cannot drift with a prompt, and sees exactly what
+    lost most of the 23:11 upload (one requirement where the key has several, #48). What it cannot
+    see: wording, or a match across neighbouring paragraphs. Shown to people only, like the score:
+    the agent's tool never gets it (SYS-42).
+    """
+    key = _tool("score_local")._paragraph_key
+
+    def slots(doc: dict[str, Any]) -> Counter[tuple[str, str, str]]:
+        out: Counter[tuple[str, str, str]] = Counter()
+        for r in doc.get("requirements", []):
+            s = r["source"]
+            label = key(s.get("paragraph"))
+            if label:  # no paragraph, no slot: the judge's pairing is by paragraph or page
+                out[(s["regulation"], s.get("version", ""), label)] += 1
+        return out
+
+    ours, gold = slots(submission), slots(expected)
+    ceiling = sum(min(n, ours[p]) for p, n in gold.items())
+    n_submitted = len(submission.get("requirements", []))
+    n_expected = len(expected.get("requirements", []))
+    matched = REQUIREMENT_JUDGE_RATE * ceiling
+    precision = matched / n_submitted if n_submitted else 0.0
+    recall = matched / n_expected if n_expected else 0.0
+    return {
+        "precision": precision,
+        "recall": recall,
+        "f1": 2 * precision * recall / (precision + recall) if matched else 0.0,
+        "n_submitted": n_submitted,
+        "n_expected": n_expected,
+        "n_matched": round(matched),
+        "ceiling": ceiling,
+        "judge_rate": REQUIREMENT_JUDGE_RATE,
+    }

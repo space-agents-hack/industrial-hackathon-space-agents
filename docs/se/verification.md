@@ -18,7 +18,7 @@ Methods: **T** automated test in `make check`, **S** score, **D** demonstration,
 | V-8 | SYS-8 | S: `score_local.py` on `dev-rear-lamp` meets the targets, once set | none yet |
 | V-9 | SYS-9 | I: share of requirements with a test case | none yet |
 | V-10 | SYS-10 | T: an invalid output shows its problems with JSON paths | none yet |
-| V-11 | SYS-11 | T: sub-goal scores, and the agent's tool gets none; D: dev-case run shows regulation and page scores, a `subgoal-dev` file or run output shows its sub-goal scores; held-out run shows "no local score" | T: `agent/tests/test_certivity.py` (82c8240); D none yet |
+| V-11 | SYS-11 | T: sub-goal scores, and the agent's tool gets none; D: dev-case run shows regulation and page scores, a `subgoal-dev` file or run output shows its sub-goal scores; held-out run shows "no local score" | T: `agent/tests/test_certivity.py` (82c8240; requirement estimate and its absence from the agent's tool, #48); D none yet |
 | V-12 | SYS-12 | D: a click on a requirement opens the cited page | none yet |
 | V-13 | SYS-13 | T: the run pauses once before export and one approval releases the whole list | none yet |
 | V-14 | SYS-14 | D: production run from upload to validated file, no manual step, timed | none yet |

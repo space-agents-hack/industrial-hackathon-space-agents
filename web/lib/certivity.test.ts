@@ -27,6 +27,11 @@ test("parseCheckResult reads the agent's answer", () => {
   assert.equal(result.score?.page.n_expected, 4);
 });
 
+test("the requirement estimate is read when present, and absent from an older agent", () => {
+  assert.deepEqual(parseCheckResult({ ...AGENT_ANSWER, requirement_estimate: LEVEL })?.requirementEstimate, LEVEL);
+  assert.equal(parseCheckResult(AGENT_ANSWER)?.requirementEstimate, null);
+});
+
 test("the per-regulation breakdown is read, and a malformed row dropped", () => {
   const row = {
     regulation: "UN R148",

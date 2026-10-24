@@ -133,6 +133,9 @@ function Result({ text, result }: { text: string; result: CheckResult }) {
           <tbody>
             <ScoreRow label="Regulations" level={result.score.regulation} />
             <ScoreRow label="Pages" level={result.score.page} />
+            {result.requirementEstimate ? (
+              <ScoreRow label="Requirements (estimate)" level={result.requirementEstimate} />
+            ) : null}
           </tbody>
         </table>
       ) : null}
