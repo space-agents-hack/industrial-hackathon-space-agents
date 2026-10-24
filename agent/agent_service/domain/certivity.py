@@ -22,6 +22,7 @@ from functools import cache
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Protocol
+from uuid import UUID
 
 # Certivity's code (MIT), copied unchanged. Their data lives in the database, not here.
 PACKAGE_DIR = Path(__file__).resolve().parents[2] / "certivity"
@@ -48,8 +49,9 @@ def _tool(name: str) -> ModuleType:
 
 @dataclass(frozen=True)
 class Reference:
-    """What the checks compare against: Certivity's reference files, as stored in the database
-    (table certivity_reference). Empty when nobody has loaded them yet."""
+    """What the checks compare against. The regulation index comes from the organisation's
+    regulation library (tables regulations, regulation_versions: one list, imported once in the
+    app, ADR-0006); the answer keys from table certivity_reference. Either can be empty."""
 
     commit: str
     index: list[dict[str, Any]] | None
@@ -57,16 +59,18 @@ class Reference:
     requirements_old: dict[str, list[dict[str, Any]]]  # sub-goal case_id -> requirements_old.json
 
     @classmethod
-    def from_rows(cls, rows: list[dict[str, Any]]) -> "Reference":
-        index = next((r["content"] for r in rows if r["kind"] == "index"), None)
+    def from_rows(
+        cls, rows: list[dict[str, Any]], index: list[dict[str, Any]] | None = None
+    ) -> "Reference":
+        # An "index" row from before ADR-0006 is ignored: the library is the only list.
         expected = {r["case_id"]: r["content"] for r in rows if r["kind"] == "expected"}
         old = {r["case_id"]: r["content"] for r in rows if r["kind"] == "requirements_old"}
         commits = sorted({r["certivity_commit"] for r in rows})
         return cls(", ".join(commits) or "not loaded", index, expected, old)
 
     @property
-    def loaded(self) -> bool:
-        return self.index is not None or bool(self.expected) or bool(self.requirements_old)
+    def answer_keys_loaded(self) -> bool:
+        return bool(self.expected) or bool(self.requirements_old)
 
 
 EMPTY = Reference("not loaded", None, {}, {})
@@ -75,19 +79,22 @@ EMPTY = Reference("not loaded", None, {}, {})
 class _Store(Protocol):
     async def certivity_reference(self) -> list[dict[str, Any]]: ...
 
+    async def regulation_index(self, organization_id: UUID) -> list[dict[str, Any]]: ...
 
-async def load_reference(store: _Store) -> Reference:
-    return Reference.from_rows(await store.certivity_reference())
+
+async def load_reference(store: _Store, organization_id: UUID | None) -> Reference:
+    """The answer keys, and the regulation index of this organisation's library. Without an
+    organisation, or with an empty library, there is no index and validate.py skips that check."""
+    index = await store.regulation_index(organization_id) if organization_id else []
+    return Reference.from_rows(await store.certivity_reference(), index or None)
 
 
 def read_package(root: Path) -> list[dict[str, Any]]:
-    """The rows to store, read from a clone of Certivity's package (the loader below)."""
+    """The answer keys to store, read from a clone of Certivity's package (load_certivity). Not
+    regulations/index.json: that is imported into the regulation library in the app (ADR-0006)."""
     validate = _tool("validate")
     commit = _git_commit(root)
     rows: list[dict[str, Any]] = []
-    index_path = root / "regulations" / "index.json"
-    if index_path.is_file():
-        rows.append(_row("index", "", validate.load_index(index_path), commit))
 
     for path in sorted(root.glob("cases/*/expected.json")):
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -202,14 +209,16 @@ def check(text: str, ref: Reference, *, with_score: bool = True) -> dict[str, An
         problem_count=len(problems),
     )
 
-    if not ref.loaded:
+    if ref.index is None:
         notes.append(
-            "Certivity's reference files are not in the database, so cited regulations, versions "
-            "and requirement ids were not checked and nothing was scored. Load them with "
-            "`make certivity-load CERTIVITY=<path to Certivity's package>`."
+            "This organisation's regulation library is empty, so cited regulations and versions "
+            "were not checked. Import index.json on the Regulations page."
         )
-    elif ref.index is None:
-        notes.append("regulations/index.json is not loaded: cited regulations were not checked.")
+    if not ref.answer_keys_loaded:
+        notes.append(
+            "Certivity's answer keys are not in the database, so requirement ids were not checked "
+            "and nothing was scored. Load them with `make certivity-load` (a release also does)."
+        )
     if kind == validate.SUBGOAL and old is None:
         notes.append(
             f"No requirements_old.json for case {case_id!r}: requirement ids were not checked."

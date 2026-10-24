@@ -357,3 +357,39 @@ async def test_a_case_files_parse_status_and_blocks_through_the_real_schema(
     run_id = await insert_run(db, org, user_id, case_id=case)
     run = await store.get_run(run_id)
     assert run is not None and run.case_id == UUID(case)
+
+
+async def test_regulation_index_is_read_from_the_organisations_library(
+    db: AsyncClient, store: SupabaseRunStore, org: str
+) -> None:
+    reg = rows(
+        await db.table("regulations")
+        .insert({"organization_id": org, "code": "UN R900", "slug": "UN_R900", "kind": "UN R"})
+        .execute()
+    )[0]["id"]
+    for label, role in (("1.0.0", "base"), ("0.9.0", None)):
+        await (
+            db.table("regulation_versions")
+            .insert(
+                {
+                    "regulation_id": reg,
+                    "organization_id": org,
+                    "version_label": label,
+                    "role": role,
+                    "file_name": f"r900-{label}.pdf",
+                    "sha256": "0" * 64,
+                    "size_bytes": 1,
+                    "pdf_path": f"{org}/UN_R900/{label}/UN_R900_{label}.pdf",
+                }
+            )
+            .execute()
+        )
+
+    index = await store.regulation_index(UUID(org))
+
+    assert [e["regulation"] for e in index] == ["UN R900"]
+    assert sorted((v["version_label"], v["role"]) for v in index[0]["versions"]) == [
+        ("0.9.0", ""),
+        ("1.0.0", "base"),
+    ]
+    assert await store.regulation_index(uuid4()) == []

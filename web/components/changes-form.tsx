@@ -223,7 +223,7 @@ export function ChangesForm({
         </div>
       </form>
 
-      {state.phase === "done" ? <Result result={state.result} /> : null}
+      {state.phase === "done" ? <Result result={state.result} org={org} /> : null}
     </div>
   );
 }
@@ -258,7 +258,7 @@ function VersionSelect({
   );
 }
 
-function Result({ result }: { result: ChangesResult }) {
+function Result({ result, org }: { result: ChangesResult; org: string }) {
   // The exact JSON the agent wrote: this text is what the checks validate and what downloads.
   const text = useMemo(() => JSON.stringify(result.submission, null, 2), [result]);
   return (
@@ -299,7 +299,7 @@ function Result({ result }: { result: ChangesResult }) {
         </div>
       </section>
       {/* Certivity's validate.py through the agent, the same check the platform runs on upload. */}
-      <CertivityChecks text={text} />
+      <CertivityChecks text={text} organizationId={org} />
     </div>
   );
 }

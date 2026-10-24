@@ -18,7 +18,8 @@ type Answer = { text: string } & ({ phase: "done"; result: CheckResult } | { pha
 
 // Certivity's validate.py and score_local.py on `text`, through the agent. A failed validation is
 // a warning on the run, not a failed run: the requirements are still worth reading and fixing.
-export function CertivityChecks({ text }: { text: string }) {
+// `organizationId` picks the regulation library the citations are checked against (ADR-0006).
+export function CertivityChecks({ text, organizationId }: { text: string; organizationId: string | null }) {
   const [answer, setAnswer] = useState<Answer | null>(null);
 
   useEffect(() => {
@@ -28,7 +29,7 @@ export function CertivityChecks({ text }: { text: string }) {
         const response = await fetch("/api/checks", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ text }),
+          body: JSON.stringify({ text, organization_id: organizationId }),
           signal: controller.signal,
         });
         const body: unknown = await response.json().catch(() => null);
@@ -51,7 +52,7 @@ export function CertivityChecks({ text }: { text: string }) {
       }
     })();
     return () => controller.abort();
-  }, [text]);
+  }, [text, organizationId]);
 
   const state = answer?.text === text ? answer : null;
   return (

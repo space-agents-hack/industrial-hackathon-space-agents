@@ -260,7 +260,7 @@ async def _run_agent(store: RunStore, plan: Plan, model: Model | str) -> RunStat
         conversation=plan.conversation,
         deferred_tool_results=deferred_results,
         model=model,
-        deps=await domain.prepare_deps(store),
+        deps=await domain.prepare_deps(store, plan.run.organization_id),
         usage_limits=UsageLimits(request_limit=plan.config.max_model_requests),
         event_stream_handler=record,
     )

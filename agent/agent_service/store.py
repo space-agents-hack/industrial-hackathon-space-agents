@@ -101,6 +101,11 @@ class RunStore(Protocol):
 
     async def replace_certivity_reference(self, rows: list[dict[str, Any]]) -> None: ...
 
+    async def regulation_index(self, organization_id: UUID) -> list[dict[str, Any]]:
+        """The organisation's regulation library in the shape of Certivity's index.json, as much
+        of it as validate.py reads: each regulation's code and its versions' label and role."""
+        ...
+
     async def set_status(
         self,
         run_id: UUID,
@@ -327,6 +332,26 @@ class SupabaseRunStore:
             .execute()
         )
         return cast(list[dict[str, Any]], res.data)
+
+    async def regulation_index(self, organization_id: UUID) -> list[dict[str, Any]]:
+        # One page is enough: a library holds one row per regulation (56 in the challenge).
+        res = (
+            await self._db.table("regulations")
+            .select("code, regulation_versions(version_label, role)")
+            .eq("organization_id", str(organization_id))
+            .order("code")
+            .execute()
+        )
+        return [
+            {
+                "regulation": r["code"],
+                "versions": [
+                    {"version_label": v["version_label"], "role": v.get("role") or ""}
+                    for v in r.get("regulation_versions") or []
+                ],
+            }
+            for r in cast(list[dict[str, Any]], res.data)
+        ]
 
     async def replace_certivity_reference(self, rows: list[dict[str, Any]]) -> None:
         # Upsert first, then delete what the new package no longer has: between the two, a check

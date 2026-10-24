@@ -10,7 +10,7 @@ import { SUBMISSION_MAX_BYTES } from "@/lib/certivity";
 
 // Paste or load a submission and press Check. The text goes to the agent and back; nothing is
 // stored, so it is also safe for a file that is not finished.
-export function CheckFileForm() {
+export function CheckFileForm({ organizationId }: { organizationId: string | null }) {
   const [text, setText] = useState("");
   const [checked, setChecked] = useState<string | null>(null);
   const [round, setRound] = useState(0);
@@ -89,7 +89,7 @@ export function CheckFileForm() {
         ) : null}
       </form>
       {/* Keyed so that pressing Check again on the same text runs the checks again. */}
-      {checked !== null ? <CertivityChecks key={round} text={checked} /> : null}
+      {checked !== null ? <CertivityChecks key={round} text={checked} organizationId={organizationId} /> : null}
     </div>
   );
 }

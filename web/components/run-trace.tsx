@@ -300,7 +300,7 @@ export function RunTrace({
         </section>
       ) : null}
 
-      {run.status === "succeeded" && looksLikeSubmission(run.output) ? <CertivityChecks text={run.output} /> : null}
+      {run.status === "succeeded" && looksLikeSubmission(run.output) ? <CertivityChecks text={run.output} organizationId={run.organization_id ?? null} /> : null}
 
       <section className="grid gap-1">
         <h2 className="text-xs font-medium text-muted-foreground">

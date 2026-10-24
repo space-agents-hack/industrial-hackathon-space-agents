@@ -2,6 +2,7 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -17,9 +18,26 @@ AUTH = {"Authorization": "Bearer test-secret"}
 PACKAGE = Path(__file__).parent / "fixtures" / "certivity_package"
 
 
+ORG = UUID("30000000-0000-0000-0000-000000000001")
+
+
+def _library() -> list[dict[str, Any]]:
+    # What regulation_index returns for an organisation that imported the made-up index.
+    raw = json.loads((PACKAGE / "regulations" / "index.json").read_text())
+    return [
+        {
+            "regulation": e["regulation"],
+            "versions": [
+                {"version_label": v["version_label"], "role": v["role"]} for v in e["versions"]
+            ],
+        }
+        for e in raw
+    ]
+
+
 @pytest.fixture
 def ref() -> certivity.Reference:
-    return certivity.Reference.from_rows(certivity.read_package(PACKAGE))
+    return certivity.Reference.from_rows(certivity.read_package(PACKAGE), _library())
 
 
 def _expected() -> dict[str, Any]:
@@ -45,8 +63,8 @@ def test_no_certivity_data_is_in_the_repository() -> None:
 
 def test_read_package_names_every_file_by_its_case() -> None:
     rows = certivity.read_package(PACKAGE)
+    # Not the index: that is imported into the regulation library in the app (ADR-0006).
     assert {(r["kind"], r["case_id"]) for r in rows} == {
-        ("index", ""),
         ("expected", "demo-lamp"),
         ("requirements_old", "subgoal-demo"),
     }
@@ -146,7 +164,8 @@ def test_without_the_reference_in_the_database_the_check_says_so() -> None:
     # The schema check still runs: it needs no data.
     assert result["valid"] is True
     assert result["score"] is None
-    assert any("not in the database" in note for note in result["notes"])
+    assert any("answer keys are not in the database" in note for note in result["notes"])
+    assert any("regulation library is empty" in note for note in result["notes"])
 
 
 def test_the_agent_tool_never_sees_the_score(ref: certivity.Reference) -> None:
@@ -159,8 +178,10 @@ def test_the_agent_tool_never_sees_the_score(ref: certivity.Reference) -> None:
 @pytest.mark.anyio
 async def test_a_run_gets_the_reference_from_the_store(store: InMemoryRunStore) -> None:
     await store.replace_certivity_reference(certivity.read_package(PACKAGE))
-    deps = await prepare_deps(store)
+    store.library[ORG] = _library()
+    deps = await prepare_deps(store, ORG)
     assert "demo-lamp" in deps.reference.expected
+    assert deps.reference.index == _library()
 
 
 @pytest.mark.anyio
@@ -169,7 +190,10 @@ async def test_a_run_whose_store_cannot_read_the_reference_still_starts() -> Non
         async def certivity_reference(self) -> list[dict[str, Any]]:
             raise RuntimeError("relation does not exist")
 
-    assert (await prepare_deps(Broken())).reference is certivity.EMPTY
+        async def regulation_index(self, organization_id: UUID) -> list[dict[str, Any]]:
+            return []
+
+    assert (await prepare_deps(Broken(), ORG)).reference is certivity.EMPTY
 
 
 @pytest.fixture
@@ -189,7 +213,40 @@ async def test_checks_endpoint_scores_with_the_stored_reference(
     client: TestClient, store: InMemoryRunStore
 ) -> None:
     await store.replace_certivity_reference(certivity.read_package(PACKAGE))
-    response = client.post("/checks", headers=AUTH, json={"text": json.dumps(_expected())})
+    store.library[ORG] = _library()
+    data = _expected()
+    data["requirements"][0]["source"]["regulation"] = "UN R999"
+    body = {"text": json.dumps(data), "organization_id": str(ORG)}
+
+    response = client.post("/checks", headers=AUTH, json=body)
+
     assert response.status_code == 200
-    assert response.json()["valid"] is True
+    # The citation is checked against this organisation's library.
+    assert response.json()["problems"][0]["path"] == "$.requirements[0].source.regulation"
     assert response.json()["score"]["page_level"]["n_expected"] == 3
+
+
+@pytest.mark.anyio
+async def test_another_organisations_library_is_not_used(
+    client: TestClient, store: InMemoryRunStore
+) -> None:
+    store.library[ORG] = _library()
+    other = UUID("30000000-0000-0000-0000-000000000002")
+    data = _expected()
+    data["requirements"][0]["source"]["regulation"] = "UN R999"
+    body = {"text": json.dumps(data), "organization_id": str(other)}
+    result = client.post("/checks", headers=AUTH, json=body).json()
+    assert result["valid"] is True
+    assert any("regulation library is empty" in note for note in result["notes"])
+
+
+def test_an_index_row_from_before_adr_0006_is_ignored() -> None:
+    rows = [
+        {
+            "kind": "index",
+            "case_id": "",
+            "content": [{"regulation": "UN R1"}],
+            "certivity_commit": "old",
+        }
+    ]
+    assert certivity.Reference.from_rows(rows).index is None

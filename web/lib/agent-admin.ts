@@ -168,10 +168,10 @@ export async function agentHealth(): Promise<AgentHealth | null> {
 // Certivity's validate.py and score_local.py, run by the agent on this text (a run's output or a
 // file someone dropped). Not an admin action, but the same server-to-server call: the web cannot
 // run Python, and the checks must be Certivity's own code to mean "accepted on upload".
-export async function runCertivityChecks(text: string): Promise<CheckResult> {
+export async function runCertivityChecks(text: string, organizationId: string | null): Promise<CheckResult> {
   const body = await call("/checks", {
     method: "POST",
-    body: { text },
+    body: { text, organization_id: organizationId },
     messages: { 404: "This version of the agent cannot run Certivity's checks yet. Deploy the agent again." },
   });
   const result = parseCheckResult(body);

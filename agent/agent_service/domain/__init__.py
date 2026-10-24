@@ -4,6 +4,7 @@ in this folder (prompt.md, tools.py, systems.py, scripted.py) and nothing outsid
 import logging
 from pathlib import Path
 from typing import Any, Protocol
+from uuid import UUID
 
 from pydantic_ai import Agent, DeferredToolRequests
 from pydantic_ai.models import Model
@@ -35,11 +36,13 @@ def new_deps(reference: certivity.Reference = certivity.EMPTY) -> Deps:
 class _Store(Protocol):
     async def certivity_reference(self) -> list[dict[str, Any]]: ...
 
+    async def regulation_index(self, organization_id: UUID) -> list[dict[str, Any]]: ...
 
-async def prepare_deps(store: _Store) -> Deps:
+
+async def prepare_deps(store: _Store, organization_id: UUID) -> Deps:
     """What a run's tools need from the database, read once when the run starts."""
     try:
-        reference = await certivity.load_reference(store)
+        reference = await certivity.load_reference(store, organization_id)
     except Exception:
         # A run that cannot read the reference still runs: its checks say what was not checked.
         log.exception("could not read certivity_reference; checks run without it")

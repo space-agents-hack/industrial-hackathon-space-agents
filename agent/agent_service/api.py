@@ -443,6 +443,9 @@ async def list_provider_models(
 
 class SubmissionText(BaseModel):
     text: str
+    # Whose regulation library to check citations against. The web has checked the caller can
+    # read this organisation; without it validate.py skips the regulation check.
+    organization_id: UUID | None = None
 
 
 @app.post("/checks", dependencies=[Depends(require_secret)])
@@ -450,7 +453,7 @@ async def certivity_checks(
     body: SubmissionText, store: Annotated[RunStore, Depends(get_store)]
 ) -> dict[str, Any]:
     try:
-        reference = await certivity.load_reference(store)
+        reference = await certivity.load_reference(store, body.organization_id)
     finally:
         await store.aclose()
     return certivity.check(body.text, reference)
@@ -515,7 +518,7 @@ async def subgoal_changes(
         if body.requirements_old is not None:
             requirements = [r.model_dump(exclude_none=True) for r in body.requirements_old]
         else:
-            reference = await certivity.load_reference(store)
+            reference = await certivity.load_reference(store, body.organization_id)
             found = reference.requirements_old.get(body.case_id)
             if found is None:
                 raise HTTPException(
