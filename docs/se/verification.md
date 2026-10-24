@@ -18,7 +18,7 @@ Methods: **T** automated test in `make check`, **S** score, **D** demonstration,
 | V-8 | SYS-8 | S: `score_local.py` on `dev-rear-lamp` meets the targets, once set | none yet |
 | V-9 | SYS-9 | I: share of requirements with a test case | none yet |
 | V-10 | SYS-10 | T: an invalid output shows its problems with JSON paths | none yet |
-| V-11 | SYS-11 | T: sub-goal scores, and the agent's tool gets none; D: dev-case run shows regulation and page scores, a `subgoal-dev` file shows its sub-goal scores; held-out run shows "no local score" | T: `agent/tests/test_certivity.py` (82c8240); D none yet |
+| V-11 | SYS-11 | T: sub-goal scores, and the agent's tool gets none; D: dev-case run shows regulation and page scores, a `subgoal-dev` file or run output shows its sub-goal scores; held-out run shows "no local score" | T: `agent/tests/test_certivity.py` (82c8240); D none yet |
 | V-12 | SYS-12 | D: a click on a requirement opens the cited page | none yet |
 | V-13 | SYS-13 | T: the run pauses once before export and one approval releases the whole list | none yet |
 | V-14 | SYS-14 | D: production run from upload to validated file, no manual step, timed | none yet |
@@ -50,6 +50,7 @@ Methods: **T** automated test in `make check`, **S** score, **D** demonstration,
 | V-42 | SYS-42 | I: every change to the prompt, the writer and its filters is read for names of regulations, paragraphs or pages and for tuning against `expected.json`; S: the held-out score is not far below the dev score | T (part of I): `agent/tests/test_prompts_neutral.py`, no regulation code in a prompt; S none yet |
 | V-43 | SYS-43 | T: with the scripted model, the profile is recorded once per run, is built from text and images (a made-up drawing in the test), and reaches every writer and check call; I: the profile of a real run reads true to the case | partial T: `agent/tests/test_profile.py` (recorded before search and write, read back after a pause, reaches every writer and check); the case's image blocks reach the model before the profile is recorded (`test_the_drawings_of_the_case_reach_the_model_before_it_records_the_profile`, b94a860); I on a hosted dev run, whether "contains" lists what only the drawing shows: none yet |
 | V-44 | SYS-44 | T: every base regulation of the project gets a verdict with a quoted scope sentence, including one top-k did not return; of two near-twins with no evidence both are kept; S: regulation-level recall on the dev case does not drop | partial T: `agent/tests/test_screen.py` (one verdict per library regulation, screen runs before writing); near-twins kept without evidence is model behaviour: I on a hosted dev run, the summary names its evidence for every regulation left out; S needs the same run |
+| V-45 | SYS-45 | T: with the scripted model, a sub-goal case runs from its shipped files to a file `validate.py --requirements-old` accepts, every step in `run_events`, and a verdict whose quote is not in the PDF is dropped; D: a production run on `subgoal-dev` | none yet |
 | V-26 | SYS-26 | D: a generated `index.json` passes the same loader as Certivity's (future) | none yet |
 
 ## Score log
