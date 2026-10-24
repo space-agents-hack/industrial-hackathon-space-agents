@@ -8,9 +8,9 @@ Methods: **T** automated test in `make check`, **S** score, **D** demonstration,
 
 | V | SYS | Method and pass criterion | Evidence |
 |---|---|---|---|
-| V-1 | SYS-1 | T: one fixture per format reaches ingest; a refused format gives a clear message | none yet |
+| V-1 | SYS-1 | T: one fixture per format (CAD included) reaches ingest; a refused format gives a clear message | none yet |
 | V-2 | SYS-2 | T: trace has one event per file, with pages read and anything skipped | none yet |
-| V-3 | SYS-3 | T: profile validates against the IF-2 model; S: regulation-level recall | none yet |
+| V-3 | SYS-3 | T: every content block carries file and page; S: regulation-level recall | none yet |
 | V-4 | SYS-4 | T: a run's output passes the vendored `validate.py` | none yet |
 | V-5 | SYS-5 | T: every cited regulation and version label is in `index.json`, version is `base` | none yet |
 | V-6 | SYS-6 | T: no requirement without a paragraph | none yet |

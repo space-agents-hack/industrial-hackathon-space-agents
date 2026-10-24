@@ -5,7 +5,7 @@ allocated to, how it is verified (see `verification.md`), the issue that impleme
 status. Every status below is `proposed` (written by Claude on 2026-10-24, not yet reviewed by
 Clemente or Ramón). Owners are on the issues, not here.
 
-Allocation names: **web** (`web/`), **ingest** (case files to case content and case profile,
+Allocation names: **web** (`web/`), **ingest** (case files to tagged case content,
 `agent/`), **regs** (regulation index and requirement extraction, `agent/`), **checks**
 (Certivity's `validate.py` and `score_local.py`), **db** (`supabase/`), **ops** (deploy, upload
 procedure, people).
@@ -16,24 +16,35 @@ platform), **D** demonstration, **I** inspection.
 ## Input
 
 **SYS-1 Case file formats.** The system shall accept a case as one or more files in .md, .txt,
-.pdf, .png, .jpg and .docx.
+.pdf, .png, .jpg, .docx and the CAD formats .step/.stp, .iges/.igs and .stl.
 Why: engineers have the product in whatever form they have it (N-3); the dev case is .md + .png.
-Serves N-3. Allocated: web, ingest, db. Verify: T. Issue: none yet (case ingestion design in
-progress). Status: proposed.
-Open: further formats (.xlsx, .webp, .csv) and the per-file and per-run limits are in the
-ingestion design and still `TBD`.
+CAD is in on Clemente's decision (2026-10-24): engineers keep their parts as CAD.
+Serves N-3. Allocated: web, ingest, db. Interface: IF-1. Verify: T. Issue: #8 (to be updated
+to the bucket design). Status: proposed.
+What "accepted" means for CAD in version 1: the file is stored and listed, and what can be read
+as text reaches the model (STEP and IGES are plain-text formats that carry part and product
+names; binary STL carries almost nothing but a name and a triangle count). No geometry is
+rendered or measured. The trace says so for each CAD file (SYS-2).
+Future work, not accepted yet: .pptx, legacy .doc, .zip archives. Per-file and per-run limits
+are `TBD` in the ingestion design.
+Future work: reuse Ramón's regulation ingestion layer (PDF to text by page, issue #3) for case
+PDFs once it exists, instead of keeping two PDF readers.
 
 **SYS-2 Nothing dropped silently.** Every accepted file shall reach the model as text or image,
 and the run trace shall list each file with what was read and anything skipped or truncated.
 Why: a page the model never saw is a requirement nobody finds (N-1), and the engineer cannot tell.
 Serves N-1, N-3, N-9. Allocated: ingest. Verify: T. Issue: #8 (to be updated). Status: proposed.
 
-**SYS-3 Case profile.** From the case content, the system shall produce a case profile (product
-type, vehicle category, functions, components, with the file and page each claim came from) that
-the regulation step consumes.
-Why: choosing the applicable regulations is part of the task (README) and needs a structured
-description of the product, not raw text. Serves N-1, N-4. Allocated: ingest, regs. Interface:
-IF-2. Verify: T (schema), S (regulation-level recall). Issue: none yet. Status: proposed.
+**SYS-3 Case content hand-off.** The system shall hand the regulation step the case content
+itself: the text of each file by page and its images, each tagged with file name and page.
+It may add free-form notes on the product (parts, functions, vehicle category) from a quick,
+cheap model, each note citing the file and page it came from.
+Why: Certivity could not confirm a fixed set of product attributes (Clemente, 2026-10-24), so a
+fixed case-profile schema would be a guess that the regulation step then depends on. Content
+tagged by file and page loses nothing; the notes are a help, not a contract.
+Serves N-1, N-4, N-2. Allocated: ingest, regs. Interface: IF-2. Verify: T (every block carries
+file and page), S (regulation-level recall). Issue: none yet. Status: proposed.
+Changed 2026-10-24: was "case profile" with fixed fields.
 
 ## Output
 

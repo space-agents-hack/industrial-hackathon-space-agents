@@ -12,23 +12,28 @@ All interfaces below are `proposed`. Designs in progress are in the project's sh
 
 - Producer: web (upload form). Consumer: ingest (agent). Carrier: db and Supabase Storage.
 - Owners: web side `UNASSIGNED`, agent side `UNASSIGNED`.
-- Proposed: the browser uploads each file to a private Storage bucket `case-files`; a new table
+- Proposed design: the browser uploads each file to a private Storage bucket `case-files`; a new table
   `run_files` (run, organisation, storage path, filename, media type, bytes, sha256) lists them;
   a check constraint on media type holds the accepted formats, so web and agent read one list.
 - Why not issue #8's `run_inputs` table of bytes: a Vercel function rejects request bodies over
   4.5 MB, and a PDF datasheet can exceed it; bytes in Postgres count against database size.
-- Requirements: SYS-1, SYS-2, SYS-16. Issue: #8 (to be updated or superseded).
-- Open: per-file and per-run limits; whether `purge-challenge-data.sh` empties the bucket.
+- Decided by Clemente 2026-10-24: buckets, not #8's table of bytes. Issue: #8 (to be updated).
+- Requirements: SYS-1, SYS-2, SYS-16.
+- Open: per-file and per-run limits; `purge-challenge-data.sh` must empty the bucket (SYS-16).
+- Later: case PDFs may go through Ramón's regulation ingestion layer (#3) instead of a second
+  PDF reader. Not decided; noted so it is not forgotten.
 
-## IF-2 Case profile: ingest to regulation pipeline
+## IF-2 Case content: ingest to regulation pipeline
 
-- Producer: ingest (case agent). Consumer: regs (regulation selection and extraction).
+- Producer: ingest. Consumer: regs (regulation selection and extraction).
 - Owners: producer `UNASSIGNED`, consumer `UNASSIGNED` (Ramón is building the regulation side).
-- Proposed: a Pydantic model in `agent/agent_service/domain/case.py`. Fields under discussion:
-  product type, vehicle categories, functions, components (name, material, notes), markings,
-  light sources, open questions, and evidence (claim, file, page).
-- **Settle this one first**: both ends are being built today by different people.
-- Requirements: SYS-3, SYS-8. Issue: none yet.
+- Proposed: the case content itself, not a fixed profile. A list of blocks, each text or image,
+  each tagged with file name and page (or sheet, or "whole file" for a single image). Optionally,
+  free-form notes from a quick, cheap model (parts, functions, vehicle category), each citing a
+  block. The notes are not a schema the consumer may rely on field by field.
+- Why no fixed profile: Certivity could not confirm which product attributes matter (Clemente,
+  2026-10-24). A fixed schema would bake in a guess on both sides.
+- Requirements: SYS-2, SYS-3, SYS-8. Issue: none yet.
 
 ## IF-3 Regulation lookup: regulation index to requirement writer
 
