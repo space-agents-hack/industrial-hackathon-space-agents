@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { FilePickerButton } from "@/components/file-picker-button";
+import { runBlockers } from "@/lib/run-readiness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +25,7 @@ export function CaseWorkspace({
   initialFiles,
   canEdit,
   writerModel,
+  regulationBlockers,
 }: {
   organizationId: string;
   caseId: string;
@@ -30,10 +33,11 @@ export function CaseWorkspace({
   canEdit: boolean;
   // What a run uses when no other model is asked for: the organisation's, else the deployment's.
   writerModel: string;
+  // The project has no regulation to cite (lib/run-readiness.ts); the button stays off with why.
+  regulationBlockers: string[];
 }) {
   const router = useRouter();
   const [files, setFiles] = useState(initialFiles);
-  const [picked, setPicked] = useState<File[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [model, setModel] = useState("");
@@ -42,27 +46,21 @@ export function CaseWorkspace({
   const [warning, setWarning] = useState<string | null>(null);
   const busy = pending !== null;
 
-  function pick(list: FileList | null) {
-    if (!list) return;
-    const added: File[] = [];
+  // Picking is adding: the files go up and are read at once, with no second button to press.
+  async function addFiles(list: FileList) {
+    const chosen: File[] = [];
     const problems: string[] = [];
     for (const file of Array.from(list)) {
       const reason = refusal(file);
       if (reason) problems.push(reason);
-      else added.push(file);
+      else chosen.push(file);
     }
-    const next = [...picked, ...added];
-    if (next.length > MAX_FILES) problems.push(`At most ${MAX_FILES} files at a time.`);
-    setPicked(next.slice(0, MAX_FILES));
+    if (chosen.length > MAX_FILES) problems.push(`At most ${MAX_FILES} files at a time; the first ${MAX_FILES} are added.`);
     setError(problems.length ? problems.join(" ") : null);
-  }
-
-  async function addFiles() {
-    setError(null);
+    if (chosen.length === 0) return;
     try {
       const supabase = createClient();
-      await uploadCaseFiles(supabase, organizationId, caseId, picked, files, setPending);
-      setPicked([]);
+      await uploadCaseFiles(supabase, organizationId, caseId, chosen.slice(0, MAX_FILES), files, setPending);
       await parseCase(supabase, caseId, setFiles, setPending);
       router.refresh();
     } catch (caught) {
@@ -90,7 +88,11 @@ export function CaseWorkspace({
   const unsettled = files.some((f) => !isSettled(f.status));
   const readable = files.some((f) => f.status === "parsed");
   const modelOk = model.trim() === "" || MODEL_PATTERN.test(model.trim());
-  const canRun = canEdit && !busy && modelOk && (readable || notes.trim() !== "");
+  const blockers = [
+    ...runBlockers({ files: files.length, library: 1, allRegulations: true, chosen: 0 }),
+    ...regulationBlockers,
+  ];
+  const canRun = canEdit && !busy && modelOk && readable && blockers.length === 0;
 
   async function run() {
     if (!canRun) return;
@@ -152,43 +154,16 @@ export function CaseWorkspace({
 
         {canEdit ? (
           <div className="grid gap-1.5">
-            <Label htmlFor="add-files">Add files</Label>
             <div className="flex flex-wrap items-center gap-2">
-              <input
-                id="add-files"
-                type="file"
-                multiple
+              <FilePickerButton
+                label={files.length === 0 ? "Add files…" : "Add more files…"}
                 accept={ACCEPT}
-                className="text-sm"
+                multiple
                 disabled={busy}
-                onChange={(event) => {
-                  pick(event.target.files);
-                  // Cleared so that choosing the same file again, after removing it, adds it back.
-                  event.target.value = "";
-                }}
+                onPick={(list) => void addFiles(list)}
               />
-              <Button variant="outline" disabled={busy || picked.length === 0} onClick={() => void addFiles()}>
-                {picked.length > 1 ? `Add ${picked.length} files` : "Add file"}
-              </Button>
+              {pending ? <span className="text-sm text-muted-foreground">{pending}</span> : null}
             </div>
-            {picked.length > 0 ? (
-              <ul className="grid gap-1 text-sm">
-                {picked.map((file, index) => (
-                  <li key={`${index}-${file.name}`} className="flex items-center gap-2">
-                    <span className="truncate font-mono">{file.name}</span>
-                    <span className="text-xs text-muted-foreground">{describeSize(file.size)}</span>
-                    <button
-                      type="button"
-                      className="ml-auto text-muted-foreground underline"
-                      disabled={busy}
-                      onClick={() => setPicked(picked.filter((_, i) => i !== index))}
-                    >
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
             <p className="text-xs text-muted-foreground">
               .md .txt .csv .json, .png .jpg .webp, .pdf, .docx, .xlsx, CAD .step .iges .stl. Up to {MAX_FILES} files
               at a time, 25 MB each. Each file is read once, when added; open it above to see what was read.
@@ -239,6 +214,11 @@ export function CaseWorkspace({
               {pending ? "Working…" : "Find requirements"}
             </Button>
           </div>
+          {blockers.map((b) => (
+            <p key={b} className="text-sm text-attention">
+              {b}
+            </p>
+          ))}
           {!readable && files.length > 0 && !unsettled ? (
             <p className="text-sm text-danger">No file of this case could be read. See the reasons above.</p>
           ) : null}

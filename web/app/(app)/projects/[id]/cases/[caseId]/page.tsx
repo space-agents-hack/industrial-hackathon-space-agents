@@ -13,6 +13,7 @@ import { agentHealth } from "@/lib/agent-admin";
 import { fetchCaseFiles } from "@/lib/cases";
 import { getAccess } from "@/lib/current-org";
 import { getCurrentProject } from "@/lib/current-project";
+import { fetchReadiness, runBlockers } from "@/lib/run-readiness";
 import { createClient } from "@/lib/supabase/server";
 import { summarizeRun } from "@/lib/trace";
 import { isUuid } from "@/lib/validation";
@@ -55,20 +56,23 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
   if (!found) return <Missing />;
 
   const canEdit = permissionsIn(access, found.organization_id).startRuns;
-  const [files, runs, settings, health] = await Promise.all([
+  const [files, runs, settings, health, readiness] = await Promise.all([
     fetchCaseFiles(supabase, caseId).catch((caught: unknown) => {
       console.error("Case: files read failed", caught);
       return null;
     }),
     supabase
       .from("runs")
-      .select("id, created_at, status, model, task")
+      .select("id, created_at, updated_at, status, model, task")
       .eq("case_id", caseId)
       .order("created_at", { ascending: false })
       .limit(20),
     supabase.from("organization_settings").select("model").eq("organization_id", found.organization_id).maybeSingle(),
     agentHealth(),
+    fetchReadiness(supabase, caseId),
   ]);
+  // Only the regulation side: the files are counted live in the workspace as they are added.
+  const regulationBlockers = readiness ? runBlockers({ ...readiness, files: 1 }) : [];
   const writerModel = settings.data?.model ?? health?.model ?? "the organisation's model";
   const projectName = found.projects?.name ?? "Project";
 
@@ -100,6 +104,7 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
           initialFiles={files}
           canEdit={canEdit}
           writerModel={writerModel}
+          regulationBlockers={regulationBlockers}
         />
       ) : (
         <p role="alert" className="text-danger">

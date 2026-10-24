@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApprovalCard } from "@/components/approval-card";
 import { CertivityChecks } from "@/components/certivity-checks";
 import { RelativeTime } from "@/components/relative-time";
+import { RunClock } from "@/components/run-clock";
+import { RunResult } from "@/components/run-result";
 import { StatusBadge } from "@/components/status-badge";
 import { Timeline } from "@/components/timeline";
 import { Button } from "@/components/ui/button";
@@ -17,6 +19,7 @@ import {
   type RunRow,
   buildTimeline,
   canRetry,
+  describeActivity,
   formatUsage,
   isApprovalRow,
   isFinished,
@@ -220,6 +223,14 @@ export function RunTrace({
         <span className="text-xs text-muted-foreground">
           Started <RelativeTime iso={run.created_at} />
         </span>
+        {finished ? (
+          <RunClock
+            status={run.status}
+            createdAt={run.created_at}
+            updatedAt={run.updated_at}
+            className="text-xs text-muted-foreground"
+          />
+        ) : null}
         {usage.map((part) => (
           <span key={part} className="text-xs text-muted-foreground">
             {part}
@@ -237,6 +248,28 @@ export function RunTrace({
           </span>
         )}
       </div>
+
+      {finished ? null : (
+        // What the run is doing now and for how long: the trace below is complete but long, and
+        // a run of several minutes looked stuck with only "1 min ago" (first experiments).
+        <section aria-label="Progress" className="grid gap-1.5 rounded-md border bg-card px-3 py-2">
+          <div className="flex flex-wrap items-baseline gap-x-3">
+            <span className="font-medium">{describeActivity(events)}</span>
+            <RunClock
+              status={run.status}
+              createdAt={run.created_at}
+              className="ml-auto text-xs text-muted-foreground tabular-nums"
+            />
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-sm bg-muted">
+            <div className="h-full w-full animate-pulse bg-primary/50" />
+          </div>
+          <span className="text-xs text-muted-foreground">
+            {timeline.length} {timeline.length === 1 ? "step" : "steps"} so far. This page updates as the agent
+            reports.
+          </span>
+        </section>
+      )}
 
       <section className="grid gap-1">
         <h2 className="text-xs font-medium text-muted-foreground">Task</h2>
@@ -291,14 +324,7 @@ export function RunTrace({
         </section>
       ) : null}
 
-      {run.output ? (
-        <section className="grid gap-1">
-          <h2 className="text-xs font-medium text-muted-foreground">Result</h2>
-          <p className="rounded-md border border-success-border bg-card px-3 py-2 break-words whitespace-pre-wrap">
-            {run.output}
-          </p>
-        </section>
-      ) : null}
+      {run.output ? <RunResult output={run.output} runId={run.id} /> : null}
 
       {run.status === "succeeded" && looksLikeSubmission(run.output) ? <CertivityChecks text={run.output} organizationId={run.organization_id ?? null} /> : null}
 

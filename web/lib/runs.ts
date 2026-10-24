@@ -24,12 +24,12 @@ export async function fetchRunList(
   const query = projectId
     ? supabase
         .from("runs")
-        .select("id, created_at, status, model, task, cases!inner(name, project_id, projects(name))")
+        .select("id, created_at, updated_at, status, model, task, cases!inner(name, project_id, projects(name))")
         .eq("organization_id", organizationId)
         .eq("cases.project_id", projectId)
     : supabase
         .from("runs")
-        .select("id, created_at, status, model, task, cases(name, project_id, projects(name))")
+        .select("id, created_at, updated_at, status, model, task, cases(name, project_id, projects(name))")
         .eq("organization_id", organizationId);
   const { data, error } = await query.order("created_at", { ascending: false }).limit(RUN_LIST_LIMIT);
   if (error) throw error;

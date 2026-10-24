@@ -65,7 +65,7 @@ async function Project({ params }: Pick<PageProps<"/projects/[id]">, "params">) 
       ? Promise.resolve({ data: [] as never[] })
       : supabase
           .from("runs")
-          .select("id, created_at, status, model, task, case_id")
+          .select("id, created_at, updated_at, status, model, task, case_id")
           .in("case_id", caseIds)
           .order("created_at", { ascending: false })
           .limit(20),

@@ -550,3 +550,32 @@ test("a case file event says what was read and what was not", async () => {
   assert.equal(summarizeEvent(broken), "x.pdf: Could not be read: PdfReadError");
   assert.equal(parseEvent(row({ format: "pdf" })).kind, "unknown");
 });
+
+test("formatDuration reads at a glance", async () => {
+  const { formatDuration } = await import("./trace.ts");
+  assert.equal(formatDuration(45_000), "45 s");
+  assert.equal(formatDuration(200_000), "3 min 20 s");
+  assert.equal(formatDuration(3_900_000), "1 h 05 min");
+  assert.equal(formatDuration(-1), "");
+});
+
+test("describeActivity names the step in progress, newest first", async () => {
+  const { describeActivity } = await import("./trace.ts");
+  const row = (id: number, kind: string, payload: unknown) => ({ id, run_id: "r", created_at: "2026-10-24T18:00:00Z", kind, payload });
+  assert.equal(describeActivity([]), "Waiting for the agent to pick it up…");
+  assert.equal(describeActivity([row(1, "status", { status: "running" })]), "Started: reading the case…");
+  const call = row(2, "tool_call", { tool_call_id: "c1", tool_name: "write_requirements", args: {} });
+  assert.equal(describeActivity([row(1, "status", { status: "running" }), call]), "Running write_requirements…");
+  const result = row(3, "tool_result", { tool_call_id: "c1", tool_name: "write_requirements", result: 1 });
+  assert.match(describeActivity([call, result]), /finished; the model is deciding/);
+  assert.equal(describeActivity([call, row(4, "text", { text: "\nChecking 40 requirements in 2 batch(es).\nmore" })]), "Checking 40 requirements in 2 batch(es).");
+});
+
+test("describeResult counts requirements and keeps plain text as it is", async () => {
+  const { describeResult } = await import("./trace.ts");
+  const json = describeResult('{"team_id":"t","requirements":[{"a":1},{"a":2}]}');
+  assert.equal(json.json, true);
+  assert.match(json.summary, /^2 requirements, \d+ characters$/);
+  assert.equal(describeResult("Done.\nNo requirements.").json, false);
+  assert.equal(describeResult("Done.\nNo requirements.").summary, "2 lines");
+});

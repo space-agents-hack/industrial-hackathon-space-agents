@@ -88,6 +88,8 @@ export type ApprovalLike = { status: string };
 export type RunSummary = {
   id: string;
   created_at: string;
+  // The last change to the run; for a finished run, when it finished.
+  updated_at?: string;
   status: string;
   model: string | null;
   preview: string;
@@ -506,11 +508,12 @@ export function upsertById<T extends { id: string }>(
 export const RUN_PREVIEW_LENGTH = 120;
 
 export function summarizeRun(
-  run: Pick<RunRow, "id" | "created_at" | "status" | "model" | "task">,
+  run: Pick<RunRow, "id" | "created_at" | "status" | "model" | "task"> & { updated_at?: string },
 ): RunSummary {
   return {
     id: run.id,
     created_at: run.created_at,
+    ...(run.updated_at ? { updated_at: run.updated_at } : {}),
     status: run.status,
     model: run.model,
     preview: truncate(run.task, RUN_PREVIEW_LENGTH),
@@ -621,4 +624,66 @@ export function formatElapsed(startIso: string, atIso: string): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   if (seconds < 3600) return `+${Math.floor(seconds / 60)}m ${pad(seconds % 60)}s`;
   return `+${Math.floor(seconds / 3600)}h ${pad(Math.floor((seconds % 3600) / 60))}m`;
+}
+
+// How long, in words a person reads at a glance: "45 s", "3 min 20 s", "1 h 05 min".
+export function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "";
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds} s`;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ${pad(seconds % 60)} s`;
+  return `${Math.floor(seconds / 3600)} h ${pad(Math.floor((seconds % 3600) / 60))} min`;
+}
+
+// What an unfinished run is doing now, from its newest event that says something (first
+// experiments, 2026-10-24: a run showed only "1 min ago"). A tool call without its result yet is
+// the step in progress; after a result the model is choosing the next step.
+export function describeActivity(rows: readonly RunEventRow[]): string {
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const event = parseEvent(rows[i]);
+    switch (event.kind) {
+      case "tool_call":
+        return `Running ${event.payload.tool_name}…`;
+      case "tool_result":
+        return event.payload.is_error
+          ? `${event.payload.tool_name} failed; the model is deciding what to do next…`
+          : `${event.payload.tool_name} finished; the model is deciding the next step…`;
+      case "text":
+        return truncate(event.payload.text.split("\n").find((line) => line.trim() !== "") ?? "", 160);
+      case "case_file":
+        return `Read ${event.payload.filename}.`;
+      case "approval_requested":
+        return `Waiting for someone to approve ${event.payload.tool_name}.`;
+      case "approval_resolved":
+        return `${event.payload.decision === "approved" ? "Approved" : "Denied"} ${event.payload.tool_name}; continuing…`;
+      case "error":
+        return `Error: ${truncate(event.payload.message, 140)}`;
+      case "status":
+        if (event.payload.status === "running") return "Started: reading the case…";
+        break;
+      case "unknown":
+        break;
+    }
+  }
+  return "Waiting for the agent to pick it up…";
+}
+
+// A run's result as a file a person can download: the JSON pretty-printed when the output is
+// JSON, with how many requirements or changes it holds; otherwise the text as it is.
+export function describeResult(output: string): { text: string; json: boolean; summary: string } {
+  try {
+    const value: unknown = JSON.parse(output);
+    const text = JSON.stringify(value, null, 2);
+    const items = isRecord(value)
+      ? (["requirements", "changes"] as const).flatMap((key) => {
+          const list = value[key];
+          return Array.isArray(list) ? [`${list.length.toLocaleString("en-US")} ${key}`] : [];
+        })
+      : [];
+    return { text, json: true, summary: [...items, `${text.length.toLocaleString("en-US")} characters`].join(", ") };
+  } catch {
+    const lines = output.split("\n").length;
+    return { text: output, json: false, summary: `${lines.toLocaleString("en-US")} ${lines === 1 ? "line" : "lines"}` };
+  }
 }

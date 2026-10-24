@@ -9,6 +9,7 @@ import { hasNoAccess } from "@/lib/access";
 import { fetchCases } from "@/lib/cases";
 import { getCurrentOrg } from "@/lib/current-org";
 import { getCurrentProject } from "@/lib/current-project";
+import { runBlockers } from "@/lib/run-readiness";
 import { fetchRunList } from "@/lib/runs";
 import { createClient } from "@/lib/supabase/server";
 
@@ -37,13 +38,26 @@ async function Runs() {
   if (!current || !project) return <NoProject />;
 
   const supabase = await createClient();
-  const [runs, cases] = await Promise.all([
+  const [runs, cases, scope, library] = await Promise.all([
     fetchRunList(supabase, current.id, project.id).catch((error: unknown) => {
       console.error("Runs: could not load runs", error);
       return null;
     }),
     fetchCases(supabase, current.id),
+    supabase
+      .from("projects")
+      .select("all_regulations, project_regulations(regulation_id)")
+      .eq("id", project.id)
+      .maybeSingle(),
+    supabase.from("regulations").select("id", { count: "exact", head: true }).eq("organization_id", current.id),
   ]);
+  // The regulation side of lib/run-readiness.ts; the form itself requires a file.
+  const blockers = runBlockers({
+    files: 1,
+    library: library.count ?? 0,
+    allRegulations: scope.data?.all_regulations ?? true,
+    chosen: scope.data?.project_regulations.length ?? 0,
+  });
 
   return (
     <>
@@ -55,6 +69,7 @@ async function Runs() {
           projects={[{ id: project.id, name: project.name }]}
           cases={cases.cases.filter((c) => c.project_id === project.id)}
           fixedProject
+          blockers={blockers}
         />
       ) : (
         <p className="rounded-md border bg-card px-3 py-2 text-muted-foreground">

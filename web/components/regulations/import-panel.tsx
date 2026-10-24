@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { FilePickerButton } from "@/components/file-picker-button";
 import { RelativeTime } from "@/components/relative-time";
 import { Button } from "@/components/ui/button";
 import {
@@ -158,6 +159,7 @@ export function ImportPanel({
               {IMPORT_STATUS_LABELS[latest.status]}
             </span>
           </div>
+          <ImportProgress counts={latest.counts} active={active} />
           <p>{describeCounts(latest.counts)}</p>
           {latest.error ? <p className="text-danger">{latest.error}</p> : null}
           {latest.failedFiles.length > 0 ? (
@@ -188,8 +190,8 @@ export function ImportPanel({
               >
                 Cancel import
               </Button>
-              <span className="text-xs text-muted-foreground">
-                Keep this page open: the import continues in slices while it is.
+              <span className="text-xs font-medium text-attention">
+                Keep this page open: the import continues in slices only while it is.
               </span>
             </div>
           ) : null}
@@ -198,13 +200,15 @@ export function ImportPanel({
 
       {active ? null : (
         <div className="grid gap-2">
-          <input
-            type="file"
-            accept="application/json,.json"
-            aria-label="Index file"
-            className="text-sm file:mr-3 file:rounded-md file:border file:bg-background file:px-2 file:py-1"
-            onChange={(event) => void choose(event.target.files?.[0])}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <FilePickerButton
+              label={chosen ? "Choose another index file…" : "Choose index file…"}
+              accept="application/json,.json"
+              disabled={busy}
+              onPick={(list) => void choose(list[0])}
+            />
+            {chosen ? <span className="font-mono text-sm">{chosen.name}</span> : null}
+          </div>
           {fileError ? (
             <p role="alert" className="text-danger">
               {fileError}
@@ -244,5 +248,35 @@ export function ImportPanel({
         </details>
       ) : null}
     </section>
+  );
+}
+
+// Files handled out of files listed, as a bar: stored, already there and failed all count as
+// handled. While the agent is still reading the index there is no total yet, so the bar moves
+// without a number.
+function ImportProgress({ counts, active }: { counts: FileCounts; active: boolean }) {
+  const handled = counts.stored + counts.unchanged + counts.failed;
+  const percent = counts.total === 0 ? 0 : Math.round((handled / counts.total) * 100);
+  return (
+    <div className="grid gap-1">
+      <div
+        role="progressbar"
+        aria-label="Import progress"
+        aria-valuemin={0}
+        aria-valuemax={counts.total || undefined}
+        aria-valuenow={counts.total ? handled : undefined}
+        className="h-2 overflow-hidden rounded-sm bg-muted"
+      >
+        <div
+          className={`h-full bg-primary transition-[width] duration-500 ${counts.total === 0 && active ? "w-1/4 animate-pulse" : ""}`}
+          style={counts.total === 0 ? undefined : { width: `${percent}%` }}
+        />
+      </div>
+      {counts.total > 0 ? (
+        <span className="text-xs text-muted-foreground">
+          {handled} of {counts.total} files ({percent}%)
+        </span>
+      ) : null}
+    </div>
   );
 }

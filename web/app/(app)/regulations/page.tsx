@@ -93,6 +93,9 @@ async function Regulations() {
 
   return (
     <div className="grid gap-6">
+      {/* First, so an import's progress is in view right after uploading. Imports fill the
+          organisation's library, shared by all its projects. */}
+      {permissions.manage ? <Imports org={current.id} /> : null}
       <section className="grid gap-2">
         <h2 className="text-sm font-semibold">Regulations of {project.name}</h2>
         <p className="text-sm text-muted-foreground">
@@ -106,7 +109,7 @@ async function Regulations() {
         {data.length === 0 ? (
           <p className="rounded-md border border-dashed px-3 py-6 text-center text-muted-foreground">
             The library is empty.{" "}
-            {permissions.manage ? "Import an index file below." : "An admin of this organisation fills it from an index file."}
+            {permissions.manage ? "Import an index file above." : "An admin of this organisation fills it from an index file."}
           </p>
         ) : regulations.length === 0 ? (
           <p className="rounded-md border border-dashed px-3 py-6 text-center text-danger">
@@ -152,8 +155,6 @@ async function Regulations() {
           </>
         )}
       </section>
-      {/* Imports fill the organisation's library, shared by all its projects. */}
-      {permissions.manage ? <Imports org={current.id} /> : null}
     </div>
   );
 }

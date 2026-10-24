@@ -1,4 +1,5 @@
 import { advanceRun, describeAgentFailure } from "@/lib/agent";
+import { fetchReadiness, runBlockers } from "@/lib/run-readiness";
 import { createClient, getSessionUser } from "@/lib/supabase/server";
 import { parseNewRun, readJson } from "@/lib/validation";
 
@@ -19,35 +20,9 @@ export async function POST(request: Request) {
     const { organizationId, caseId, task, model } = parsed.value;
     return startOnCase(supabase, organizationId, caseId, task, model);
   }
-
-  // start_run() runs as the user (security invoker): `created_by` defaults to auth.uid(), and RLS
-  // accepts the run only if they are an active admin or member of that organisation, and each
-  // file only if it was uploaded to that organisation's folder. A viewer, a suspended person or a
-  // platform admin who is not a member is refused here, by the database. Run and files are one
-  // transaction, so a refused file leaves no run behind.
-  const { data: runId, error } = await supabase.rpc("start_run", {
-    p_task: parsed.value.task,
-    p_organization_id: parsed.value.organizationId,
-    p_files: parsed.value.files,
-  });
-  if (error || !runId) {
-    if (error?.code === "42501") {
-      return Response.json(
-        {
-          error: parsed.value.files.length
-            ? "The run could not be started: you need the member role here, and every file must have finished uploading."
-            : "You cannot start runs in this organisation. Ask one of its admins for the member role.",
-        },
-        { status: 403 },
-      );
-    }
-    if (error?.code === "22023" || error?.code === "23514" || error?.code === "23505") {
-      return Response.json({ error: `The run was refused: ${error.message}` }, { status: 400 });
-    }
-    console.error("POST /api/runs: start_run failed", error);
-    return Response.json({ error: "The run could not be saved." }, { status: 500 });
-  }
-  return send(runId);
+  // Every run is on a case now (Clemente, 2026-10-24): the app only starts runs on a case, and a
+  // run without one belongs to no project and cannot be scoped to its regulations.
+  return Response.json({ error: "A run needs a case: create one in a project and add its files." }, { status: 400 });
 }
 
 // A run on a case (ADR-0006) is a plain insert as the user: the case's files are already in
@@ -60,8 +35,13 @@ async function startOnCase(
   task: string,
   model: string | null,
 ) {
-  const { data: found } = await supabase.from("cases").select("name").eq("id", caseId).maybeSingle();
-  if (!found) return Response.json({ error: "That case does not exist here." }, { status: 404 });
+  const [{ data: found }, readiness] = await Promise.all([
+    supabase.from("cases").select("name").eq("id", caseId).maybeSingle(),
+    fetchReadiness(supabase, caseId),
+  ]);
+  if (!found || !readiness) return Response.json({ error: "That case does not exist here." }, { status: 404 });
+  const blockers = runBlockers(readiness);
+  if (blockers.length > 0) return Response.json({ error: blockers.join(" ") }, { status: 409 });
   const { data, error } = await supabase
     .from("runs")
     .insert({

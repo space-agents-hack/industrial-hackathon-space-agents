@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { RelativeTime } from "@/components/relative-time";
+import { RunClock } from "@/components/run-clock";
 import { StatusBadge } from "@/components/status-badge";
 import { RUN_LIST_LIMIT, fetchRunList } from "@/lib/runs";
 import { createClient } from "@/lib/supabase/client";
@@ -113,7 +114,7 @@ export function RunList({
           <li key={run.id}>
             <Link
               href={`/runs/${run.id}`}
-              className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 px-3 py-2 outline-none hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:grid-cols-[9.5rem_1fr_auto_5.5rem]"
+              className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 px-3 py-2 outline-none hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:grid-cols-[9.5rem_1fr_auto_auto]"
             >
               <StatusBadge status={run.status} />
               <span className="order-last col-span-2 min-w-0 truncate sm:order-none sm:col-span-1">
@@ -123,10 +124,10 @@ export function RunList({
               <span className="hidden max-w-56 truncate font-mono text-xs text-muted-foreground sm:inline">
                 {run.model ?? ""}
               </span>
-              <RelativeTime
-                iso={run.created_at}
-                className="text-right text-xs whitespace-nowrap text-muted-foreground"
-              />
+              <span className="grid text-right text-xs whitespace-nowrap text-muted-foreground">
+                <RelativeTime iso={run.created_at} />
+                <RunClock status={run.status} createdAt={run.created_at} updatedAt={run.updated_at} />
+              </span>
             </Link>
           </li>
         ))}

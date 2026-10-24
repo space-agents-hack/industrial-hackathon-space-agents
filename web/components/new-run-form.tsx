@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { FilePickerButton } from "@/components/file-picker-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,12 +35,15 @@ export function NewRunForm({
   projects,
   cases,
   fixedProject = false,
+  blockers = [],
 }: {
   organizationId: string;
   projects: ProjectOption[];
   cases: CaseOption[];
   // Inside a project (SYS-36) the run is on that project: no project choice, no new project.
   fixedProject?: boolean;
+  // Why no run can start here whatever the form holds (lib/run-readiness.ts), e.g. no regulation.
+  blockers?: string[];
 }) {
   const router = useRouter();
   const [projectId, setProjectId] = useState(projects[0]?.id ?? NEW);
@@ -68,8 +72,9 @@ export function NewRunForm({
 
   const trimmed = spec.trim();
   const named = (projectId !== NEW || projectName.trim() !== "") && (caseId !== NEW || caseName.trim() !== "");
-  const hasContent = trimmed !== "" || files.length > 0 || shownFiles.length > 0;
-  const canStart = named && hasContent && pending === null;
+  // A run needs at least one file in its case (lib/run-readiness.ts); notes alone are not a case.
+  const hasContent = files.length > 0 || shownFiles.length > 0;
+  const canStart = named && hasContent && blockers.length === 0 && pending === null;
 
   function pickProject(id: string) {
     setProjectId(id);
@@ -253,20 +258,16 @@ export function NewRunForm({
       ) : null}
 
       <div className="grid gap-1.5">
-        <Label htmlFor="case-files">Add files</Label>
-        <input
-          id="case-files"
-          type="file"
-          multiple
-          accept={ACCEPT}
-          className="text-xs"
-          disabled={busy}
-          onChange={(event) => {
-            addFiles(event.target.files);
-            // Cleared so that choosing the same file again, after removing it, adds it back.
-            event.target.value = "";
-          }}
-        />
+        <span className="text-sm font-medium">Files</span>
+        <div>
+          <FilePickerButton
+            label={files.length === 0 ? "Choose files…" : "Choose more files…"}
+            accept={ACCEPT}
+            multiple
+            disabled={busy}
+            onPick={addFiles}
+          />
+        </div>
         <p className="text-xs text-muted-foreground">
           .md .txt .csv .json, .png .jpg .webp, .pdf, .docx, .xlsx, CAD .step .iges .stl. Up to {MAX_FILES}{" "}
           files at a time, 25 MB each. Each file is read once when added. CAD files are read for part
@@ -313,8 +314,16 @@ export function NewRunForm({
         />
       </div>
 
+      {blockers.map((b) => (
+        <p key={b} className="text-sm text-attention">
+          {b}
+        </p>
+      ))}
       <div className="flex items-center gap-2">
         {pending ? <span className="text-xs text-muted-foreground">{pending}</span> : null}
+        {!hasContent && blockers.length === 0 ? (
+          <span className="text-xs text-muted-foreground">Choose at least one file to start.</span>
+        ) : null}
         <Button type="submit" className="ml-auto" disabled={!canStart}>
           {pending ? "Working…" : "Find requirements"}
         </Button>
