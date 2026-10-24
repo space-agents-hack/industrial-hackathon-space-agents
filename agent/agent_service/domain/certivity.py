@@ -232,9 +232,15 @@ def check(text: str, ref: Reference, *, with_score: bool = True) -> dict[str, An
         return result
     expected = ref.expected.get(case_id) if case_id else None
     if expected is None:
+        # case_id is the case's name in the app (Deps.case_name). A case named anything but
+        # Certivity's id ("dev-rear-lamp", or the held-out case's folder name) gets no score here
+        # and is scored against nothing on the platform, so say which names would match.
+        known = ", ".join(repr(k) for k in sorted(ref.expected)) or "none loaded"
         notes.append(
-            f"No expected file for case {case_id!r}, so no local score. "
-            "Certivity scores it on the platform only."
+            f"No expected file for case {case_id!r}, so no local score. That is expected for "
+            "the held-out case, named after its folder under cases/. Otherwise case_id is wrong: "
+            "it is taken from the case's name in the app, and must be Certivity's id for the case "
+            f"(rename the case and run again). Cases with an expected file: {known}."
         )
         return result
     try:

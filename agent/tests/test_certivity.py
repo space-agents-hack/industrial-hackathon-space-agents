@@ -143,7 +143,9 @@ def test_a_case_without_expected_file_is_validated_but_not_scored(
     result = certivity.check(json.dumps(data), ref)
     assert result["valid"] is True
     assert result["score"] is None
-    assert any("no local score" in note for note in result["notes"])
+    note = next(n for n in result["notes"] if "no local score" in n)
+    # A case named in the app as something other than Certivity's id: the note names the fix.
+    assert "'demo-lamp'" in note
 
 
 def test_subgoal_checks_requirement_ids_against_the_old_requirements(
