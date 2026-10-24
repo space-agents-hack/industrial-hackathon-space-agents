@@ -7,9 +7,13 @@ Certivity's confidential data, so it lives in the database (table certivity_refe
 passed in as a `Reference`. They are imported, not reimplemented and not run as subprocesses: the
 platform runs this same `validate.py`, and a function call takes milliseconds.
 
-What this does NOT do: score the requirement level (meaning). That needs Certivity's model and only
-happens on their platform. And there is no score for a case without `expected.json`, which
-includes the held-out case that decides the ranking.
+A sub-goal file is scored by `regdiff.score` against the sub-goal's expected.json: Certivity ships
+that answer but no scorer for it.
+
+What this does NOT do: score the requirement level (meaning), or judge whether a sub-goal change
+states the right thing. That needs Certivity's model and only happens on their platform. And there
+is no score for a case without `expected.json`, which includes the held-out cases that decide the
+ranking.
 """
 
 import importlib.util
@@ -17,7 +21,7 @@ import json
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 from types import ModuleType
@@ -57,16 +61,23 @@ class Reference:
     index: list[dict[str, Any]] | None
     expected: dict[str, dict[str, Any]]  # main-goal case_id -> expected.json
     requirements_old: dict[str, list[dict[str, Any]]]  # sub-goal case_id -> requirements_old.json
+    # sub-goal case_id -> its expected.json. Kept apart from `expected`, which the agent's tools
+    # and the main score read: one name for two file formats is how a sub-goal answer would end
+    # up scored as a requirements list.
+    subgoal_expected: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @classmethod
     def from_rows(
         cls, rows: list[dict[str, Any]], index: list[dict[str, Any]] | None = None
     ) -> "Reference":
         # An "index" row from before ADR-0006 is ignored: the library is the only list.
-        expected = {r["case_id"]: r["content"] for r in rows if r["kind"] == "expected"}
+        # Both answer formats are stored as kind "expected"; what is in them tells them apart.
+        answers = [r for r in rows if r["kind"] == "expected"]
+        expected = {r["case_id"]: r["content"] for r in answers if not _is_subgoal(r["content"])}
+        subgoal = {r["case_id"]: r["content"] for r in answers if _is_subgoal(r["content"])}
         old = {r["case_id"]: r["content"] for r in rows if r["kind"] == "requirements_old"}
         commits = sorted({r["certivity_commit"] for r in rows})
-        return cls(", ".join(commits) or "not loaded", index, expected, old)
+        return cls(", ".join(commits) or "not loaded", index, expected, old, subgoal)
 
     @property
     def answer_keys_loaded(self) -> bool:
@@ -74,6 +85,10 @@ class Reference:
 
 
 EMPTY = Reference("not loaded", None, {}, {})
+
+
+def _is_subgoal(content: Any) -> bool:
+    return isinstance(content, dict) and isinstance(content.get("changes"), list)
 
 
 class _Store(Protocol):
@@ -101,12 +116,15 @@ def read_package(root: Path) -> list[dict[str, Any]]:
         rows.append(_row("expected", data.get("case_id") or path.parent.name, data, commit))
 
     # A sub-goal case is named after its folder: subgoal/dev is "subgoal-dev" (README, section 3).
-    # Its expected.json, when there is one, says so too; requirements_old.json does not.
+    # Its expected.json, when there is one, says so too; requirements_old.json does not. The
+    # held-out sub-goal comes without one.
     for path in sorted(root.glob("subgoal/*/requirements_old.json")):
         case_id = f"subgoal-{path.parent.name}"
         sibling = path.parent / "expected.json"
         if sibling.is_file():
-            case_id = json.loads(sibling.read_text(encoding="utf-8")).get("case_id") or case_id
+            answer = json.loads(sibling.read_text(encoding="utf-8"))
+            case_id = answer.get("case_id") or case_id
+            rows.append(_row("expected", case_id, answer, commit))
         rows.append(_row("requirements_old", case_id, validate.load_requirements_old(path), commit))
     return rows
 
@@ -177,6 +195,7 @@ def check(
         "json_span": None,
         "score": None,
         "breakdown": None,
+        "subgoal_score": None,
         "notes": [],
         "certivity_commit": ref.commit,
     }
@@ -216,7 +235,8 @@ def check(
         problem_count=len(problems),
     )
 
-    if ref.index is None:
+    # A sub-goal file cites no regulation, so the library plays no part in its check.
+    if ref.index is None and kind != validate.SUBGOAL:
         notes.append(
             "This organisation's regulation library is empty, so cited regulations and versions "
             "were not checked. Import index.json on the Regulations page."
@@ -231,12 +251,16 @@ def check(
             f"No requirements_old.json for case {case_id!r}: requirement ids were not checked."
         )
 
-    if not with_score or kind != validate.MAIN:
-        if with_score and kind == validate.SUBGOAL:
-            notes.append(
-                "Certivity ships no local score for the sub-goal; it is scored on the platform."
-            )
+    if not with_score or kind is None:
         return result
+    if kind == validate.SUBGOAL:
+        return _subgoal_score(result, data, ref, case_id, expected)
+    if expected is not None and _is_subgoal(expected):
+        notes.append(
+            "The expected file you chose is a sub-goal answer (a changes list), so this "
+            "main-goal file was scored against the one in the database instead."
+        )
+        expected = None
     supplied = expected is not None
     if expected is None:
         expected = ref.expected.get(case_id) if case_id else None
@@ -270,6 +294,54 @@ def check(
         "Regulation and page level only, as Certivity's score_local.py computes them. The platform "
         "uses full page ranges, so its numbers can differ slightly; the requirement level is "
         "platform-only."
+    )
+    return result
+
+
+def _subgoal_score(
+    result: dict[str, Any],
+    data: dict[str, Any],
+    ref: Reference,
+    case_id: str | None,
+    chosen: dict[str, Any] | None,
+) -> dict[str, Any]:
+    # Imported here: regdiff's command line runs these checks on what it writes.
+    from agent_service.domain import regdiff
+
+    notes: list[str] = result["notes"]
+    # A chosen file is used only if it is a sub-goal answer: a main-goal expected.json chosen for
+    # a changes file would score every flag as extra.
+    if chosen is not None and not _is_subgoal(chosen):
+        notes.append(
+            "The expected file you chose is a main-goal answer (a requirements list), so this "
+            "sub-goal file was not scored against it."
+        )
+        chosen = None
+    expected = chosen if chosen is not None else ref.subgoal_expected.get(case_id or "")
+    if expected is None:
+        known = ", ".join(repr(k) for k in sorted(ref.subgoal_expected)) or "none loaded"
+        notes.append(
+            f"No sub-goal expected file for case {case_id!r}, so no local score. That is expected "
+            "for the held-out sub-goal (subgoal-heldout); the platform scores it. Sub-goal cases "
+            f"with an expected file: {known}."
+        )
+        return result
+    try:
+        result["subgoal_score"] = regdiff.score(data, expected)
+    except Exception as exc:
+        notes.append(
+            f"Could not score this file ({type(exc).__name__}); fix the problems above first."
+        )
+        return result
+    if chosen is not None:
+        notes.append(
+            "Scored against the expected.json you chose "
+            f"(its case_id: {expected.get('case_id')!r}), not the one in the database."
+        )
+    notes.append(
+        "Local approximation: flagged requirement ids, their change type, and added entries "
+        "matched by paragraph and similar text. The platform judges each change by meaning with "
+        "a model, so its numbers can differ."
     )
     return result
 

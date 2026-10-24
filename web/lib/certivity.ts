@@ -27,6 +27,19 @@ export type RegulationRow = {
   expected_pages_found: number;
 };
 
+// A sub-goal file against the sub-goal's expected.json (regdiff.score in the agent): Certivity ships
+// that answer but no scorer, so this is a rules-based approximation of the platform's score.
+export type Counted = { submitted: number; expected: number; matched: number; precision: number; recall: number };
+
+export type SubgoalScore = {
+  flagged: Counted;
+  changeType: { right: number; of: number; accuracy: number };
+  added: Counted;
+  missed: string[];
+  extra: string[];
+  wrongType: string[];
+};
+
 export type CheckResult = {
   kind: "main" | "subgoal" | null;
   caseId: string | null;
@@ -37,6 +50,7 @@ export type CheckResult = {
   jsonSpan: [number, number] | null;
   score: { regulation: Level; page: Level } | null;
   breakdown: RegulationRow[];
+  subgoalScore: SubgoalScore | null;
   notes: string[];
   certivityCommit: string;
 };
@@ -65,6 +79,33 @@ function parseLevel(value: unknown): Level | null {
   const keys = ["precision", "recall", "f1", "n_submitted", "n_expected", "n_matched"] as const;
   if (!keys.every((key) => typeof value[key] === "number")) return null;
   return value as Level;
+}
+
+function parseCounted(value: unknown): Counted | null {
+  if (!isRecord(value)) return null;
+  const keys = ["submitted", "expected", "matched", "precision", "recall"] as const;
+  return keys.every((key) => typeof value[key] === "number") ? (value as Counted) : null;
+}
+
+function strings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+}
+
+function parseSubgoalScore(value: unknown): SubgoalScore | null {
+  if (!isRecord(value)) return null;
+  const flagged = parseCounted(value.flagged);
+  const added = parseCounted(value.added);
+  const type = value.change_type;
+  if (!flagged || !added || !isRecord(type)) return null;
+  if (typeof type.right !== "number" || typeof type.of !== "number" || typeof type.accuracy !== "number") return null;
+  return {
+    flagged,
+    changeType: { right: type.right, of: type.of, accuracy: type.accuracy },
+    added,
+    missed: strings(value.missed),
+    extra: strings(value.extra),
+    wrongType: strings(value.wrong_type),
+  };
 }
 
 // null when the body is not a check result: an older agent, or an error page in between.
@@ -97,9 +138,17 @@ export function parseCheckResult(body: unknown): CheckResult | null {
     breakdown: Array.isArray(body.breakdown)
       ? body.breakdown.map(parseRow).filter((r): r is RegulationRow => r !== null)
       : [],
+    // An older agent sends none; a malformed one is dropped like a malformed main score.
+    subgoalScore: parseSubgoalScore(body.subgoal_score),
     notes: Array.isArray(body.notes) ? body.notes.filter((n): n is string => typeof n === "string") : [],
     certivityCommit: typeof body.certivity_commit === "string" ? body.certivity_commit : "unknown",
   };
+}
+
+// A main-goal expected.json has a requirements list, a sub-goal one a changes list. The agent sets
+// aside a file of the other format than the submission, with a note.
+export function isExpectedFile(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && (Array.isArray(value.requirements) || Array.isArray(value.changes));
 }
 
 // Whether a run's output is worth checking. Loose on purpose: the agent finds the JSON even inside

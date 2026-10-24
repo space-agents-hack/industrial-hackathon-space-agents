@@ -95,3 +95,29 @@ test("f2 weighs recall four times precision", () => {
   assert.equal(f2({ precision: 0.369, recall: 0.849 }).toFixed(3), "0.674");
   assert.equal(f2({ precision: 0, recall: 0 }), 0);
 });
+
+test("a sub-goal score is read with its counts and the ids to look at", () => {
+  const counted = { submitted: 8, expected: 7, matched: 7, precision: 0.875, recall: 1 };
+  const result = parseCheckResult({
+    ...AGENT_ANSWER,
+    kind: "subgoal",
+    score: null,
+    subgoal_score: {
+      flagged: counted,
+      change_type: { right: 6, of: 7, accuracy: 6 / 7 },
+      added: { ...counted, submitted: 16, expected: 17, matched: 16 },
+      missed: [],
+      extra: ["R-001"],
+      wrong_type: ["R-002"],
+    },
+  });
+  assert.equal(result?.subgoalScore?.flagged.precision, 0.875);
+  assert.equal(result?.subgoalScore?.changeType.right, 6);
+  assert.deepEqual(result?.subgoalScore?.extra, ["R-001"]);
+  assert.deepEqual(result?.subgoalScore?.wrongType, ["R-002"]);
+});
+
+test("a malformed sub-goal score is dropped, and an older agent sends none", () => {
+  assert.equal(parseCheckResult({ ...AGENT_ANSWER, subgoal_score: { flagged: {} } })?.subgoalScore, null);
+  assert.equal(parseCheckResult(AGENT_ANSWER)?.subgoalScore, null);
+});

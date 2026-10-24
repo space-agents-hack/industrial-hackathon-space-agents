@@ -583,14 +583,35 @@ def cited_regulation(requirements_old: Sequence[dict[str, Any]]) -> str | None:
 
 
 # ------------------------------------------------------------------------------------------
-# Local score against an expected file (Certivity ships none for the sub-goal)
+# Local score against an expected file
 # ------------------------------------------------------------------------------------------
 
 
+def _ratio(numerator: int, denominator: int) -> float:
+    # As score_local.py: nothing to divide by scores 0, not 1.
+    return 0.0 if denominator == 0 else numerator / denominator
+
+
+def _level(submitted: int, expected: int, matched: int) -> dict[str, Any]:
+    return {
+        "submitted": submitted,
+        "expected": expected,
+        "matched": matched,
+        "precision": _ratio(matched, submitted),
+        "recall": _ratio(matched, expected),
+    }
+
+
 def score(predicted: dict[str, Any], expected: dict[str, Any]) -> dict[str, Any]:
-    """Recall of the flagged old requirements, accuracy of the stated change type, and how many
-    expected `added` entries have a predicted one in the same paragraph with similar text. An
-    approximation of the platform's score, which compares meanings with a model."""
+    """A sub-goal file against Certivity's expected.json for the same case.
+
+    Certivity's measure is "recall of the requirements flagged for change, and the accuracy of the
+    change stated for each one", computed on the platform with a model. Certivity ships no scorer
+    for it, so this is an approximation by rules: flagged ids (recall, precision), change type of
+    the ids flagged in both (accuracy), and `added` entries matched one to one with an expected one
+    in the same paragraph whose text is similar (ratio 0.4 or more, so a reworded sentence still
+    counts and an unrelated one in the same paragraph does not). It does not judge whether a
+    `new_text` or `reason` says the right thing; the platform does."""
     p_ids = {c["requirement_id"]: c["change"] for c in predicted["changes"] if c["requirement_id"]}
     e_ids = {c["requirement_id"]: c["change"] for c in expected["changes"] if c["requirement_id"]}
     hit = set(p_ids) & set(e_ids)
@@ -606,7 +627,9 @@ def score(predicted: dict[str, Any], expected: dict[str, Any]) -> dict[str, Any]
             if i in used or _norm_label((p.get("source") or {}).get("paragraph")) != e_para:
                 continue
             r = SequenceMatcher(
-                None, normalize(e["new_text"]).split(), normalize(p["new_text"]).split()
+                None,
+                normalize(e.get("new_text") or "").split(),
+                normalize(p.get("new_text") or "").split(),
             ).ratio()
             if r > best:
                 best, best_i = r, i
@@ -614,14 +637,16 @@ def score(predicted: dict[str, Any], expected: dict[str, Any]) -> dict[str, Any]
             used.add(best_i)
             matched += 1
     return {
-        "flagged_recall": f"{len(hit)}/{len(e_ids)}",
-        "flagged_precision": f"{len(hit)}/{len(p_ids)}",
-        "change_type_accuracy": f"{len(right)}/{len(hit)}",
+        "flagged": _level(len(p_ids), len(e_ids), len(hit)),
+        "change_type": {
+            "right": len(right),
+            "of": len(hit),
+            "accuracy": _ratio(len(right), len(hit)),
+        },
+        "added": _level(len(p_add), len(e_add), matched),
         "missed": sorted(set(e_ids) - set(p_ids)),
         "extra": sorted(set(p_ids) - set(e_ids)),
         "wrong_type": sorted(hit - right),
-        "added_recall": f"{matched}/{len(e_add)}",
-        "added_precision": f"{matched}/{len(p_add)}",
         "added_unmatched": [
             (p.get("source") or {}).get("paragraph") for i, p in enumerate(p_add) if i not in used
         ],

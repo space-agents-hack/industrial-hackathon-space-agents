@@ -65,8 +65,16 @@ def test_read_package_names_every_file_by_its_case() -> None:
     # Not the index: that is imported into the regulation library in the app (ADR-0006).
     assert {(r["kind"], r["case_id"]) for r in rows} == {
         ("expected", "demo-lamp"),
+        ("expected", "subgoal-demo"),
         ("requirements_old", "subgoal-demo"),
     }
+
+
+def test_main_and_subgoal_answers_are_kept_apart(ref: certivity.Reference) -> None:
+    # Both are kind "expected" in the table; the agent's tools and the main score read only
+    # `expected`, so a changes list must never land there.
+    assert set(ref.expected) == {"demo-lamp"}
+    assert set(ref.subgoal_expected) == {"subgoal-demo"}
 
 
 def test_the_release_gets_the_same_rows_as_json(capsys: pytest.CaptureFixture[str]) -> None:
@@ -201,6 +209,66 @@ def test_the_agent_tool_never_sees_the_score(ref: certivity.Reference) -> None:
     # A model shown the dev score can tune its answer to the one case that has an answer key.
     checked = certivity.check(json.dumps(_expected()), ref, with_score=False)
     assert (checked["score"], checked["breakdown"]) == (None, None)
+
+
+def test_the_agent_tool_never_sees_the_subgoal_score(ref: certivity.Reference) -> None:
+    checked = certivity.check(json.dumps(_subgoal_expected()), ref, with_score=False)
+    assert checked["valid"] is True
+    assert checked["subgoal_score"] is None
+
+
+def _subgoal_expected() -> dict[str, Any]:
+    return json.loads((PACKAGE / "subgoal" / "demo" / "expected.json").read_text())
+
+
+def test_a_subgoal_file_is_scored_against_its_expected_file(ref: certivity.Reference) -> None:
+    perfect = certivity.check(json.dumps(_subgoal_expected()), ref)["subgoal_score"]
+    assert perfect["flagged"] == {
+        "submitted": 1,
+        "expected": 1,
+        "matched": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+    }
+    assert perfect["change_type"] == {"right": 1, "of": 1, "accuracy": 1.0}
+
+    data = _subgoal_expected()
+    data["changes"][0]["change"] = "removed"
+    data["changes"].append(
+        {"requirement_id": "R-001", "change": "removed", "reason": "Paragraph 5.1 was deleted."}
+    )
+    result = certivity.check(json.dumps(data), ref)
+    score = result["subgoal_score"]
+    assert (score["flagged"]["precision"], score["flagged"]["recall"]) == (0.5, 1.0)
+    assert (score["extra"], score["wrong_type"]) == (["R-001"], ["R-002"])
+    assert score["change_type"]["accuracy"] == 0.0
+    assert result["score"] is None
+    assert not any("ships no local score" in n for n in result["notes"])
+
+
+def test_a_subgoal_case_without_expected_file_is_validated_but_not_scored(
+    ref: certivity.Reference,
+) -> None:
+    data = {**_subgoal_expected(), "case_id": "subgoal-heldout"}
+    result = certivity.check(json.dumps(data), ref)
+    assert result["subgoal_score"] is None
+    assert any("'subgoal-demo'" in n for n in result["notes"])
+
+
+def test_a_chosen_expected_file_is_used_only_for_its_own_format(
+    ref: certivity.Reference,
+) -> None:
+    # A sub-goal answer chosen for a sub-goal file: used whatever the case_id, as for the main goal.
+    submission = {**_subgoal_expected(), "case_id": "subgoal-heldout"}
+    scored = certivity.check(json.dumps(submission), ref, expected=_subgoal_expected())
+    assert scored["subgoal_score"]["flagged"]["recall"] == 1.0
+    # The wrong format is set aside with a note instead of scoring nonsense.
+    mixed = certivity.check(json.dumps(submission), ref, expected=_expected())
+    assert mixed["subgoal_score"] is None
+    assert any("main-goal answer" in n for n in mixed["notes"])
+    main = certivity.check(json.dumps(_expected()), ref, expected=_subgoal_expected())
+    assert main["score"]["page_level"]["recall"] == 1.0
+    assert any("sub-goal answer" in n for n in main["notes"])
 
 
 @pytest.mark.anyio

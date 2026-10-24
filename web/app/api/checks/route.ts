@@ -1,6 +1,6 @@
 import { agentFailure, fail } from "@/lib/admin-route";
 import { runCertivityChecks } from "@/lib/agent-admin";
-import { SUBMISSION_MAX_BYTES } from "@/lib/certivity";
+import { SUBMISSION_MAX_BYTES, isExpectedFile } from "@/lib/certivity";
 import { permissionsIn } from "@/lib/access";
 import { fetchAccess } from "@/lib/current-org";
 import { createClient, getSessionUser } from "@/lib/supabase/server";
@@ -25,12 +25,8 @@ export async function POST(request: Request) {
     expected?: unknown;
   };
   // An expected.json the user chose, scored against for this check only and never stored.
-  if (
-    expected !== undefined &&
-    expected !== null &&
-    !(typeof expected === "object" && !Array.isArray(expected) && Array.isArray((expected as { requirements?: unknown }).requirements))
-  ) {
-    return fail("expected must be an expected.json: an object with a requirements list.", 400);
+  if (expected !== undefined && expected !== null && !isExpectedFile(expected)) {
+    return fail("expected must be an expected.json: an object with a requirements or changes list.", 400);
   }
   if (org !== undefined && org !== null && !(typeof org === "string" && isUuid(org))) {
     return fail("organization_id must be an organisation id.", 400);

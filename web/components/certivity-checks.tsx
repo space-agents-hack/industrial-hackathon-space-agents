@@ -7,6 +7,7 @@ import {
   type CheckResult,
   type Level,
   type RegulationRow,
+  type SubgoalScore,
   downloadName,
   f2,
   formatRatio,
@@ -138,6 +139,8 @@ function Result({ text, result }: { text: string; result: CheckResult }) {
 
       {result.breakdown.length > 0 ? <Breakdown rows={result.breakdown} /> : null}
 
+      {result.subgoalScore ? <SubgoalTable score={result.subgoalScore} /> : null}
+
       {result.notes.length > 0 ? (
         <ul className="grid gap-0.5 text-xs text-muted-foreground">
           {result.notes.map((note) => (
@@ -146,9 +149,72 @@ function Result({ text, result }: { text: string; result: CheckResult }) {
         </ul>
       ) : null}
       <p className="text-xs text-muted-foreground">
-        Certivity&apos;s validate.py and score_local.py, package commit {result.certivityCommit}.
+        Certivity&apos;s validate.py and {result.kind === "subgoal" ? "our sub-goal scorer" : "score_local.py"}, package
+        commit {result.certivityCommit}.
       </p>
     </>
+  );
+}
+
+// Certivity judges the sub-goal on "recall of the requirements flagged for change, and the accuracy
+// of the change stated for each one". The ids listed under the table are the ones to open: a
+// missed flag costs recall, an extra one or a wrong type costs accuracy if the platform counts it.
+function SubgoalTable({ score }: { score: SubgoalScore }) {
+  const ids: [string, string[]][] = [
+    ["Missed", score.missed],
+    ["Not expected", score.extra],
+    ["Wrong change type", score.wrongType],
+  ];
+  return (
+    <div className="grid gap-1">
+      <table className="w-fit text-xs tabular-nums">
+        <thead className="text-muted-foreground">
+          <tr>
+            <th className="pr-4 text-left font-normal">Sub-goal</th>
+            <th className="pr-4 text-right font-normal">Precision</th>
+            <th className="pr-4 text-right font-normal">Recall</th>
+            <th className="text-right font-normal">Given / expected / matched</th>
+          </tr>
+        </thead>
+        <tbody>
+          <CountedRow label="Requirements flagged" level={score.flagged} />
+          <CountedRow label="Added" level={score.added} />
+          <tr>
+            <td className="pr-4">Change type right</td>
+            <td className="pr-4 text-right" colSpan={2}>
+              {formatRatio(score.changeType.accuracy)}
+            </td>
+            <td className="text-right">
+              {score.changeType.right} of {score.changeType.of} flagged in both
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      {ids.some(([, list]) => list.length > 0) ? (
+        <ul className="grid gap-0.5 text-xs">
+          {ids
+            .filter(([, list]) => list.length > 0)
+            .map(([label, list]) => (
+              <li key={label}>
+                <span className="text-danger">{label}:</span> <span className="font-mono">{list.join(", ")}</span>
+              </li>
+            ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function CountedRow({ label, level }: { label: string; level: SubgoalScore["flagged"] }) {
+  return (
+    <tr>
+      <td className="pr-4">{label}</td>
+      <td className="pr-4 text-right">{formatRatio(level.precision)}</td>
+      <td className="pr-4 text-right">{formatRatio(level.recall)}</td>
+      <td className="text-right">
+        {level.submitted} / {level.expected} / {level.matched}
+      </td>
+    </tr>
   );
 }
 

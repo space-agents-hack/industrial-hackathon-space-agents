@@ -6,7 +6,7 @@ import { CertivityChecks } from "@/components/certivity-checks";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { SUBMISSION_MAX_BYTES } from "@/lib/certivity";
+import { SUBMISSION_MAX_BYTES, isExpectedFile } from "@/lib/certivity";
 
 // Paste or load a submission and press Check. The text goes to the agent and back; nothing is
 // stored, so it is also safe for a file that is not finished.
@@ -39,8 +39,8 @@ export function CheckFileForm({ organizationId }: { organizationId: string | nul
     try {
       const raw = await file.text();
       const data: unknown = JSON.parse(raw);
-      if (typeof data !== "object" || data === null || !Array.isArray((data as { requirements?: unknown }).requirements)) {
-        setError(`${file.name} is not an expected.json: it has no requirements list.`);
+      if (!isExpectedFile(data)) {
+        setError(`${file.name} is not an expected.json: it has no requirements or changes list.`);
         return;
       }
       setExpected({ name: file.name, text: raw });
@@ -66,8 +66,9 @@ export function CheckFileForm({ organizationId }: { organizationId: string | nul
           <h2 className="text-sm font-semibold">Check a submission file</h2>
           <p className="text-xs text-muted-foreground">
             Runs Certivity&apos;s validate.py on a main-goal or sub-goal file, the same check the
-            platform runs on upload. For the worked example (dev-rear-lamp) it also runs
-            score_local.py. Nothing is uploaded to Certivity and nothing is stored.
+            platform runs on upload. For the worked examples it also scores the file: dev-rear-lamp with
+            score_local.py, subgoal-dev with our sub-goal scorer. Nothing is uploaded to Certivity and
+            nothing is stored.
           </p>
         </div>
         <div className="grid gap-1.5">
@@ -122,7 +123,8 @@ export function CheckFileForm({ organizationId }: { organizationId: string | nul
           </div>
           <p className="text-xs text-muted-foreground">
             Your own expected.json: the score is computed against it, whatever case_id the submission
-            names. Without one, dev-rear-lamp is scored against Certivity&apos;s. Not stored.
+            names. Without one, dev-rear-lamp and subgoal-dev are scored against Certivity&apos;s. Not
+            stored.
           </p>
         </div>
         <div className="flex items-center">
