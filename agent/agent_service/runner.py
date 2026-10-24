@@ -50,7 +50,7 @@ from pydantic_ai.usage import RunUsage
 from pydantic_core import to_jsonable_python
 
 from agent_service import domain
-from agent_service.domain import case_ingest, ingest
+from agent_service.domain import case_ingest, ingest, subgoal, subgoal_review
 from agent_service.metering import Credential, Meter, metered
 from agent_service.providers import build_model, credentials, scrub
 from agent_service.records import Approval, ApprovalRequest, Run, RunFile, RunStatus
@@ -197,6 +197,16 @@ async def _execute(store: RunStore, settings: Settings, plan: Plan) -> RunStatus
     try:
         await store.add_event(run_id, "status", {"status": "running"})
         name = plan.config.model
+        case_id = plan.run.case_id
+        if case_id is not None and await store.case_kind(case_id) == subgoal.KIND:
+            # The reviewer is a check (SYS-29's kind of work): the organisation's check model if
+            # it chose one in Admin, else the run's own; billed as checking either way.
+            name = await store.organization_model(plan.run.organization_id, "check") or name
+            key, endpoint = await credentials(store, plan.run.organization_id, name)
+            credential = Credential.for_model(name, key, endpoint.root() if endpoint else None)
+            model = metered(build_model(name, key, endpoint), meter, "check", name, credential)
+            async with asyncio.timeout(settings.run_timeout_s):
+                return await _run_subgoal(store, settings, plan, model)
         key, endpoint = await credentials(store, plan.run.organization_id, name)
         credential = Credential.for_model(name, key, endpoint.root() if endpoint else None)
         model = metered(build_model(name, key, endpoint), meter, "writer", name, credential)
@@ -216,6 +226,39 @@ async def _execute(store: RunStore, settings: Settings, plan: Plan) -> RunStatus
         return await _fail(store, run_id, scrub(f"{type(exc).__name__}: {exc}", key)[:2000])
     finally:
         await meter.flush(store)
+
+
+async def _run_subgoal(
+    store: RunStore, settings: Settings, plan: Plan, model: Model | str
+) -> RunStatus:
+    """A sub-goal case's run (domain/subgoal.py): a fixed sequence of steps, not a model loop,
+    so it never pauses and has no conversation to save."""
+    run = plan.run
+    team_id, case_name = await domain.submission_ids(store, run)
+    loop = asyncio.get_running_loop()
+    limits = subgoal_review.Limits(
+        batch_size=settings.subgoal_review_batch,
+        concurrency=settings.writer_concurrency,
+        timeout_s=settings.subagent_timeout_s,
+        # No new reviewer batch past this, so the file is written before RUN_TIMEOUT_S: the rules'
+        # answer for what was not reviewed is better than no file.
+        deadline=loop.time() + settings.run_timeout_s - 30,
+    )
+    try:
+        outcome = await subgoal.execute(
+            store,
+            run,
+            team_id=team_id,
+            case_name=case_name,
+            reviewer=model if settings.subgoal_review else None,
+            reviewer_note=None if settings.subgoal_review else "review is off (SUBGOAL_REVIEW)",
+            review=limits,
+        )
+    except subgoal.SubgoalRefused as exc:
+        return await _fail(store, run.id, str(exc))
+    return await _finish(
+        store, run.id, "succeeded", output=outcome.output, usage=_usage(outcome.usage)
+    )
 
 
 async def _run_agent(

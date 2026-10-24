@@ -36,6 +36,7 @@ from agent_service.domain import (
     changes,
     regulation_search,
     regulations,
+    subgoal,
 )
 from agent_service.domain.library_store import SupabaseLibraryStore
 from agent_service.domain.project_store import SupabaseProjectStore
@@ -320,6 +321,9 @@ async def ingest_case(
         raise HTTPException(404, "No files in this case.")
 
     async def work() -> dict[str, int]:
+        if await store.case_kind(case_id) == subgoal.KIND:
+            # Certivity's sub-goal folder: nothing to transcribe, only to recognise (#42).
+            return await subgoal.ingest_case(store, case_id)
         org = files[0].organization_id
         # The organisation's choice first (Admin, SYS-33), then the deployment's.
         chosen = await store.organization_model(org, "transcription")

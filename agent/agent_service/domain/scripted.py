@@ -8,7 +8,8 @@ from them. What it writes is mechanical ("The product shall meet 5.4.2: ..."): i
 plumbing, never the quality of requirements. That is what `make eval` with a real model is for.
 
 Which agent is asking is told by the output tool it was given: `submit` (orchestrator),
-`record_requirements` (writer), `report_findings` (check). The assistant
+`record_requirements` (writer), `report_findings` (check), `report_verdicts` (the sub-goal's
+reviewer, domain/subgoal_review.py). The assistant
 (domain/assistant.py) has no output tool and answers in text; it is told by its `read_paragraph`.
 """
 
@@ -195,6 +196,31 @@ def _check(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
     return "", [("report_findings", {"response": findings})]
 
 
+def _review(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
+    """Agrees with the text comparison: quotes the first old sentence shown and, for a flag, the
+    first new one. So a scripted sub-goal run gives exactly the rules' file, which is what the
+    plumbing test needs; judging meaning is what a real model is for."""
+    verdicts: list[dict[str, Any]] = []
+    for block in _prompt_text(messages).split("\n### ")[1:]:
+        rid = block.split("\n", 1)[0].strip()
+        old_part, _, rest = block.partition("New version:")
+        new_part, _, finding = rest.partition("Text comparison:")
+        old_lines = [ln[2:] for ln in old_part.splitlines() if ln.startswith("- ")]
+        new_lines = [ln[2:] for ln in new_part.splitlines() if ln.startswith("- ")]
+        said = finding.strip().split(":", 1)[0]
+        verdict = said if said in ("modified", "removed") else "unchanged"
+        verdicts.append(
+            {
+                "requirement_id": rid,
+                "verdict": verdict,
+                "old_quote": old_lines[0] if old_lines else "",
+                "new_quote": new_lines[0] if verdict == "modified" and new_lines else None,
+                "reason": f"As the text comparison found: {verdict}.",
+            }
+        )
+    return "", [("report_verdicts", {"response": verdicts})]
+
+
 # A requirement line as assistant.requirement_lines writes it.
 _REQUIREMENT = re.compile(r"^- (R-\d+) \[\w+\] (.+) (\S+), paragraph (\S+), page (\d+): ", re.M)
 
@@ -240,6 +266,8 @@ def _next_step(messages: list[ModelMessage], info: AgentInfo) -> tuple[str, list
         return _write(messages)
     if "report_findings" in outputs:
         return _check(messages)
+    if "report_verdicts" in outputs:
+        return _review(messages)
     if "report_screen" in outputs:
         return _screen(messages)
     return _orchestrate(messages)

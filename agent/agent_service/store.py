@@ -125,6 +125,15 @@ class RunStore(Protocol):
 
     async def case_name(self, case_id: UUID) -> str | None: ...
 
+    async def case_kind(self, case_id: UUID) -> str | None:
+        """'main' or 'subgoal' (cases.kind, #42), or None if there is no such case."""
+        ...
+
+    async def store_case_file(self, row: dict[str, Any]) -> None:
+        """A file the agent itself adds to a case, already read: a sub-goal run's PDF fetched
+        from the case's files.json, kept so the case still runs after the link expires."""
+        ...
+
     async def organization_name(self, org: UUID) -> str | None: ...
 
     async def library_versions(self, org: UUID) -> list[LibraryVersion]:
@@ -460,6 +469,18 @@ class SupabaseRunStore:
         res = await self._db.table("cases").select("name").eq("id", str(case_id)).limit(1).execute()
         rows = cast(list[dict[str, Any]], res.data)
         return rows[0]["name"] if rows else None
+
+    async def case_kind(self, case_id: UUID) -> str | None:
+        res = await self._db.table("cases").select("kind").eq("id", str(case_id)).limit(1).execute()
+        rows = cast(list[dict[str, Any]], res.data)
+        return rows[0]["kind"] if rows else None
+
+    async def store_case_file(self, row: dict[str, Any]) -> None:
+        await (
+            self._db.table("case_files")
+            .insert({**row, "status": "parsed", "parsed_at": datetime.now(UTC).isoformat()})
+            .execute()
+        )
 
     async def organization_name(self, org: UUID) -> str | None:
         res = (

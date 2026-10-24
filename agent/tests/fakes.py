@@ -66,6 +66,7 @@ class InMemoryRunStore:
         self.cases: dict[UUID, list[CaseFile]] = {}
         self.blocks: dict[UUID, list[CaseFileBlock]] = {}
         self.case_names: dict[UUID, str] = {}
+        self.case_kinds: dict[UUID, str] = {}
         self.organization_names: dict[UUID, str] = {}
         # Per case, the regulations its project chose; a case not here reads all of them.
         self.case_choice: dict[UUID, set[str]] = {}
@@ -322,6 +323,16 @@ class InMemoryRunStore:
 
     async def case_name(self, case_id: UUID) -> str | None:
         return self.case_names.get(case_id)
+
+    async def case_kind(self, case_id: UUID) -> str | None:
+        if case_id in self.case_kinds:
+            return self.case_kinds[case_id]
+        return "main" if case_id in self.cases or case_id in self.case_names else None
+
+    async def store_case_file(self, row: dict[str, Any]) -> None:
+        self.cases.setdefault(UUID(str(row["case_id"])), []).append(
+            CaseFile.model_validate({**row, "id": uuid4(), "status": "parsed"})
+        )
 
     async def organization_name(self, org: UUID) -> str | None:
         return self.organization_names.get(org)

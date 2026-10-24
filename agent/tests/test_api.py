@@ -529,6 +529,22 @@ def test_ingest_parses_a_case_and_streams_the_counts(
     assert store.closed
 
 
+def test_ingest_of_a_subgoal_case_recognises_the_folder_and_calls_no_model(
+    client: TestClient, store: InMemoryRunStore
+) -> None:
+    case_id = uuid4()
+    store.case_kinds[case_id] = "subgoal"
+    store.add_case_file(case_id, "requirements_old.json", "json", b'[{"id": "R-1", "text": "x"}]')
+    store.add_case_file(case_id, "expected.json", "json", b'{"changes": []}')
+
+    response = client.post(f"/cases/{case_id}/ingest", headers=AUTH)
+
+    lines = [json.loads(line) for line in response.text.splitlines()]
+    assert lines[-1] == {"event": "done", "parsed": "1", "failed": "1"}
+    assert store.blocks == {}
+    assert store.usage_rows == []
+
+
 def test_ingest_uses_the_organisations_transcription_model(
     client: TestClient, store: InMemoryRunStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:

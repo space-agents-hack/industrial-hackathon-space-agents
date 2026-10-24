@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     # budget so a single stall leaves time to check and submit; above what a window takes when the
     # provider is healthy (an estimate: per-window times are not measured yet, #14).
     subagent_timeout_s: float = 240
+    # Sub-goal runs (domain/subgoal.py, #42): whether reviewer agents re-read the requirements
+    # whose cited paragraph changed, and how many requirements one reviewer call reads. 8 keeps
+    # a call to a few thousand tokens of paragraph text, read in well under a minute; a rewritten
+    # regulation with 300 such requirements is then about 38 calls, 6 at a time. Off means the
+    # rules diff alone, at no model cost. An estimate, not measured on a real model yet.
+    subgoal_review: bool = True
+    subgoal_review_batch: int = 8
 
     # Case ingestion (domain/case_ingest.py): the model that reads what the parsers cannot (a
     # scanned page, a drawing, a file a parser fails on). Small and cheap on purpose: it

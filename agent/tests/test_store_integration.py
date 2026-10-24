@@ -553,6 +553,41 @@ async def test_a_case_files_parse_status_and_blocks_through_the_real_schema(
     assert run is not None and run.case_id == UUID(case)
 
 
+async def test_a_subgoal_case_reads_its_kind_and_keeps_a_fetched_pdf(
+    db: AsyncClient, store: SupabaseRunStore, org: str
+) -> None:
+    # The two calls a sub-goal run adds (#42): the case's kind, and a PDF the run fetched from
+    # files.json stored as an already-read case file.
+    project = rows(
+        await db.table("projects").insert({"organization_id": org, "name": "Changes"}).execute()
+    )[0]["id"]
+    ids: list[str] = []
+    for name, kind in [("a product", {}), ("subgoal-dev", {"kind": "subgoal"})]:
+        row = {"project_id": project, "organization_id": org, "name": name, **kind}
+        ids.append(rows(await db.table("cases").insert(row).execute())[0]["id"])
+    main, sub = ids
+    assert await store.case_kind(UUID(main)) == "main"
+    assert await store.case_kind(UUID(sub)) == "subgoal"
+    assert await store.case_kind(UUID(int=0)) is None
+
+    await store.store_case_file(
+        {
+            "case_id": sub,
+            "organization_id": org,
+            "position": 2,
+            "storage_path": f"{org}/{sub}/3-old.pdf",
+            "filename": "old.pdf",
+            "format": "pdf",
+            "media_type": "application/pdf",
+            "bytes": 7,
+            "sha256": "a" * 64,
+            "notes": ["Fetched by the run from files.json; checksum matches."],
+        }
+    )
+    [kept] = await store.case_files(UUID(sub))
+    assert (kept.filename, kept.status, kept.position) == ("old.pdf", "parsed", 2)
+
+
 async def test_regulation_index_is_read_from_the_organisations_library(
     db: AsyncClient, store: SupabaseRunStore, org: str
 ) -> None:
