@@ -15,7 +15,7 @@ db = `supabase/` · ops = deploy, uploads, people.
 | **Input** | | | | | | |
 | SYS-1 | accept a case as several files: .md .txt .pdf .png .jpg .docx, CAD .step/.stp .iges/.igs .stl | N-3 | web, ingest, db | T | 1 | #8 |
 | SYS-2 | pass every accepted file to the model as text or image, and list in the trace what was read, skipped or truncated per file | N-1, N-3, N-9 | ingest | T | 1 | #8 |
-| SYS-3 | hand the regulation step the case content tagged by file and page, plus optional free-form notes from a cheap model | N-1, N-2, N-4 | ingest, regs | T, S | 2 | — |
+| SYS-3 | hand the regulation step the case content tagged by file and page, plus optional free-form notes from a cheap model | N-1, N-2, N-4 | ingest, regs | T, S | 2 | #4, #8 |
 | SYS-23 | ingest a regulations `index.json` automatically: download, verify checksums, store by version, page and paragraph, with embeddings for retrieval | N-13, N-1, N-2 | regs, db | T, I | 3 | #3 |
 | SYS-24 | store every case (files, extracted content, notes, outputs) in the database and Storage under the user's organisation, readable only by that organisation's members; nothing case-specific in the repository | N-3, N-9 | db, ingest, web | T | 1, 2 | #8 |
 | **Output** | | | | | | |
@@ -27,16 +27,16 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-9 | (should) give a test case per requirement | N-5 | regs | I | — | #4 |
 | SYS-25 | write requirements from a case's content and the paragraphs of the regulations linked to it, each requirement stored with a link to the catalogue paragraph it comes from | N-1, N-2, N-5 | regs, db | T, S | 2, 3, 4 | #4 |
 | **Checks** | | | | | | |
-| SYS-10 | run `validate.py` (unchanged) automatically on each run's output JSON and show every problem with its JSON path | N-7 | checks, web | T | 5 | — |
-| SYS-11 | for `dev-rear-lamp` only, score the output JSON against its `expected.json` with `score_local.py` and show regulation and page scores | N-1, N-12 | checks, web | D | 5 | — |
+| SYS-10 | run `validate.py` (unchanged) automatically on each run's output JSON and show every problem with its JSON path | N-7 | checks, web | T | 5 | #15 (built) |
+| SYS-11 | for `dev-rear-lamp` only, score the output JSON against its `expected.json` with `score_local.py` and show regulation and page scores | N-1, N-12 | checks, web | D | 5 | #15 (built) |
 | **Review and deployability** | | | | | | |
 | SYS-12 | link each requirement to its source page in the web | N-2 | web | D | — | #6 |
 | SYS-13 | require one person's approval ("approve all") before export or submission | N-9 | regs, web | T | — | #6 |
 | SYS-14 | go from upload to a validated JSON with no manual step | N-8 | all | D | 1–5 | #4 |
 | SYS-15 | finish a run within `RUN_TIMEOUT_S` = 770 s (Vercel Pro cap 800 s) | N-8 | regs, ingest, ops | T | 3 | #14 |
 | SYS-16 | never commit case files or Certivity data (it lives in table `certivity_reference`); purge both after the event, Storage included | N-9 | db, ops | I, T | 1, 5 | #16 |
-| SYS-17 | record every model message, tool call, check and approval in `run_events` | N-9, N-12 | regs, db | T | — | — |
-| SYS-18 | (may) export to Polarion or Jama (ReqIF or CSV) | N-10 | web | D | — | — |
+| SYS-17 | record every model message, tool call, check and approval in `run_events` | N-9, N-12 | regs, db | T | — | #6 |
+| SYS-18 | (may) export to Polarion or Jama (ReqIF or CSV) | N-10 | web | D | — | #6 |
 | **Sub-goal** | | | | | | |
 | SYS-19 | output a sub-goal JSON that `validate.py --requirements-old` accepts: modified, removed or added, with the reason | N-6, N-7 | regs, checks | T, S | 5 | #5 |
 | **Event operations** | | | | | | |
