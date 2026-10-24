@@ -30,14 +30,15 @@ from supabase_auth.errors import AuthApiError
 
 from agent_service import metering, providers, runner
 from agent_service.domain import (
+    assistant,
     case_ingest,
     certivity,
     changes,
     regulation_search,
     regulations,
-    run_chat,
 )
 from agent_service.domain.library_store import SupabaseLibraryStore
+from agent_service.domain.project_store import SupabaseProjectStore
 from agent_service.domain.regulation_search import SearchStore
 from agent_service.domain.regulations import LibraryStore
 from agent_service.domain.search_store import SupabaseSearchStore
@@ -178,28 +179,59 @@ async def advance(
     return StreamingResponse(body(), media_type="application/x-ndjson")
 
 
+async def get_project_store(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> assistant.ProjectStore:
+    if not settings.supabase_url or not settings.supabase_secret_key:
+        raise HTTPException(503, "SUPABASE_URL and SUPABASE_SECRET_KEY are not configured.")
+    return await SupabaseProjectStore.connect(settings.supabase_url, settings.supabase_secret_key)
+
+
 class ChatRequest(BaseModel):
-    # The whole conversation as the browser holds it, the question last (domain/run_chat.py).
-    messages: list[run_chat.Turn] = Field(min_length=1, max_length=200)
+    project_id: UUID
+    page: assistant.Page = Field(default_factory=assistant.Page)
+    # The whole conversation as the browser holds it, the question last (domain/assistant.py).
+    messages: list[assistant.Turn] = Field(min_length=1, max_length=200)
 
 
-# A question about a run's results (#28, SYS-39). Not streamed: one answer takes seconds, not
-# minutes, and nothing is written. The web has checked that the person acts in the run's
-# organisation; this reads that run only.
-@app.post("/runs/{run_id}/chat", dependencies=[Depends(require_secret)])
+# A question to the assistant of a project (SYS-39, #31). Not streamed: one answer takes seconds,
+# not minutes, and nothing is written. The web has checked that the person can read the project's
+# organisation; this reads that project only.
+@app.post("/chat", dependencies=[Depends(require_secret)])
 async def chat(
-    run_id: UUID,
     body: ChatRequest,
     settings: Annotated[Settings, Depends(get_settings)],
     store: Annotated[RunStore, Depends(get_store)],
+    projects: Annotated[assistant.ProjectStore, Depends(get_project_store)],
 ) -> dict[str, Any]:
     try:
-        result = await run_chat.answer(store, settings, run_id, body.messages)
-    except run_chat.ChatRefused as exc:
+        result = await assistant.answer(
+            store, projects, settings, body.project_id, body.page, body.messages
+        )
+    except assistant.ChatRefused as exc:
         raise HTTPException(exc.status, str(exc)) from None
     finally:
         await store.aclose()
+        await projects.aclose()
     return {"answer": result.text, "model": result.model, "usage": result.usage}
+
+
+# The model that will answer, for the panel to name before the first question.
+@app.get("/chat/model", dependencies=[Depends(require_secret)])
+async def chat_model(
+    project_id: UUID,
+    settings: Annotated[Settings, Depends(get_settings)],
+    store: Annotated[RunStore, Depends(get_store)],
+    projects: Annotated[assistant.ProjectStore, Depends(get_project_store)],
+) -> dict[str, str]:
+    try:
+        project = await projects.project(project_id)
+        if project is None:
+            raise HTTPException(404, "No such project.")
+        return {"model": await assistant.model_name(store, settings, project.organization_id)}
+    finally:
+        await store.aclose()
+        await projects.aclose()
 
 
 # One slice of a regulation import (domain/regulations.py), streamed like a run: accepted at once,

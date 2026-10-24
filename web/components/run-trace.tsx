@@ -6,7 +6,6 @@ import { ApprovalCard } from "@/components/approval-card";
 import { CertivityChecks } from "@/components/certivity-checks";
 import { RelativeTime } from "@/components/relative-time";
 import { RunClock } from "@/components/run-clock";
-import { RunChat } from "@/components/run-chat";
 import { RunResult } from "@/components/run-result";
 import { StatusBadge } from "@/components/status-badge";
 import { Timeline } from "@/components/timeline";
@@ -345,7 +344,6 @@ export function RunTrace({
         )}
       </section>
 
-      {canAct ? <RunChat runId={run.id} finished={finished} /> : null}
     </div>
   );
 }

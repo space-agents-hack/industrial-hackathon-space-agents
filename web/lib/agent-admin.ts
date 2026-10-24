@@ -2,7 +2,7 @@ import "server-only";
 
 import { type EndpointInput, type ModelOption, type ProviderId, parseModelList } from "@/lib/admin";
 import { parseCheckResult } from "@/lib/certivity";
-import { type ChatAnswer, type ChatTurn, parseChatAnswer } from "@/lib/run-chat";
+import { type ChatAnswer, type ChatRequest, parseChatAnswer } from "@/lib/assistant";
 import {
   type ChangesRequest,
   type ChangesResult,
@@ -215,18 +215,27 @@ export async function runCertivityChecks(
   return body;
 }
 
-// A question about a run's results (agent_service/domain/run_chat.py). The caller has checked that
-// the person acts in the run's organisation: the agent reads the run with the secret key. The
-// agent gives up at 100 s and says so; this waits a little longer so its sentence arrives.
-export async function askAboutRun(runId: string, messages: ChatTurn[]): Promise<ChatAnswer> {
-  const body = await call(`/runs/${encodeURIComponent(runId)}/chat`, {
+// A question to a project's assistant (agent_service/domain/assistant.py). The caller has checked
+// that the person can read the project's organisation: the agent reads it with the secret key.
+// The agent gives up at 100 s and says so; this waits a little longer so its sentence arrives.
+export async function askAssistant({ projectId, page, messages }: ChatRequest): Promise<ChatAnswer> {
+  const body = await call("/chat", {
     method: "POST",
-    body: { messages },
+    body: { project_id: projectId, page, messages },
     timeoutMs: 115_000,
   });
   const answer = parseChatAnswer(body);
   if (!answer) throw new AgentAdminError("The agent answered the question in an unexpected form.", 200);
   return answer;
+}
+
+// The model that will answer in this project (the organisation's, or the deployment's).
+export async function assistantModel(projectId: string): Promise<string> {
+  const body = await call(`/chat/model?project_id=${encodeURIComponent(projectId)}`);
+  if (!isRecord(body) || typeof body.model !== "string") {
+    throw new AgentAdminError("The agent did not name its model.", 200);
+  }
+  return body.model;
 }
 
 // The sub-goal cases whose requirements_old.json is loaded (certivity_reference). Never throws:

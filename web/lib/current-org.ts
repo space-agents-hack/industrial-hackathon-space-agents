@@ -84,6 +84,23 @@ export async function actsInRunOrganization(
   return permissionsIn(await fetchAccess(supabase), run.organization_id).startRuns ? "yes" : "no";
 }
 
+// Whether the person may read a project's organisation: the assistant (app/api/chat) reads the
+// project with the secret key, so this is checked before the agent is called. "missing" also when
+// RLS hides the project, which is the same answer for the person.
+export async function readsProjectOrganization(
+  supabase: SupabaseClient<Database>,
+  projectId: string,
+): Promise<"yes" | "no" | "missing"> {
+  const { data: project, error } = await supabase
+    .from("projects")
+    .select("organization_id")
+    .eq("id", projectId)
+    .maybeSingle();
+  if (error) console.error(`could not read project ${projectId}`, error);
+  if (!project) return "missing";
+  return permissionsIn(await fetchAccess(supabase), project.organization_id).read ? "yes" : "no";
+}
+
 // The same for a case: the agent parses with the secret key, so the role is checked here.
 export async function actsInCaseOrganization(
   supabase: SupabaseClient<Database>,

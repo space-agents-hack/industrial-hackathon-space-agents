@@ -22,7 +22,8 @@ from postgrest.exceptions import APIError
 from supabase import AsyncClient, acreate_client
 
 from agent_service import runner
-from agent_service.domain import run_chat
+from agent_service.domain import assistant
+from agent_service.domain.project_store import SupabaseProjectStore
 from agent_service.metering import Credential, Meter
 from agent_service.providers import Endpoint
 from agent_service.records import CaseFileBlock, NewRequirement, OrganizationSettings
@@ -233,7 +234,7 @@ async def test_pause_and_resume_through_the_real_schema(
     assert kinds.count("approval_resolved") == 1
 
 
-async def test_the_run_chat_reads_a_run_through_the_real_schema(
+async def test_the_assistant_reads_a_project_through_the_real_schema(
     db: AsyncClient, store: SupabaseRunStore, org: str, user_id: str, settings: Settings
 ) -> None:
     case = await seed_case(db, org)
@@ -250,10 +251,29 @@ async def test_the_run_chat_reads_a_run_through_the_real_schema(
     assert "approval_requested" in [e.kind for e in events]
     assert await store.run_outcome(uuid4()) is None
 
-    [first, *_] = await store.run_requirements(run_id)
-    result = await run_chat.answer(
-        store, settings, run_id, [run_chat.Turn(role="user", content=f"Why {first.ext_id}?")]
-    )
+    found = rows(await db.table("cases").select("project_id").eq("id", str(case)).execute())
+    project_id = UUID(found[0]["project_id"])
+    projects = await SupabaseProjectStore.connect(URL, KEY)
+    try:
+        project = await projects.project(project_id)
+        assert project is not None and str(project.organization_id) == org
+        [summary] = await projects.project_cases(project_id)
+        assert summary.id == case and summary.files
+        [listed] = await projects.project_runs(project_id, 10)
+        assert listed.id == run_id and listed.status == "awaiting_approval"
+        assert (await projects.project_scope(project_id)).all_regulations
+
+        [first, *_] = await store.run_requirements(run_id)
+        result = await assistant.answer(
+            store,
+            projects,
+            settings,
+            project_id,
+            assistant.Page(run_id=run_id),
+            [assistant.Turn(role="user", content=f"Why {first.ext_id}?")],
+        )
+    finally:
+        await projects.aclose()
     assert result.text.startswith(f"{first.ext_id} cites ")
 
 

@@ -1,26 +1,30 @@
 "use client";
 
 import { MessageSquareText, X } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   CHAT_MAX_MESSAGE_CHARS,
-  CHAT_SUGGESTIONS,
   type ChatTurn,
+  pageFromPath,
   parseChatAnswer,
-} from "@/lib/run-chat";
+  suggestionsFor,
+} from "@/lib/assistant";
 
-// Kept per run in this tab only, so a reload or a trip to the case page and back keeps the
-// conversation. Nothing is stored on the server (agent_service/domain/run_chat.py).
-function storageKey(runId: string): string {
-  return `run-chat:${runId}`;
+// The conversation lives in this component, which sits in the app layout: Next.js keeps a layout
+// mounted while the person moves between pages, so the conversation survives navigation. It is
+// also kept per project in this tab, so a reload keeps it too. Nothing is stored on the server
+// (agent_service/domain/assistant.py).
+function storageKey(projectId: string): string {
+  return `assistant:${projectId}`;
 }
 
-function loadTurns(runId: string): ChatTurn[] {
+function loadTurns(projectId: string): ChatTurn[] {
   try {
-    const raw = sessionStorage.getItem(storageKey(runId));
+    const raw = sessionStorage.getItem(storageKey(projectId));
     const parsed: unknown = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed)
       ? parsed.filter(
@@ -36,23 +40,32 @@ function loadTurns(runId: string): ChatTurn[] {
   }
 }
 
-function saveTurns(runId: string, turns: ChatTurn[]): void {
+function saveTurns(projectId: string, turns: ChatTurn[]): void {
   try {
-    sessionStorage.setItem(storageKey(runId), JSON.stringify(turns));
+    sessionStorage.setItem(storageKey(projectId), JSON.stringify(turns));
   } catch {
-    // Private windows can refuse storage; the conversation then lasts as long as the page.
+    // Private windows can refuse storage; the conversation then lasts until a reload.
   }
 }
 
-// The bubble at the bottom right of a run's page and the panel it opens (#28, SYS-39): questions
-// about what this run produced, answered by the run's model from its requirements, citations and
-// trace. Shown to admins and members only (the route refuses viewers too).
-export function RunChat({ runId, finished }: { runId: string; finished: boolean }) {
+function errorOf(body: unknown, status: number): string {
+  return typeof body === "object" && body !== null && typeof (body as { error?: unknown }).error === "string"
+    ? (body as { error: string }).error
+    : `The server answered ${status}.`;
+}
+
+// The bubble at the bottom right of every page inside a project, and the panel it opens (SYS-39,
+// #31): questions about the project's regulations, cases and runs, answered by the organisation's
+// model, with the page the person is on as the starting point.
+export function Assistant({ projectId, projectName }: { projectId: string; projectName: string }) {
+  const pathname = usePathname();
+  const page = pageFromPath(pathname);
   const [open, setOpen] = useState(false);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [draft, setDraft] = useState("");
   const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [model, setModel] = useState<string | null>(null);
   const [lastCost, setLastCost] = useState<number | null>(null);
   const list = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -61,8 +74,8 @@ export function RunChat({ runId, finished }: { runId: string; finished: boolean 
   // first render would make the server and client HTML differ.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- restoring browser-only state once
-    setTurns(loadTurns(runId));
-  }, [runId]);
+    setTurns(loadTurns(projectId));
+  }, [projectId]);
 
   useEffect(() => {
     list.current?.scrollTo({ top: list.current.scrollHeight });
@@ -72,6 +85,23 @@ export function RunChat({ runId, finished }: { runId: string; finished: boolean 
     if (open) input.current?.focus();
   }, [open]);
 
+  // The model's name, asked for when the panel first opens; each answer names it again, so a
+  // change in Admin shows on the next answer.
+  useEffect(() => {
+    if (!open || model !== null) return;
+    let cancelled = false;
+    fetch(`/api/chat/model?project_id=${encodeURIComponent(projectId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: unknown) => {
+        const name = typeof body === "object" && body !== null ? (body as { model?: unknown }).model : null;
+        if (!cancelled && typeof name === "string") setModel(name);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [open, model, projectId]);
+
   // `before` is the conversation the question follows: all of it, or all but an unanswered
   // question that is being asked again.
   async function ask(question: string, before: ChatTurn[] = turns) {
@@ -79,30 +109,27 @@ export function RunChat({ runId, finished }: { runId: string; finished: boolean 
     if (!text || waiting) return;
     const next: ChatTurn[] = [...before, { role: "user", content: text }];
     setTurns(next);
-    saveTurns(runId, next);
+    saveTurns(projectId, next);
     setDraft("");
     setError(null);
     setWaiting(true);
     try {
-      const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/chat`, {
+      const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({ project_id: projectId, path: pathname, messages: next }),
       });
       const body: unknown = await response.json().catch(() => null);
       const answer = response.ok ? parseChatAnswer(body) : null;
       if (!answer) {
-        const said =
-          typeof body === "object" && body !== null && typeof (body as { error?: unknown }).error === "string"
-            ? (body as { error: string }).error
-            : `The server answered ${response.status}.`;
         // The question stays in the list, unanswered, so it can be asked again with one click.
-        setError(said);
+        setError(errorOf(body, response.status));
         return;
       }
       const answered: ChatTurn[] = [...next, { role: "assistant", content: answer.answer }];
       setTurns(answered);
-      saveTurns(runId, answered);
+      saveTurns(projectId, answered);
+      setModel(answer.model);
       setLastCost(answer.costUsd);
     } catch {
       setError("The question could not be sent: the server did not answer.");
@@ -119,7 +146,7 @@ export function RunChat({ runId, finished }: { runId: string; finished: boolean 
 
   function clear() {
     setTurns([]);
-    saveTurns(runId, []);
+    saveTurns(projectId, []);
     setError(null);
     setLastCost(null);
   }
@@ -139,16 +166,20 @@ export function RunChat({ runId, finished }: { runId: string; finished: boolean 
   }
 
   const unanswered = turns.length > 0 && turns[turns.length - 1].role === "user" && !waiting;
+  const where = page.run_id ? "this run" : page.case_id ? "this case" : page.regulation_id ? "this regulation" : null;
 
   return (
     <>
       {open ? (
         <section
-          aria-label="Ask about this run"
+          aria-label="Assistant"
           className="fixed right-4 bottom-20 z-40 flex h-[min(34rem,calc(100dvh-7rem))] w-[min(26rem,calc(100vw-2rem))] flex-col rounded-lg border bg-card shadow-lg"
         >
           <header className="flex items-center gap-2 border-b px-3 py-2">
-            <h2 className="text-sm font-medium">Ask about this run</h2>
+            <div className="grid min-w-0">
+              <h2 className="text-sm font-medium">Ask about {projectName}</h2>
+              {where ? <span className="text-xs text-muted-foreground">Starting from {where}</span> : null}
+            </div>
             {turns.length > 0 ? (
               <Button variant="ghost" size="xs" className="ml-auto" onClick={clear} disabled={waiting}>
                 Clear
@@ -169,11 +200,10 @@ export function RunChat({ runId, finished }: { runId: string; finished: boolean 
             {turns.length === 0 ? (
               <div className="grid gap-2">
                 <p className="text-muted-foreground">
-                  Answers come from this run&apos;s requirements, the paragraphs they cite and its trace, using the
-                  model the run used.{" "}
-                  {finished ? null : "The run has not finished, so the answer covers what it has written so far."}
+                  Answers come from this project&apos;s regulations, cases and runs, and the page you are on. The
+                  conversation stays while you move between pages.
                 </p>
-                {CHAT_SUGGESTIONS.map((s) => (
+                {suggestionsFor(page).map((s) => (
                   <button
                     key={s}
                     type="button"
@@ -198,7 +228,7 @@ export function RunChat({ runId, finished }: { runId: string; finished: boolean 
                 </p>
               ))
             )}
-            {waiting ? <p className="text-muted-foreground">Reading the run…</p> : null}
+            {waiting ? <p className="text-muted-foreground">Reading the project…</p> : null}
             {error ? (
               <div role="alert" className="grid gap-1.5 rounded-md border border-danger-border bg-danger-surface px-2.5 py-1.5 text-danger">
                 <p>{error}</p>
@@ -211,7 +241,7 @@ export function RunChat({ runId, finished }: { runId: string; finished: boolean 
             ) : null}
           </div>
 
-          <form onSubmit={submit} className="grid gap-1.5 border-t px-3 py-2">
+          <form onSubmit={submit} className="grid grid-cols-[minmax(0,1fr)] gap-1.5 border-t px-3 py-2">
             <Textarea
               ref={input}
               value={draft}
@@ -220,14 +250,19 @@ export function RunChat({ runId, finished }: { runId: string; finished: boolean 
               maxLength={CHAT_MAX_MESSAGE_CHARS}
               placeholder="Why did you add R-012? Is the obligation on … captured?"
               aria-label="Your question"
-              className="max-h-32 min-h-10 resize-none"
+              rows={2}
+              // Fixed, not sized to its content: a long placeholder would widen it past the panel.
+              className="max-h-32 min-h-10 resize-none field-sizing-fixed"
               disabled={waiting}
             />
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">
-                {lastCost !== null ? `Last answer about $${lastCost.toFixed(3)}` : "Enter sends, Shift+Enter new line"}
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={model ?? undefined}>
+                Model: <code className="font-mono">{model ?? "…"}</code>
+                {lastCost !== null ? (
+                  <span title="Estimated cost of the last answer, from public price lists">{` · $${lastCost.toFixed(3)}`}</span>
+                ) : null}
               </span>
-              <Button type="submit" size="sm" className="ml-auto" disabled={waiting || !draft.trim()}>
+              <Button type="submit" size="sm" disabled={waiting || !draft.trim()}>
                 Ask
               </Button>
             </div>
@@ -238,7 +273,7 @@ export function RunChat({ runId, finished }: { runId: string; finished: boolean 
       <Button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        aria-label={open ? "Close the questions panel" : "Ask about this run"}
+        aria-label={open ? "Close the assistant" : "Ask the assistant"}
         className="fixed right-4 bottom-4 z-40 size-12 rounded-full shadow-md"
       >
         {open ? <X className="size-5" /> : <MessageSquareText className="size-5" />}

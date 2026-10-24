@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+from agent_service.domain.assistant import CaseFileSummary, CaseSummary, ProjectInfo, RunSummary
 from agent_service.domain.regulation_search import (
     Hit,
     ProjectScope,
@@ -584,3 +585,66 @@ class TextSearch:
                         )
                     )
         return sorted(hits, key=lambda h: -h.score)[:k]
+
+
+class InMemoryProjectStore:
+    """What the assistant reads about a project (domain/assistant.py ProjectStore), over an
+    InMemoryRunStore's cases and runs. The Supabase twin is domain/project_store.py, checked
+    against the real schema in test_store_integration.py."""
+
+    def __init__(self, store: InMemoryRunStore) -> None:
+        self.store = store
+        self.projects: dict[UUID, ProjectInfo] = {}
+        self.case_project: dict[UUID, UUID] = {}
+        self.scopes: dict[UUID, ProjectScope] = {}
+        self.regulation_codes: dict[UUID, str] = {}
+        self.closed = False
+
+    def add_project(self, name: str, case_ids: Sequence[UUID] = (), org: UUID = ORG) -> UUID:
+        project_id = uuid4()
+        self.projects[project_id] = ProjectInfo(id=project_id, organization_id=org, name=name)
+        for case_id in case_ids:
+            self.case_project[case_id] = project_id
+        return project_id
+
+    async def project(self, project_id: UUID) -> ProjectInfo | None:
+        return self.projects.get(project_id)
+
+    async def project_cases(self, project_id: UUID) -> list[CaseSummary]:
+        return [
+            CaseSummary(
+                id=case_id,
+                name=self.store.case_names.get(case_id, str(case_id)),
+                files=[
+                    CaseFileSummary(filename=f.filename, format=f.format, status=f.status)
+                    for f in self.store.cases.get(case_id, [])
+                ],
+            )
+            for case_id, pid in self.case_project.items()
+            if pid == project_id
+        ]
+
+    async def project_runs(self, project_id: UUID, limit: int) -> list[RunSummary]:
+        runs = [
+            RunSummary(
+                id=r.id,
+                case_id=r.case_id,
+                status=r.status,
+                model=self.store.models.get(r.id),
+                created_at=r.updated_at,
+                task=r.task,
+                error=self.store.errors.get(r.id),
+            )
+            for r in self.store.runs.values()
+            if r.case_id is not None and self.case_project.get(r.case_id) == project_id
+        ]
+        return sorted(runs, key=lambda r: r.created_at, reverse=True)[:limit]
+
+    async def project_scope(self, project_id: UUID) -> ProjectScope:
+        return self.scopes.get(project_id, ProjectScope(all_regulations=True))
+
+    async def regulation_code(self, org: UUID, regulation_id: UUID) -> str | None:
+        return self.regulation_codes.get(regulation_id)
+
+    async def aclose(self) -> None:
+        self.closed = True

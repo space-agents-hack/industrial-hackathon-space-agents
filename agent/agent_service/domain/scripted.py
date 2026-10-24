@@ -8,8 +8,8 @@ from them. What it writes is mechanical ("The product shall meet 5.4.2: ..."): i
 plumbing, never the quality of requirements. That is what `make eval` with a real model is for.
 
 Which agent is asking is told by the output tool it was given: `submit` (orchestrator),
-`record_requirements` (writer), `report_findings` (check). The run page's chat
-(domain/run_chat.py) has no output tool and answers in text; it is told by its `read_paragraph`.
+`record_requirements` (writer), `report_findings` (check). The assistant
+(domain/assistant.py) has no output tool and answers in text; it is told by its `read_paragraph`.
 """
 
 import json
@@ -149,7 +149,7 @@ def _check(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
     return "", [("report_findings", {"response": findings})]
 
 
-# A requirement line as run_chat.requirement_lines writes it.
+# A requirement line as assistant.requirement_lines writes it.
 _REQUIREMENT = re.compile(r"^- (R-\d+) \[\w+\] (.+) (\S+), paragraph (\S+), page (\d+): ", re.M)
 
 

@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     # Same budget as an import slice, for the same reason: it fits Vercel Hobby and Pro alike.
     index_slice_s: float = 150
 
-    # One answer in the run page's chat (domain/run_chat.py). A person is waiting at the keyboard;
+    # One answer of the assistant (domain/assistant.py). A person is waiting at the keyboard;
     # the web stops waiting at 120 s, so the agent gives up first and says why.
     chat_timeout_s: float = 100
 

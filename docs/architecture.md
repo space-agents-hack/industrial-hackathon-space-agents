@@ -97,7 +97,7 @@ row to `audit_events`.
 | The regulation library and its import | `agent/agent_service/domain/regulations.py`, `web/app/(app)/regulations/`, `docs/regulations-store.md` |
 | Regulation PDFs split into paragraphs with pages | `agent/agent_service/domain/paragraphs.py`, table `regulation_paragraphs` |
 | Pages and the trace | `web/app/`, `web/lib/trace.ts` |
-| The run page's questions about a run | `agent/agent_service/domain/run_chat.py` and `run_chat.md`, `web/components/run-chat.tsx` |
+| The assistant on every page of a project | `agent/agent_service/domain/assistant.py` and `assistant.md`, `domain/project_store.py`, `web/components/assistant.tsx` |
 | What runs on a push | `.github/workflows/deploy.yml`, `Makefile` |
 
 ## How it fails
@@ -144,13 +144,16 @@ row to `audit_events`.
 - **Uploads that never become a row stay in the bucket.** If the `case_files` insert or
   `start_run()` fails after an upload, the object is linked to nothing, and only the agent's
   secret key can delete it. The purge empties the whole bucket (#16).
-- **Questions about a run are not stored; only their cost is.** The bubble on a run's
-  page (SYS-39) sends the conversation the tab holds to `POST /api/runs/{id}/chat`, which checks
-  that the person is an admin or member of the run's organisation and calls the agent's
-  `POST /runs/{id}/chat`. The agent answers with the run's model and the organisation's key, from
-  the run's requirements, its trace and two read-only library tools. It refuses when the
-  organisation is over its monthly cap, and records what each answer cost in `model_usage` as
-  process `chat`, through the same model wrapper as everything else (SYS-40, IF-7).
+- **Questions to the assistant are not stored; only their cost is.** The bubble on every page
+  of a project (SYS-39) sends the conversation the tab holds, with the page's path, to
+  `POST /api/chat`, which checks that the person can read the project's organisation (viewers
+  included) and calls the agent's `POST /chat`. The agent answers with the organisation's model
+  and key, from the project's regulations, cases and runs, the run or case on the page, and
+  read-only tools (library search within the project's regulations, a paragraph, a run, a case).
+  It refuses when the organisation is over its monthly cap, and records what each answer cost in
+  `model_usage` as process `chat`, through the same model wrapper as everything else (SYS-40,
+  IF-7). The conversation lasts as long as the tab: it is not shared between tabs, devices or
+  people.
 - **Certivity checks are not stored.** `POST /checks` on the agent runs Certivity's `validate.py`
   and, for a case with an `expected.json`, `score_local.py`, on text the web sends (a succeeded
   run's output, or a file pasted on the Checks page). They take milliseconds, so they are
