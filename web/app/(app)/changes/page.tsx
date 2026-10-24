@@ -3,9 +3,11 @@ import { Suspense } from "react";
 
 import { type RegulationOption, ChangesForm } from "@/components/changes-form";
 import { NoAccess } from "@/components/no-access";
+import { NoProject } from "@/components/projects/no-project";
 import { hasNoAccess } from "@/lib/access";
 import { listSubgoalCases } from "@/lib/agent-admin";
 import { getCurrentOrg } from "@/lib/current-org";
+import { getCurrentProject } from "@/lib/current-project";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Changes" };
@@ -25,19 +27,24 @@ export default function ChangesPage() {
 }
 
 async function Changes() {
-  const { access, failed, current } = await getCurrentOrg();
+  const [{ access, failed, current }, project] = await Promise.all([getCurrentOrg(), getCurrentProject()]);
   if (failed || hasNoAccess(access)) return <NoAccess failed={failed} />;
-  if (!current) return <p className="text-muted-foreground">There is no organisation yet.</p>;
+  if (!current || !project) return <NoProject />;
   const supabase = await createClient();
 
-  const [{ data, error }, cases] = await Promise.all([
+  const [{ data, error }, cases, scope] = await Promise.all([
     supabase
       .from("regulations")
       .select("id, code, regulation_versions(id, version_label, role)")
       .eq("organization_id", current.id),
     listSubgoalCases(),
+    supabase
+      .from("projects")
+      .select("all_regulations, project_regulations(regulation_id)")
+      .eq("id", project.id)
+      .maybeSingle(),
   ]);
-  if (error) {
+  if (error || scope.error) {
     console.error("Changes: reading the library failed", error);
     return (
       <p role="alert" className="text-danger">
@@ -46,9 +53,12 @@ async function Changes() {
     );
   }
 
-  // Only regulations with two versions can change; "UN R3" before "UN R10".
+  // The project's regulations (SYS-36), and of those only the ones with two versions can change;
+  // "UN R3" before "UN R10".
+  const all = scope.data?.all_regulations ?? true;
+  const chosen = new Set(scope.data?.project_regulations.map((r) => r.regulation_id) ?? []);
   const regulations: RegulationOption[] = data
-    .filter((r) => r.regulation_versions.length >= 2)
+    .filter((r) => (all || chosen.has(r.id)) && r.regulation_versions.length >= 2)
     .sort((a, b) => a.code.localeCompare(b.code, "en", { numeric: true }))
     .map((r) => ({
       id: r.id,
@@ -61,8 +71,8 @@ async function Changes() {
   if (regulations.length === 0) {
     return (
       <p className="rounded-md border border-dashed px-3 py-6 text-center text-muted-foreground">
-        No regulation in the library of {current.name} has two versions yet. Import an index file on the
-        Regulations page first.
+        No regulation of {project.name} has two versions yet. Import an index file on the Regulations page
+        first, or include such a regulation in the project.
       </p>
     );
   }

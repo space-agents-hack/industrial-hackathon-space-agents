@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import type { Database } from "@/lib/database.types";
+import { PROJECT_COOKIE, needsProject } from "@/lib/navigation";
 import { supabaseEnv } from "@/lib/supabase/env";
 
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
@@ -32,10 +33,18 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   const signedIn = Boolean(data?.claims);
   const { pathname } = request.nextUrl;
 
-  if (signedIn && pathname === "/login") {
+  // Open to a signed-out visitor: signing in, creating an account, and the link in the
+  // confirmation email (SYS-35).
+  const open = pathname === "/login" || pathname === "/signup" || pathname === "/auth/confirm";
+  if (signedIn && (pathname === "/login" || pathname === "/signup")) {
     return withSessionCookies(NextResponse.redirect(new URL("/", request.url)), response);
   }
-  if (signedIn || pathname === "/login") return response;
+  // A project's sections without a project picked go to the picker (SYS-36). Only whether the
+  // cookie is there is known here; the page checks that the project is still theirs.
+  if (signedIn && needsProject(pathname) && !request.cookies.get(PROJECT_COOKIE)) {
+    return withSessionCookies(NextResponse.redirect(new URL("/projects", request.url)), response);
+  }
+  if (signedIn || open) return response;
 
   if (pathname.startsWith("/api/")) {
     // A redirect would hand a fetch() caller the login page's HTML with a 200.

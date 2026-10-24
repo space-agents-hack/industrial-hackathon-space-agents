@@ -13,7 +13,11 @@ export function NoAccess({ failed }: { failed: boolean }) {
       <h1 className="text-base font-semibold">No access yet</h1>
       <p>
         You are signed in, but you do not belong to any organisation, or your membership is
-        suspended. An admin of your organisation can add you in Admin, People.
+        suspended.{" "}
+        <a href="/welcome" className="text-primary underline-offset-4 hover:underline">
+          Ask to join one
+        </a>
+        , or ask an admin of yours to add you in Settings, People.
       </p>
     </div>
   );

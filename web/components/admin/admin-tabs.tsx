@@ -12,9 +12,11 @@ const TABS = [
   { href: "/admin/usage", label: "Usage" },
   { href: "/admin/audit", label: "Audit log" },
 ];
-// The deployment, not one organisation: platform admins only.
+// The deployment, not one organisation: platform admins only. Setup is the former Setup page,
+// joined here (SYS-37).
 const PLATFORM_TABS = [
   { href: "/admin/organizations", label: "Organisations" },
+  { href: "/admin/setup", label: "Setup" },
   { href: "/admin/releases", label: "Releases" },
   { href: "/admin/deployment", label: "Deployment" },
 ];

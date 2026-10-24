@@ -33,10 +33,13 @@ export function NewRunForm({
   organizationId,
   projects,
   cases,
+  fixedProject = false,
 }: {
   organizationId: string;
   projects: ProjectOption[];
   cases: CaseOption[];
+  // Inside a project (SYS-36) the run is on that project: no project choice, no new project.
+  fixedProject?: boolean;
 }) {
   const router = useRouter();
   const [projectId, setProjectId] = useState(projects[0]?.id ?? NEW);
@@ -160,15 +163,15 @@ export function NewRunForm({
           Everyone in this organisation sees the case. The agent lists the requirements the product
           must fulfil under the UN Regulations, each with its regulation, page and paragraph. To add
           files without running, rename or delete, open the case under{" "}
-          <Link href="/projects" className="underline-offset-4 hover:underline">
-            Projects
+          <Link href={fixedProject ? `/projects/${projects[0]?.id}` : "/projects"} className="underline-offset-4 hover:underline">
+            Cases
           </Link>
           .
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="grid gap-1.5">
+      <div className={fixedProject ? "grid gap-3 sm:max-w-md" : "grid gap-3 sm:grid-cols-2"}>
+        <div className={fixedProject ? "hidden" : "grid gap-1.5"}>
           <Label htmlFor="project">Project</Label>
           <select
             id="project"

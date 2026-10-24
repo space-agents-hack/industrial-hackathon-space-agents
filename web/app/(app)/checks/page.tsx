@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import { CheckFileForm } from "@/components/check-file-form";
+import { NoProject } from "@/components/projects/no-project";
 import { getCurrentOrg } from "@/lib/current-org";
+import { getCurrentProject } from "@/lib/current-project";
 
 export const metadata: Metadata = { title: "Checks" };
 
@@ -21,7 +23,11 @@ export default function ChecksPage() {
   );
 }
 
+// Inside a project like the other sections (SYS-36). The citations are still checked against the
+// organisation's whole library: a file citing a regulation outside the project's choice is a
+// scoping question for the person, not an invalid citation.
 async function Form() {
-  const { current } = await getCurrentOrg();
+  const [{ current }, project] = await Promise.all([getCurrentOrg(), getCurrentProject()]);
+  if (!project) return <NoProject />;
   return <CheckFileForm organizationId={current?.id ?? null} />;
 }

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import { AdminNotice } from "@/components/admin/admin-notice";
+import { AccessRequests } from "@/components/admin/access-requests";
 import { AddPersonForm } from "@/components/admin/add-person-form";
 import { type Person, PeopleTable } from "@/components/admin/people-table";
 import { ROLES, ROLE_DESCRIPTIONS, ROLE_LABELS } from "@/lib/access";
@@ -23,10 +24,18 @@ async function People() {
   if (!page.ok) return <AdminNotice reason={page.reason} />;
   const { supabase, org } = page;
 
-  const [{ data: rows, error }, me] = await Promise.all([
+  const [{ data: rows, error }, me, requests] = await Promise.all([
     supabase.rpc("organization_people", { org: org.id }),
     getSessionUser(supabase),
+    supabase
+      .from("access_requests")
+      .select("id, email, organization_name, created_at")
+      .eq("organization_id", org.id)
+      .eq("kind", "join")
+      .eq("status", "pending")
+      .order("created_at"),
   ]);
+  if (requests.error) console.error("Admin, people: access requests failed", requests.error);
   if (error) {
     console.error("Admin, people: organization_people failed", error);
     return (
@@ -60,6 +69,10 @@ async function People() {
 
   return (
     <div className="grid gap-5">
+      <section className="grid gap-2">
+        <h2 className="text-sm font-semibold">Asking to join {org.name}</h2>
+        <AccessRequests kind="join" requests={requests.data ?? []} />
+      </section>
       <section className="grid gap-2">
         <h2 className="text-sm font-semibold">People in {org.name}</h2>
         <PeopleTable org={org.id} people={people} />

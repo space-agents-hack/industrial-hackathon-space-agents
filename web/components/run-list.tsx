@@ -16,10 +16,14 @@ let subscriptions = 0;
 export function RunList({
   initialRuns,
   organizationId,
+  projectId,
   canStart,
 }: {
   initialRuns: RunSummary[];
   organizationId: string;
+  // The list is one project's (SYS-36). Changes still arrive for the whole organisation, because
+  // Realtime filters on one column and a run carries no project; the refetch applies the project.
+  projectId?: string;
   canStart: boolean;
 }) {
   const [runs, setRuns] = useState(initialRuns);
@@ -32,7 +36,7 @@ export function RunList({
 
     async function refetch() {
       try {
-        const fresh = await fetchRunList(supabase, organizationId);
+        const fresh = await fetchRunList(supabase, organizationId, projectId);
         if (cancelled) return;
         setRuns(fresh);
         setStale(false);
@@ -61,7 +65,10 @@ export function RunList({
             }
             const run = summarizeRun(change.new);
             setRuns((current) =>
-              mergeRunList(current, [{ ...run, where: current.find((r) => r.id === run.id)?.where }], RUN_LIST_LIMIT),
+              // An update to a run not listed is another project's: leave it out.
+              projectId && !current.some((r) => r.id === run.id)
+                ? current
+                : mergeRunList(current, [{ ...run, where: current.find((r) => r.id === run.id)?.where }], RUN_LIST_LIMIT),
             );
           },
         )
@@ -84,7 +91,7 @@ export function RunList({
       window.removeEventListener("focus", onVisible);
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [organizationId]);
+  }, [organizationId, projectId]);
 
   if (runs.length === 0) {
     return (

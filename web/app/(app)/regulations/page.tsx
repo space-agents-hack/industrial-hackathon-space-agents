@@ -3,9 +3,11 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { NoAccess } from "@/components/no-access";
+import { NoProject } from "@/components/projects/no-project";
 import { type ImportView, ImportPanel } from "@/components/regulations/import-panel";
 import { hasNoAccess } from "@/lib/access";
 import { getCurrentOrg } from "@/lib/current-org";
+import { getCurrentProject } from "@/lib/current-project";
 import { type ImportStatus, countFiles, formatBytes } from "@/lib/regulations";
 import { createClient } from "@/lib/supabase/server";
 
@@ -39,20 +41,31 @@ type Version = {
 };
 
 async function Regulations() {
-  const { access, failed, current, permissions } = await getCurrentOrg();
+  const [{ access, failed, current, permissions }, project] = await Promise.all([
+    getCurrentOrg(),
+    getCurrentProject(),
+  ]);
   if (failed || hasNoAccess(access)) return <NoAccess failed={failed} />;
-  if (!current) return <p className="text-muted-foreground">There is no organisation yet.</p>;
+  if (!current || !project) return <NoProject />;
   const supabase = await createClient();
 
-  // Each organisation has its own library. RLS lets a platform admin read every one, so the filter
-  // is what keeps this page to the organisation chosen in the header.
-  const { data, error } = await supabase
-    .from("regulations")
-    .select(
-      "id, code, kind, title, regulation_versions(id, version_label, role, status, size_bytes, pdf_path, paragraph_count, extraction_error)",
-    )
-    .eq("organization_id", current.id);
-  if (error) {
+  // Each organisation has its own library (ADR-0006); a project uses all of it or a chosen part
+  // (SYS-32), and this page shows that part (SYS-36). RLS lets a platform admin read every library,
+  // so the filter is what keeps this page to the organisation in the header.
+  const [{ data, error }, scope] = await Promise.all([
+    supabase
+      .from("regulations")
+      .select(
+        "id, code, kind, title, regulation_versions(id, version_label, role, status, size_bytes, pdf_path, paragraph_count, extraction_error)",
+      )
+      .eq("organization_id", current.id),
+    supabase
+      .from("projects")
+      .select("all_regulations, project_regulations(regulation_id)")
+      .eq("id", project.id)
+      .maybeSingle(),
+  ]);
+  if (error || scope.error) {
     console.error("Regulations: read failed", error);
     return (
       <p role="alert" className="text-danger">
@@ -61,8 +74,12 @@ async function Regulations() {
     );
   }
 
+  const all = scope.data?.all_regulations ?? true;
+  const chosen = new Set(scope.data?.project_regulations.map((r) => r.regulation_id) ?? []);
   // "UN R3" before "UN R10": numeric order, not alphabetical.
-  const regulations = [...data].sort((a, b) => a.code.localeCompare(b.code, "en", { numeric: true }));
+  const regulations = data
+    .filter((r) => all || chosen.has(r.id))
+    .sort((a, b) => a.code.localeCompare(b.code, "en", { numeric: true }));
   const paths = regulations.flatMap((r) => r.regulation_versions.map((v) => v.pdf_path));
   const links = new Map<string, string>();
   if (paths.length > 0) {
@@ -76,13 +93,24 @@ async function Regulations() {
 
   return (
     <div className="grid gap-6">
-      {permissions.manage ? <Imports org={current.id} /> : null}
       <section className="grid gap-2">
-        <h2 className="text-sm font-semibold">Library of {current.name}</h2>
-        {regulations.length === 0 ? (
+        <h2 className="text-sm font-semibold">Regulations of {project.name}</h2>
+        <p className="text-sm text-muted-foreground">
+          {all
+            ? `All ${data.length} regulations in the library of ${current.name}, including any imported later.`
+            : `${regulations.length} of the ${data.length} regulations in the library of ${current.name}.`}{" "}
+          <Link href={`/projects/${project.id}#regulations-heading`} className="text-primary underline-offset-4 hover:underline">
+            Change the choice
+          </Link>
+        </p>
+        {data.length === 0 ? (
           <p className="rounded-md border border-dashed px-3 py-6 text-center text-muted-foreground">
             The library is empty.{" "}
-            {permissions.manage ? "Import an index file above." : "An admin of this organisation fills it from an index file."}
+            {permissions.manage ? "Import an index file below." : "An admin of this organisation fills it from an index file."}
+          </p>
+        ) : regulations.length === 0 ? (
+          <p className="rounded-md border border-dashed px-3 py-6 text-center text-danger">
+            This project has chosen no regulation, so a run on it has nothing to cite.
           </p>
         ) : (
           <>
@@ -124,6 +152,8 @@ async function Regulations() {
           </>
         )}
       </section>
+      {/* Imports fill the organisation's library, shared by all its projects. */}
+      {permissions.manage ? <Imports org={current.id} /> : null}
     </div>
   );
 }

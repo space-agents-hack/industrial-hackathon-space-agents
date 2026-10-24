@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { NoAccess } from "@/components/no-access";
+import { KeepProject } from "@/components/projects/keep-project";
 import { Breadcrumb } from "@/components/projects/breadcrumb";
 import { CaseWorkspace } from "@/components/projects/case-workspace";
 import { RunRows } from "@/components/projects/run-rows";
@@ -11,6 +12,7 @@ import { hasNoAccess, permissionsIn } from "@/lib/access";
 import { agentHealth } from "@/lib/agent-admin";
 import { fetchCaseFiles } from "@/lib/cases";
 import { getAccess } from "@/lib/current-org";
+import { getCurrentProject } from "@/lib/current-project";
 import { createClient } from "@/lib/supabase/server";
 import { summarizeRun } from "@/lib/trace";
 import { isUuid } from "@/lib/validation";
@@ -31,8 +33,9 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
   const { id, caseId } = await params;
   if (!isUuid(id) || !isUuid(caseId)) return <Missing />;
   const supabase = await createClient();
-  const [{ access, failed }, { data: found, error }] = await Promise.all([
+  const [{ access, failed }, current, { data: found, error }] = await Promise.all([
     getAccess(),
+    getCurrentProject(),
     supabase
       .from("cases")
       .select("id, name, organization_id, project_id, projects(name, organizations(name))")
@@ -71,6 +74,7 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
 
   return (
     <>
+      <KeepProject projectId={found.project_id} currentId={current?.id ?? null} />
       <div className="grid gap-1">
         <Breadcrumb
           items={[

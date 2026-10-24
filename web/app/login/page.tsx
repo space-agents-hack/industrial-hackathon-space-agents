@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { LoginForm } from "@/components/login-form";
 import { APP_NAME, LOCAL_DEMO_USER } from "@/lib/config";
@@ -22,11 +23,15 @@ export default function LoginPage() {
             Local demo user: <code className="font-mono">{LOCAL_DEMO_USER.email}</code> /{" "}
             <code className="font-mono">{LOCAL_DEMO_USER.password}</code>
           </p>
-        ) : (
-          <p className="mt-3 text-xs text-muted-foreground">
-            Accounts are created by an administrator. There is no sign-up.
-          </p>
-        )}
+        ) : null}
+        {/* SYS-35. An account alone opens nothing: an admin approves who joins an organisation. */}
+        <p className="mt-3 text-xs text-muted-foreground">
+          New here?{" "}
+          <Link href="/signup" className="text-primary underline-offset-4 hover:underline">
+            Create an account
+          </Link>
+          , then ask to join your organisation.
+        </p>
       </div>
     </main>
   );

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { NoAccess } from "@/components/no-access";
+import { KeepProject } from "@/components/projects/keep-project";
 import { Breadcrumb } from "@/components/projects/breadcrumb";
 import { NewNamedForm } from "@/components/projects/new-named-form";
 import { ProjectRegulations } from "@/components/projects/project-regulations";
@@ -11,6 +12,7 @@ import { TitleActions } from "@/components/projects/title-actions";
 import { RelativeTime } from "@/components/relative-time";
 import { hasNoAccess, permissionsIn } from "@/lib/access";
 import { getAccess } from "@/lib/current-org";
+import { getCurrentProject } from "@/lib/current-project";
 import { createClient } from "@/lib/supabase/server";
 import { summarizeRun } from "@/lib/trace";
 import { isUuid } from "@/lib/validation";
@@ -31,8 +33,9 @@ async function Project({ params }: Pick<PageProps<"/projects/[id]">, "params">) 
   const { id } = await params;
   if (!isUuid(id)) return <Missing />;
   const supabase = await createClient();
-  const [{ access, failed }, { data: project, error }] = await Promise.all([
+  const [{ access, failed }, current, { data: project, error }] = await Promise.all([
     getAccess(),
+    getCurrentProject(),
     supabase
       .from("projects")
       .select(
@@ -73,6 +76,7 @@ async function Project({ params }: Pick<PageProps<"/projects/[id]">, "params">) 
 
   return (
     <>
+      <KeepProject projectId={project.id} currentId={current?.id ?? null} />
       <div className="grid gap-1">
         <Breadcrumb
           items={[{ label: project.organizations?.name ?? "Organisation", href: "/projects" }, { label: project.name }]}

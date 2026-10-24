@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { AccessRequests } from "@/components/admin/access-requests";
 import { type OrganizationSummary, OrganizationsPanel } from "@/components/admin/organizations-panel";
 import { NoAccess } from "@/components/no-access";
 import { getCurrentOrg } from "@/lib/current-org";
@@ -25,10 +26,17 @@ async function Organizations() {
 
   // RLS lets a platform admin read every organisation and membership.
   const supabase = await createClient();
-  const [orgs, memberships] = await Promise.all([
+  const [orgs, memberships, requests] = await Promise.all([
     supabase.from("organizations").select("id, name, created_at").order("created_at"),
     supabase.from("memberships").select("organization_id, role").eq("status", "active"),
+    supabase
+      .from("access_requests")
+      .select("id, email, organization_name, created_at")
+      .eq("kind", "create")
+      .eq("status", "pending")
+      .order("created_at"),
   ]);
+  if (requests.error) console.error("Admin, organisations: access requests failed", requests.error);
   if (orgs.error || memberships.error) {
     console.error("Admin, organisations: read failed", orgs.error ?? memberships.error);
     return (
@@ -56,6 +64,14 @@ async function Organizations() {
         As a platform admin you manage every organisation, including ones you are not a member of.
         Starting runs and deciding approvals in one still needs a membership there.
       </p>
+      <section className="grid gap-2">
+        <h2 className="text-sm font-semibold">Asking for a new organisation</h2>
+        <AccessRequests kind="create" requests={requests.data ?? []} />
+        <p className="max-w-prose text-xs text-muted-foreground">
+          Approve only someone you expect: a new organisation runs on the deployment&apos;s model keys, with no
+          monthly cap unless you set one in its Models and limits.
+        </p>
+      </section>
       <OrganizationsPanel organizations={organizations} />
       <p className="max-w-prose text-xs text-muted-foreground">
         Organisations are not deleted or renamed from the app. Platform admins are added by whoever

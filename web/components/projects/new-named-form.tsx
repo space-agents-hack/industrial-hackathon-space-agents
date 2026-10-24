@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { nameTakenMessage } from "@/lib/cases";
+import { rememberProject } from "@/lib/project-actions";
 import { createClient } from "@/lib/supabase/client";
 
 // "New project" on the projects page and "New case" on a project page. The id is made here, as in
@@ -44,6 +45,8 @@ export function NewNamedForm({
       setError(nameTakenMessage(e.code, kind, trimmed) ?? `The ${kind} could not be created: ${e.message}`);
       return;
     }
+    // A new project becomes the one the person works in (SYS-36).
+    if (kind === "project") await rememberProject(id);
     router.push(kind === "project" ? `/projects/${id}` : `/projects/${projectId}/cases/${id}`);
   }
 
