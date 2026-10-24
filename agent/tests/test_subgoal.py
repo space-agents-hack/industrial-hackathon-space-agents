@@ -4,6 +4,8 @@ here is made up; `paragraphs.extract` is replaced so a "PDF" is just a key to it
 
 import hashlib
 import json
+import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID, uuid4
@@ -188,6 +190,36 @@ async def test_a_run_on_two_uploaded_pdfs_gives_the_rules_file_through_the_main_
     ]
     # No pause: nothing is submitted, a person uploads the file (SYS-13).
     assert store.approvals == []
+
+
+async def test_the_two_versions_are_never_read_at_the_same_time(
+    store, settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # pdfium is not thread-safe: two PDFs read in two threads at once broke a production run.
+    reading = threading.Lock()
+    overlaps: list[bytes] = []
+
+    def extract(pdf: bytes) -> Any:
+        if not reading.acquire(blocking=False):
+            overlaps.append(pdf)
+            return VERSIONS[pdf]
+        try:
+            time.sleep(0.05)
+            return VERSIONS[pdf]
+        finally:
+            reading.release()
+
+    monkeypatch.setattr(paragraphs, "extract", extract)
+    case_id = subgoal_case(
+        store,
+        requirements_file(),
+        ("old.pdf", "pdf", b"old-pdf"),
+        ("new.pdf", "pdf", b"new-pdf"),
+    )
+    run_id = store.add_run("Find the changes.", case_id=case_id)
+
+    assert await advance(store, settings, run_id) == "succeeded"
+    assert overlaps == []
 
 
 async def test_a_run_fetches_the_versions_from_files_json_and_keeps_them_in_the_case(

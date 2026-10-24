@@ -245,10 +245,10 @@ async def execute(
 
     async def extract() -> dict[str, Any]:
         try:
-            old_x, new_x = await asyncio.gather(
-                asyncio.to_thread(paragraphs.extract, inputs.old_pdf),
-                asyncio.to_thread(paragraphs.extract, inputs.new_pdf),
-            )
+            # One after the other, never in parallel: pdfium is not thread-safe, and two
+            # documents read at once in two threads broke the production run (Ramón, 2026-10-24).
+            old_x = await asyncio.to_thread(paragraphs.extract, inputs.old_pdf)
+            new_x = await asyncio.to_thread(paragraphs.extract, inputs.new_pdf)
         except paragraphs.ExtractionProblem as exc:
             raise SubgoalRefused(f"A PDF could not be read: {exc}") from None
         holder["x"] = (old_x, new_x)
