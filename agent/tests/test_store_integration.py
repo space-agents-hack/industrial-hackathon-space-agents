@@ -13,6 +13,7 @@ import json
 import os
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -22,6 +23,7 @@ from supabase import AsyncClient, acreate_client
 
 from agent_service import runner
 from agent_service.domain import run_chat
+from agent_service.metering import Credential, Meter
 from agent_service.providers import Endpoint
 from agent_service.records import CaseFileBlock, NewRequirement, OrganizationSettings
 from agent_service.settings import Settings
@@ -304,6 +306,28 @@ async def test_month_cost_sums_this_months_runs_of_this_organisation_only(
         assert await store.month_cost(UUID(org)) == pytest.approx(1.75)
     finally:
         await db.table("organizations").delete().eq("id", other).execute()
+
+
+async def test_usage_rows_are_written_and_the_cap_counts_them_once(
+    db: AsyncClient, store: SupabaseRunStore, org: str, user_id: str
+) -> None:
+    # The agent's rows as metering.Meter builds them (SYS-40, IF-7).
+    await insert_run(db, org, user_id, usage={"cost_usd": 1.0})
+    new = await insert_run(db, org, user_id, usage={"cost_usd": 50.0})
+    meter = Meter(UUID(org), run_id=new)
+    meter.add("writer", "openai:gpt-test", Credential("organization", "wxyz"), cost=Decimal("0.25"))
+    meter.add("search", "openai:text-embedding-3-small", Credential.of("openai", None), cost=None)
+
+    await meter.flush(store)
+
+    stored = rows(await db.table("model_usage").select("*").eq("organization_id", org).execute())
+    assert {(r["process"], r["key_source"]) for r in stored} == {
+        ("writer", "organization"),
+        ("search", "deployment"),
+    }
+    # The new run is read from its rows (0.25), not from its own usage (50); the old one from
+    # its usage (1.0).
+    assert await store.month_cost(UUID(org)) == pytest.approx(1.25)
 
 
 async def test_a_run_past_the_organisations_cap_is_refused_through_the_real_schema(

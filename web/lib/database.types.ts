@@ -388,6 +388,88 @@ export type Database = {
           },
         ]
       }
+      model_usage: {
+        Row: {
+          cache_read_tokens: number
+          cache_write_tokens: number
+          case_id: string | null
+          cost_usd: number | null
+          created_at: string
+          id: number
+          input_tokens: number
+          key_hint: string | null
+          key_source: string
+          model: string
+          organization_id: string
+          output_tokens: number
+          process: string
+          provider: string
+          requests: number
+          run_id: string | null
+          unpriced_requests: number
+        }
+        Insert: {
+          cache_read_tokens?: number
+          cache_write_tokens?: number
+          case_id?: string | null
+          cost_usd?: number | null
+          created_at?: string
+          id?: never
+          input_tokens?: number
+          key_hint?: string | null
+          key_source: string
+          model: string
+          organization_id: string
+          output_tokens?: number
+          process: string
+          provider: string
+          requests?: number
+          run_id?: string | null
+          unpriced_requests?: number
+        }
+        Update: {
+          cache_read_tokens?: number
+          cache_write_tokens?: number
+          case_id?: string | null
+          cost_usd?: number | null
+          created_at?: string
+          id?: never
+          input_tokens?: number
+          key_hint?: string | null
+          key_source?: string
+          model?: string
+          organization_id?: string
+          output_tokens?: number
+          process?: string
+          provider?: string
+          requests?: number
+          run_id?: string | null
+          unpriced_requests?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "model_usage_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "model_usage_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "model_usage_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_models: {
         Row: {
           model: string
@@ -1358,6 +1440,7 @@ export type Database = {
         }[]
       }
       my_access: { Args: never; Returns: Json }
+      organization_month_cost: { Args: { org: string }; Returns: number }
       organization_people: {
         Args: { org: string }
         Returns: {
@@ -1375,6 +1458,34 @@ export type Database = {
           month: string
           runs: number
           tokens: number
+        }[]
+      }
+      organization_usage_breakdown: {
+        Args: { org: string; since: string }
+        Returns: {
+          cache_read_tokens: number
+          cache_write_tokens: number
+          cost_usd: number
+          input_tokens: number
+          key_hint: string
+          key_source: string
+          model: string
+          output_tokens: number
+          process: string
+          provider: string
+          requests: number
+          runs: number
+          unpriced_requests: number
+        }[]
+      }
+      organization_usage_series: {
+        Args: { bucket?: string; org: string; since: string }
+        Returns: {
+          cost_usd: number
+          input_tokens: number
+          output_tokens: number
+          period: string
+          provider: string
         }[]
       }
       prune_regulation_embeddings: {

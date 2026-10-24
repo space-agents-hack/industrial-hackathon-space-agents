@@ -27,6 +27,7 @@ from pydantic_ai.usage import RunUsage
 
 from agent_service.domain import certivity, ingest, regulation_search, writer
 from agent_service.domain.writer import UnknownRegulation, Window
+from agent_service.metering import Meter, MeteredModel
 from agent_service.records import LibraryVersion, Paragraph, Requirement, Run
 from agent_service.settings import Settings
 from agent_service.store import RunStore
@@ -64,6 +65,9 @@ class Deps:
     # Its key, which no error message from a check call may carry (the run's own key is scrubbed
     # by the runner).
     check_secret: str | None = None
+    # The run's usage (agent_service/metering.py): the query vector of each search goes here. None
+    # in tests that do not look at usage.
+    meter: Meter | None = None
     # Read once per request, on first use.
     library: list[LibraryVersion] | None = None
     paragraphs: dict[UUID, list[Paragraph]] = field(default_factory=dict[UUID, list[Paragraph]])
@@ -125,6 +129,7 @@ async def search_regulations(
                 version_ids=base,
                 k=k,
                 case_id=deps.run.case_id,
+                meter=deps.meter,
             )
         except (regulation_search.EmbeddingError, ValueError):
             # No embedding key, or no embedding model configured: words alone still find the
@@ -271,13 +276,17 @@ async def check_requirements(ctx: RunContext[Deps]) -> dict[str, Any]:
     batches = [rows[i : i + _CHECK_BATCH] for i in range(0, len(rows), _CHECK_BATCH)]
     await _progress(deps, f"Checking {len(rows)} requirements in {len(batches)} batch(es).")
     semaphore = asyncio.Semaphore(deps.concurrency)
+    model = deps.check_model or ctx.model
+    if isinstance(model, MeteredModel):
+        # The run's own model doing the checking: counted as checking on the usage page.
+        model = model.as_process("check")
 
     async def check(batch: list[Requirement]) -> list[writer.Finding] | str:
         async with semaphore:
             try:
                 result = await writer.check_agent.run(
                     [*_case(deps), CachePoint(), writer.check_batch(batch, by_id)],
-                    model=deps.check_model or cast(Model, ctx.model),
+                    model=cast(Model, model),
                     deps=writer.CheckDeps(by_label),
                     usage_limits=UsageLimits(request_limit=_SUB_REQUESTS + 4),
                 )

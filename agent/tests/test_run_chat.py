@@ -1,6 +1,6 @@
 """The run page's chat (#28, SYS-39) with the scripted model: it answers from the run's rows and
 the library, uses the run's model with the organisation's key, refuses over the cap, and writes
-nothing."""
+nothing but its usage (SYS-40)."""
 
 from uuid import uuid4
 
@@ -89,7 +89,7 @@ async def test_the_conversation_so_far_reaches_the_model(
     assert seen == [3]
 
 
-async def test_it_writes_nothing(store, settings) -> None:
+async def test_it_writes_nothing_to_the_run(store, settings) -> None:
     run_id = await finished_run(store, settings)
     events, rows = list(store.events), list(store.requirements)
 
@@ -125,6 +125,25 @@ async def test_it_uses_the_runs_model_with_the_organisations_key(
     # The provider's message reaches the person without the key.
     assert KEY not in str(refused.value)
     assert providers.REDACTED in str(refused.value)
+
+
+async def test_an_answer_records_its_usage_against_the_run(
+    store, settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_id = await finished_run(store, settings)
+    store.models[run_id] = "openai:gpt-test"
+    store.keys[(ORG, "openai")] = KEY
+
+    def reply(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[TextPart("R-001 cites 5.4.2.")])
+
+    monkeypatch.setattr(providers, "build_model", lambda *_: FunctionModel(reply))
+
+    await run_chat.answer(store, settings, run_id, ask("why R-001?"))
+
+    [row] = store.usage_rows
+    assert (row["process"], row["model"], row["run_id"]) == ("chat", "openai:gpt-test", str(run_id))
+    assert (row["key_source"], row["key_hint"]) == ("organization", KEY[-4:])
 
 
 async def test_over_the_monthly_cap_it_does_not_answer(store, settings) -> None:

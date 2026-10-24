@@ -13,6 +13,7 @@ them in on their behalf. A change needs both owners to agree on the issue before
 | IF-4 | agent → db → web, checks | Run output: `submission_main` JSON | Clemente + Ramón / Clemente + Ramón | 4, 14, 25, 29 | #4 |
 | IF-5 | Certivity → checks | `validate.py`, `score_local.py`, schemas, `expected.json`, `requirements_old.json` (the regulation list reaches the checks through the library, IF-3) | Clemente + Ramón | 10, 11, 16, 19 | — |
 | IF-6 | ops → Certivity platform | Uploads | Clemente + Ramón | 20 | #7 |
+| IF-7 | agent → db → web, cap | Model and embedding usage: table `model_usage`, read through `organization_usage_breakdown`, `organization_usage_series` and `organization_month_cost` | Clemente + Ramón / Clemente + Ramón | 40 | #29 |
 
 ## N² view (what each part hands to the next)
 
@@ -35,6 +36,7 @@ them in on their behalf. A change needs both owners to agree on the issue before
 | IF-4 | Output is the Certivity JSON itself, as a typed output, never free text | Source of `team_id` (a setting) and `case_id` |
 | IF-5 | Tools and schemas copied unchanged into `agent/certivity/` by `scripts/sync-certivity.sh` (ac791c2); the answer files (`expected.json`, `requirements_old.json`) in table `certivity_reference`, loaded by `make certivity-load`, read by the agent only. Since d1b2c15 the regulation list lives only in the organisation's library (ADR-0006). No bucket. Check results are not stored per run | — |
 | IF-6 | 5 valid uploads per hour per challenge. The **last** valid held-out upload counts. Uploads close Sunday 13:00 | Unconfirmed: whether dev-case and held-out uploads share the same quota. Ask Certivity |
+| IF-7 | Agreed by Clemente and Ramón on #29, 2026-10-24. One row per model and key per piece of work (run segment, case ingest, index slice), written by `agent_service/metering.py`; process, provider, model as chosen in Admin, key source and hint (last 4, env var name, Ollama URL), tokens, cost estimate (null = unpriced, Ollama $0). Runs from before the table are read from `runs.usage` (migration `20261024300000_model_usage.sql`). The monthly cap sums the same entries | Any new model call (the run chat, #28) must record into it or the page and the cap undercount |
 
 ## IF-3 search: proposed shape
 

@@ -8,13 +8,13 @@ the run's own model with the organisation's key, so an organisation that runs on
 server (SYS-30) does not send its run to a hosted model by asking about it.
 
 Stateless: the browser keeps the conversation and sends it with every question. Nothing is
-written: no table, no event, no cost row.
+written but the answer's usage: one `model_usage` row per answer, as process `chat` (its search
+vectors as `search`), against the run (SYS-40, IF-7). That is what Admin, Usage shows and the
+monthly cap adds up. One answer reads the whole requirement list, about 20-40k tokens on the dev
+case (an estimate from the list's size, not measured).
 
-What this does NOT do: count what an answer costs toward the monthly cap. The cap is checked
-before answering, so an organisation over it gets no answers, but an answer's cost is recorded
-nowhere until the usage ledger (#29) records it as process `chat`. One answer reads the whole
-requirement list, about 20-40k tokens on the dev case (an estimate from the list's size, not
-measured).
+What this does NOT do: stop an answer that crosses the cap. The cap is checked before answering,
+so an organisation over it gets no more answers, but the answer that takes it over is finished.
 """
 
 import asyncio
@@ -31,6 +31,7 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, Text
 
 from agent_service import providers
 from agent_service.domain import regulation_search
+from agent_service.metering import Credential, Meter, metered
 from agent_service.records import LibraryVersion, Requirement, Run, RunEvent, RunOutcome
 from agent_service.settings import Settings, effective
 from agent_service.store import RunStore
@@ -71,6 +72,8 @@ class ChatDeps:
     settings: Settings
     library: list[LibraryVersion] | None = None
     searches: list[str] = field(default_factory=list[str])
+    # The answer's usage; the query vectors of its searches go here too.
+    meter: Meter | None = None
 
 
 @dataclass(frozen=True)
@@ -108,7 +111,12 @@ async def search_regulations(
         return []
     k = max(1, min(limit, 20))
     store = deps.store.search_store()
-    args: dict[str, Any] = {"version_ids": base, "k": k, "case_id": deps.run.case_id}
+    args: dict[str, Any] = {
+        "version_ids": base,
+        "k": k,
+        "case_id": deps.run.case_id,
+        "meter": deps.meter,
+    }
     async with httpx.AsyncClient(timeout=30) as http:
         try:
             hits = await regulation_search.search(
@@ -318,7 +326,9 @@ async def answer(store: RunStore, settings: Settings, run_id: UUID, turns: list[
     context = run_context(run, outcome, case_name, rows, events)
 
     key, endpoint = await providers.credentials(store, run.organization_id, name)
-    model = providers.build_model(name, key, endpoint)
+    meter = Meter(run.organization_id, run_id=run.id, case_id=run.case_id)
+    credential = Credential.for_model(name, key, endpoint.root() if endpoint else None)
+    model = metered(providers.build_model(name, key, endpoint), meter, "chat", name, credential)
     turns = turns[-MAX_TURNS:]
     try:
         async with asyncio.timeout(settings.chat_timeout_s):
@@ -327,7 +337,7 @@ async def answer(store: RunStore, settings: Settings, run_id: UUID, turns: list[
                 message_history=history(turns[:-1]),
                 instructions=context,
                 model=model,
-                deps=ChatDeps(store=store, run=run, settings=settings),
+                deps=ChatDeps(store=store, run=run, settings=settings, meter=meter),
                 usage_limits=UsageLimits(request_limit=_REQUEST_LIMIT),
             )
     except TimeoutError:
@@ -338,6 +348,9 @@ async def answer(store: RunStore, settings: Settings, run_id: UUID, turns: list[
         # The provider's message is shown to the person; it must not carry the key.
         message = providers.scrub(f"{type(exc).__name__}: {exc}", key)[:500]
         raise ChatRefused(f"The model did not answer: {message}", 502) from None
+    finally:
+        # Also when the answer timed out or failed: what was sent was billed.
+        await meter.flush(store)
     usage = result.usage
     return Answer(
         text=result.output,

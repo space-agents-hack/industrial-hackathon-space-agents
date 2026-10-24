@@ -54,6 +54,8 @@ class InMemoryRunStore:
         self.outputs: dict[UUID, str | None] = {}
         self.errors: dict[UUID, str | None] = {}
         self.usage: dict[UUID, dict[str, Any]] = {}
+        # model_usage rows, as agent_service/metering.py writes them.
+        self.usage_rows: list[dict[str, Any]] = []
         self.models: dict[UUID, str] = {}
         self.events: list[tuple[UUID, EventKind, dict[str, Any]]] = []
         self.approvals: list[Approval] = []
@@ -402,12 +404,20 @@ class InMemoryRunStore:
         return self.endpoints.get((org, provider))
 
     async def month_cost(self, org: UUID) -> float:
+        # As private.usage_entries: the ledger, plus runs.usage for a run with no ledger rows.
+        metered = {r["run_id"] for r in self.usage_rows}
         recorded = sum(
             float(self.usage[rid].get("cost_usd") or 0)
             for rid, run in self.runs.items()
-            if run.organization_id == org and rid in self.usage
+            if run.organization_id == org and rid in self.usage and str(rid) not in metered
         )
-        return self.spent.get(org, 0.0) + recorded
+        ledger = sum(
+            float(r["cost_usd"] or 0) for r in self.usage_rows if r["organization_id"] == str(org)
+        )
+        return self.spent.get(org, 0.0) + recorded + ledger
+
+    async def record_usage(self, rows: list[dict[str, Any]]) -> None:
+        self.usage_rows += rows
 
     async def create_user(self, email: str, password: str) -> tuple[UUID, bool]:
         for user_id, (existing, _) in self.users.items():
@@ -489,6 +499,9 @@ class TextSearch:
 
     async def provider_key(self, org: UUID, provider: str) -> str | None:
         return None
+
+    async def record_usage(self, rows: list[dict[str, Any]]) -> None:
+        await self.store.record_usage(rows)
 
     async def organization_model(self, org: UUID, process: str) -> str | None:
         return await self.store.organization_model(org, process)

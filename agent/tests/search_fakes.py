@@ -4,6 +4,7 @@ search, pruning) is tested in supabase/tests/regulation_search_test.sql."""
 
 import hashlib
 from dataclasses import dataclass, field
+from typing import Any
 from uuid import UUID, uuid4
 
 from agent_service.domain.regulation_search import (
@@ -37,6 +38,8 @@ class InMemorySearchStore:
     refreshes: int = 0
     analyses: int = 0
     matches: list[dict[str, object]] = field(default_factory=list)
+    # model_usage rows (agent_service/metering.py).
+    usage: list[dict[str, Any]] = field(default_factory=list)
     closed: bool = False
 
     def add_version(self, code: str, label: str, pdf: bytes) -> VersionToSummarize:
@@ -54,6 +57,9 @@ class InMemorySearchStore:
 
     async def provider_key(self, org: UUID, provider: str) -> str | None:
         return self.keys.get(provider)
+
+    async def record_usage(self, rows: list[dict[str, Any]]) -> None:
+        self.usage += rows
 
     async def project_scope(self, case_id: UUID) -> ProjectScope | None:
         return self.scopes.get(case_id)

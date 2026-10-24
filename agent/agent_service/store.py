@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol, cast
 from uuid import UUID
 
+from postgrest.types import ReturnMethod
 from pydantic import TypeAdapter
 from supabase import AsyncClient, acreate_client
 from supabase_auth.errors import AuthApiError
@@ -198,7 +199,12 @@ class RunStore(Protocol):
         ...
 
     async def month_cost(self, org: UUID) -> float:
-        """USD recorded on the organisation's runs created since the start of this UTC month."""
+        """USD the organisation spent since the start of this UTC month, on every model and
+        embedding call (model_usage, and the runs recorded before it)."""
+        ...
+
+    async def record_usage(self, rows: list[dict[str, Any]]) -> None:
+        """Append rows to model_usage (agent_service/metering.py builds them)."""
         ...
 
     async def create_user(self, email: str, password: str) -> tuple[UUID, bool]:
@@ -700,28 +706,15 @@ class SupabaseRunStore:
         )
 
     async def month_cost(self, org: UUID) -> float:
-        # Same rule as the database's organization_usage(): by the run's created_at, so the cap
-        # and the usage page agree on which month a run belongs to. That function cannot be
-        # called with the secret key (it asks auth.uid()), hence the sum here.
-        start = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        total = 0.0
-        offset = 0
-        while True:
-            res = (
-                await self._db.table("runs")
-                .select("cost:usage->>cost_usd")
-                .eq("organization_id", str(org))
-                .gte("created_at", start.isoformat())
-                .order("id")
-                .range(offset, offset + _PAGE - 1)
-                .execute()
-            )
-            page: list[Any] = res.data
-            # A run on an unpriced model records no cost and counts as zero.
-            total += sum(float(r["cost"]) for r in page if r.get("cost") is not None)
-            if len(page) < _PAGE:
-                return total
-            offset += _PAGE
+        # The same entries as the usage page sums (migration 20261024300000_model_usage), so the
+        # cap and the page never disagree on what was spent. Summed in the database: a busy month
+        # is thousands of rows, more than one PostgREST page.
+        res = await self._db.rpc("organization_month_cost", {"org": str(org)}).execute()
+        # An unpriced model records no cost and counts as zero.
+        return float(cast(Any, res.data) or 0)
+
+    async def record_usage(self, rows: list[dict[str, Any]]) -> None:
+        await self._db.table("model_usage").insert(rows, returning=ReturnMethod.minimal).execute()
 
     async def create_user(self, email: str, password: str) -> tuple[UUID, bool]:
         try:

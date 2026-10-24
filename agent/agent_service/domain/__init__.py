@@ -16,6 +16,7 @@ from pydantic_ai.models import Model
 from agent_service.domain import case_ingest, certivity
 from agent_service.domain.scripted import scripted_model
 from agent_service.domain.tools import Deps, submit, toolset
+from agent_service.metering import Credential, Meter, metered
 from agent_service.records import Run
 from agent_service.settings import Settings
 from agent_service.store import RunStore
@@ -36,8 +37,11 @@ agent = Agent(
 )
 
 
-async def prepare_deps(store: RunStore, run: Run, settings: Settings) -> Deps:
-    """What a run's tools need from the database, read once when the request starts."""
+async def prepare_deps(
+    store: RunStore, run: Run, settings: Settings, meter: Meter | None = None
+) -> Deps:
+    """What a run's tools need from the database, read once when the request starts. `meter` is
+    the run's: the check model and the search vectors are billed to it."""
     try:
         reference = await certivity.load_reference(store, run.organization_id)
     except Exception:
@@ -51,7 +55,13 @@ async def prepare_deps(store: RunStore, run: Run, settings: Settings) -> Deps:
         from agent_service import providers
 
         check_secret, endpoint = await providers.credentials(store, run.organization_id, name)
-        check_model = providers.build_model(name, check_secret, endpoint)
+        check_model = metered(
+            providers.build_model(name, check_secret, endpoint),
+            meter,
+            "check",
+            name,
+            Credential.for_model(name, check_secret, endpoint.root() if endpoint else None),
+        )
     # Never empty either: the organisation's name, else its id, which the summary flags.
     team_id = (await store.organization_name(run.organization_id) or "").strip()
     team_id = team_id or str(run.organization_id)
@@ -76,6 +86,7 @@ async def prepare_deps(store: RunStore, run: Run, settings: Settings) -> Deps:
         chosen=chosen,
         reference=reference,
         concurrency=settings.writer_concurrency,
+        meter=meter,
     )
 
 

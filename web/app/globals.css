@@ -91,6 +91,17 @@
   --progress: oklch(0.424 0.199 265.638);
   --progress-surface: oklch(0.97 0.014 254.604);
   --progress-border: oklch(0.809 0.105 251.813);
+  /* Chart series, one per provider in a fixed order (web/lib/usage.ts, CHART_PROVIDERS), so a
+     provider keeps its colour whatever else is on screen. Validated as neighbours in this order
+     for colour-blind separation in both appearances (dataviz validator, 2026-10-24); three light
+     steps are under 3:1 on the card, so every chart that uses them also has a legend and a
+     table. --series-other is anything not in the list. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-other: oklch(0.7 0.01 255);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -126,6 +137,12 @@
     --progress: oklch(0.82 0.08 255);
     --progress-surface: oklch(0.26 0.05 260);
     --progress-border: oklch(0.6 0.12 258);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-other: oklch(0.5 0.01 255);
   }
 }
 

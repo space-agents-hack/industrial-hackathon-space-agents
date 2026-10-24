@@ -24,7 +24,8 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pypdf import PdfReader
 
-from agent_service import providers
+from agent_service import metering, providers
+from agent_service.metering import Credential, Meter
 from agent_service.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -84,9 +85,17 @@ class EmbeddingModel:
 
 
 async def embed(
-    http: httpx.AsyncClient, model: EmbeddingModel, api_key: str, texts: list[str]
+    http: httpx.AsyncClient,
+    model: EmbeddingModel,
+    api_key: str,
+    texts: list[str],
+    *,
+    meter: Meter | None = None,
+    process: metering.Process = "embedding",
+    credential: Credential | None = None,
 ) -> list[list[float]]:
-    """One request. The caller keeps `texts` within _MAX_INPUTS and _MAX_CHARS."""
+    """One request. The caller keeps `texts` within _MAX_INPUTS and _MAX_CHARS. With a meter, the
+    tokens the provider reports are recorded once the vectors are known to be usable."""
     try:
         response = await http.post(
             _EMBEDDING_URLS[model.provider],
@@ -119,7 +128,26 @@ async def embed(
             f"{model.name} did not return {model.dimensions} dimensions; it may not support "
             "shortening, and the database stores exactly that many."
         )
+    if meter is not None:
+        tokens = _prompt_tokens(response)
+        meter.add(
+            process,
+            f"{model.provider}:{model.name}",
+            credential or Credential.of(model.provider, None),
+            input_tokens=tokens,
+            cost=metering.embedding_cost(model.provider, model.name, tokens),
+        )
     return vectors
+
+
+def _prompt_tokens(response: httpx.Response) -> int:
+    # OpenAI and OpenRouter both answer {"usage": {"prompt_tokens": n, "total_tokens": n}}. An
+    # answer without it is still a request; it is recorded with 0 tokens rather than guessed.
+    try:
+        usage = response.json().get("usage") or {}
+        return int(usage.get("prompt_tokens") or usage.get("total_tokens") or 0)
+    except (ValueError, TypeError, AttributeError):
+        return 0
 
 
 def _batches(rows: list[tuple[str, str]]) -> list[list[tuple[str, str]]]:
@@ -234,6 +262,7 @@ class ProjectScope:
 
 
 class SearchStore(Protocol):
+    async def record_usage(self, rows: list[dict[str, Any]]) -> None: ...
     async def provider_key(self, org: UUID, provider: str) -> str | None: ...
     async def project_scope(self, case_id: UUID) -> ProjectScope | None: ...
     async def organization_model(self, org: UUID, process: str) -> str | None: ...
@@ -289,9 +318,16 @@ async def embedding_model_for(store: SearchStore, settings: Settings, org: UUID)
     )
 
 
-async def _embedding_key(store: SearchStore, org: UUID, model: EmbeddingModel) -> str | None:
-    """The organisation's own key first, as for runs, then the deployment's environment."""
-    return await store.provider_key(org, model.provider) or os.environ.get(_KEY_ENV[model.provider])
+async def _embedding_key(
+    store: SearchStore, org: UUID, model: EmbeddingModel
+) -> tuple[str | None, Credential]:
+    """The organisation's own key first, as for runs, then the deployment's environment; and
+    which of the two it was, for the usage page."""
+    if own := await store.provider_key(org, model.provider):
+        return own, Credential.of(model.provider, own)
+    return os.environ.get(_KEY_ENV[model.provider]), Credential(
+        "deployment", _KEY_ENV[model.provider]
+    )
 
 
 async def index_library(
@@ -304,8 +340,13 @@ async def index_library(
 ) -> Progress:
     deadline = time.monotonic() + (settings.index_slice_s if slice_s is None else slice_s)
     progress = Progress()
-    vectors_done = await _index_vectors(store, http, settings, org, deadline, progress)
-    summaries_done = await _summarize(store, settings, org, deadline, progress)
+    meter = Meter(org)
+    try:
+        vectors_done = await _index_vectors(store, http, settings, org, deadline, progress, meter)
+        summaries_done = await _summarize(store, settings, org, deadline, progress, meter)
+    finally:
+        # Also when a provider refuses halfway: the batches before it were billed.
+        await meter.flush(store)
     progress.done = vectors_done and summaries_done
     return progress
 
@@ -317,9 +358,10 @@ async def _index_vectors(
     org: UUID,
     deadline: float,
     progress: Progress,
+    meter: Meter,
 ) -> bool:
     model = await embedding_model_for(store, settings, org)
-    api_key = await _embedding_key(store, org, model)
+    api_key, credential = await _embedding_key(store, org, model)
     if not api_key:
         progress.notes.append(
             f"No {model.provider} key: connect one in Settings or set "
@@ -340,7 +382,14 @@ async def _index_vectors(
         if not rows:
             break
         for batch in _batches(rows):
-            vectors = await embed(http, model, api_key, [text for _, text in batch])
+            vectors = await embed(
+                http,
+                model,
+                api_key,
+                [text for _, text in batch],
+                meter=meter,
+                credential=credential,
+            )
             pairs = [(sha, vec) for (sha, _), vec in zip(batch, vectors, strict=True)]
             for start in range(0, len(pairs), _WRITE):
                 await store.save_embeddings(org, model.key, pairs[start : start + _WRITE])
@@ -356,7 +405,12 @@ async def _index_vectors(
 
 
 async def _summarize(
-    store: SearchStore, settings: Settings, org: UUID, deadline: float, progress: Progress
+    store: SearchStore,
+    settings: Settings,
+    org: UUID,
+    deadline: float,
+    progress: Progress,
+    meter: Meter,
 ) -> bool:
     name = (
         await store.organization_model(org, "summary")
@@ -370,7 +424,13 @@ async def _summarize(
         return False
     provider = providers.provider_of(name)
     api_key = await store.provider_key(org, provider) if provider else None
-    model = providers.build_model(name, api_key)
+    model = metering.metered(
+        providers.build_model(name, api_key),
+        meter,
+        "summary",
+        name,
+        Credential.of(provider or "", api_key),
+    )
     unread = 0
     for version in await store.versions_to_summarize(org):
         if time.monotonic() >= deadline:
@@ -429,26 +489,43 @@ async def search(
     k: int = 20,
     mode: SearchMode = "hybrid",
     case_id: UUID | None = None,
+    meter: Meter | None = None,
 ) -> list[Hit]:
     """The paragraphs that best match `query`, best first. "text" and "vector" switch one half
     off, which is how the recall of each is compared with both.
 
     With `case_id`, only the regulations the case's project uses (SYS-32, IF-3 as agreed on #24
     by Ramón and Clemente): the writer passes the run's case, and a project that left a
-    regulation out never gets a paragraph of it back, whatever the caller asked for."""
+    regulation out never gets a paragraph of it back, whatever the caller asked for.
+
+    The query's vector is billed to `meter` (a run's) when given; without one it is written to the
+    store at once, so a search from the command line is counted too."""
     if case_id is not None:
         version_ids = within_scope(version_ids, await store.project_scope(case_id))
     model = await embedding_model_for(store, settings, org)
     embedding: list[float] | None = None
     if mode != "text":
-        api_key = await _embedding_key(store, org, model)
+        api_key, credential = await _embedding_key(store, org, model)
         if not api_key:
             raise EmbeddingError(
                 f"No {model.provider} key to embed the query; use mode='text' or connect one."
             )
+        own = meter or Meter(org)
         # Same truncation as the stored inputs (regulation_embedding_input): a longer query would
         # be refused by the provider.
-        embedding = (await embed(http, model, api_key, [query[:24000]]))[0]
+        embedding = (
+            await embed(
+                http,
+                model,
+                api_key,
+                [query[:24000]],
+                meter=own,
+                process="search",
+                credential=credential,
+            )
+        )[0]
+        if meter is None:
+            await own.flush(store)
     return await store.match(
         org, query if mode != "vector" else None, embedding, model.key, version_ids, k
     )

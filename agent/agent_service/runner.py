@@ -51,6 +51,7 @@ from pydantic_core import to_jsonable_python
 
 from agent_service import domain
 from agent_service.domain import case_ingest, ingest
+from agent_service.metering import Credential, Meter, metered
 from agent_service.providers import build_model, credentials, scrub
 from agent_service.records import Approval, ApprovalRequest, Run, RunFile, RunStatus
 from agent_service.settings import RunSettings, Settings, effective
@@ -190,12 +191,17 @@ async def _execute(store: RunStore, settings: Settings, plan: Plan) -> RunStatus
     run_id = plan.run.id
     # Read here, inside the handler, so every message below can be scrubbed of it.
     key: str | None = None
+    # Every model call of this segment (writer, check, search vectors), written when it ends
+    # however it ends: a run that fails after an hour of writers spent that money too.
+    meter = Meter(plan.run.organization_id, run_id=run_id, case_id=plan.run.case_id)
     try:
         await store.add_event(run_id, "status", {"status": "running"})
-        key, endpoint = await credentials(store, plan.run.organization_id, plan.config.model)
-        model = build_model(plan.config.model, key, endpoint)
+        name = plan.config.model
+        key, endpoint = await credentials(store, plan.run.organization_id, name)
+        credential = Credential.for_model(name, key, endpoint.root() if endpoint else None)
+        model = metered(build_model(name, key, endpoint), meter, "writer", name, credential)
         async with asyncio.timeout(settings.run_timeout_s):
-            return await _run_agent(store, settings, plan, model)
+            return await _run_agent(store, settings, plan, model, meter)
     except TimeoutError:
         return await _fail(
             store, run_id, f"Ran out of time (limit {settings.run_timeout_s:.0f} s)."
@@ -208,10 +214,12 @@ async def _execute(store: RunStore, settings: Settings, plan: Plan) -> RunStatus
         trace = "".join(traceback.format_exception(exc))
         log.error("run %s failed\n%s", run_id, scrub(trace, key))
         return await _fail(store, run_id, scrub(f"{type(exc).__name__}: {exc}", key)[:2000])
+    finally:
+        await meter.flush(store)
 
 
 async def _run_agent(
-    store: RunStore, settings: Settings, plan: Plan, model: Model | str
+    store: RunStore, settings: Settings, plan: Plan, model: Model | str, meter: Meter
 ) -> RunStatus:
     run_id = plan.run.id
     resumed_call_ids: set[str] = set()
@@ -266,7 +274,7 @@ async def _run_agent(
         conversation=plan.conversation,
         deferred_tool_results=deferred_results,
         model=model,
-        deps=await domain.prepare_deps(store, plan.run, settings),
+        deps=await domain.prepare_deps(store, plan.run, settings, meter),
         usage_limits=UsageLimits(request_limit=plan.config.max_model_requests),
         event_stream_handler=record,
     )

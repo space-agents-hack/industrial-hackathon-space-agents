@@ -40,6 +40,9 @@ class SupabaseSearchStore:
     async def connect(cls, url: str, secret_key: str) -> "SupabaseSearchStore":
         return cls(await acreate_client(url, secret_key))
 
+    async def record_usage(self, rows: list[dict[str, Any]]) -> None:
+        await self._db.table("model_usage").insert(rows, returning=ReturnMethod.minimal).execute()
+
     async def organizations(self, limit: int) -> list[UUID]:
         res = await self._db.table("organizations").select("id").limit(limit).execute()
         return [UUID(r["id"]) for r in _rows(res)]

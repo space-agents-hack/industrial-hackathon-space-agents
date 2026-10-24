@@ -28,7 +28,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from supabase_auth.errors import AuthApiError
 
-from agent_service import providers, runner
+from agent_service import metering, providers, runner
 from agent_service.domain import (
     case_ingest,
     certivity,
@@ -275,9 +275,16 @@ async def ingest_case(
             name = ""
         transcribe = None
         key: str | None = None
+        meter = metering.Meter(org, case_id=case_id)
         if name and name != "scripted":
             key, endpoint = await providers.credentials(store, org, name)
-            transcribe = case_ingest.transcriber(providers.build_model(name, key, endpoint))
+            credential = metering.Credential.for_model(
+                name, key, endpoint.root() if endpoint else None
+            )
+            model = providers.build_model(name, key, endpoint)
+            transcribe = case_ingest.transcriber(
+                metering.metered(model, meter, "transcription", name, credential)
+            )
         try:
             return await case_ingest.ingest_case(
                 store,
@@ -290,6 +297,8 @@ async def ingest_case(
             # The files that failed say so in their rows; this keeps the key out of the log.
             log.error("ingest of case %s failed: %s", case_id, providers.scrub(str(exc), key))
             raise
+        finally:
+            await meter.flush(store)
 
     async def body() -> AsyncIterator[str]:
         yield _line(event="accepted", case_id=str(case_id))

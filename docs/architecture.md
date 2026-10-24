@@ -128,6 +128,12 @@ row to `audit_events`.
 - **No tracing product.** The `run_events` table is the trace. Logfire or another OpenTelemetry
   backend can be added in `agent_service/__init__.py` in a few lines.
 - **The mock systems do not persist writes.** They exist to be replaced.
+- **Usage is the agent's estimate, not the provider's bill.** Every model the agent builds is
+  wrapped by `agent_service/metering.py`, and the two embedding calls report to it too. One
+  `model_usage` row per model and key per piece of work (run segment, case ingest, index slice,
+  chat answer) is what Admin, Usage shows and what the monthly cap sums (SYS-40, IF-7). Costs come
+  from genai-prices; a model it does not know has no cost and the page says the total is a lower
+  bound. Calls made outside the agent (the evals, a developer's own scripts) are not recorded.
 - **A case's files are parsed once, not again per run.** A file added later is parsed when it is
   added; nothing re-parses a file that is already `parsed`. A file left `parsing` by a request
   that died stays so (the page stops waiting after 10 minutes and the run's trace says which
@@ -138,13 +144,13 @@ row to `audit_events`.
 - **Uploads that never become a row stay in the bucket.** If the `case_files` insert or
   `start_run()` fails after an upload, the object is linked to nothing, and only the agent's
   secret key can delete it. The purge empties the whole bucket (#16).
-- **Questions about a run are not stored, and their cost is not counted.** The bubble on a run's
+- **Questions about a run are not stored; only their cost is.** The bubble on a run's
   page (SYS-39) sends the conversation the tab holds to `POST /api/runs/{id}/chat`, which checks
   that the person is an admin or member of the run's organisation and calls the agent's
   `POST /runs/{id}/chat`. The agent answers with the run's model and the organisation's key, from
   the run's requirements, its trace and two read-only library tools. It refuses when the
-  organisation is over its monthly cap, but nothing records what an answer cost yet: the usage
-  ledger (#29) is to record it as process `chat`, through the same model wrapper as everything else.
+  organisation is over its monthly cap, and records what each answer cost in `model_usage` as
+  process `chat`, through the same model wrapper as everything else (SYS-40, IF-7).
 - **Certivity checks are not stored.** `POST /checks` on the agent runs Certivity's `validate.py`
   and, for a case with an `expected.json`, `score_local.py`, on text the web sends (a succeeded
   run's output, or a file pasted on the Checks page). They take milliseconds, so they are
