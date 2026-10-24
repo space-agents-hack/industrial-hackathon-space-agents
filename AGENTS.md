@@ -81,6 +81,12 @@ report the result. Finish with `git diff --check` and read the diff for secrets.
   `requirements_old.json`) lives in the database, table `certivity_reference` (Clemente,
   2026-10-24), loaded with `make certivity-load`. Only Certivity's MIT code is in
   `agent/certivity/`; a test fails if any of their data appears there.
+- **Case and regulation data live in Supabase, per organisation, never in the repo** (Clemente,
+  2026-10-24; SYS-16, SYS-24). The files go to the private buckets (`case-files`, `regulations`);
+  what is read from them (case content, regulation paragraphs) goes to tables with an
+  `organization_id`. A fixture in a test is made up in the test.
+- **Markdown under `agent/` is code.** The agent reads `domain/prompt.md` at run time, so a prompt
+  change runs the checks and is released like any other change (`.github/workflows/deploy.yml`).
 - **A tool that writes to a system of record is marked `requires_approval=True`** and has a test
   showing the run pauses before it. No exceptions for "small" writes.
 - **Migrations are additive and never edited once on `main`.** They are applied before the code is

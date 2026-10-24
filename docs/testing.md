@@ -13,6 +13,9 @@ run only in a release. CI runs the same.
 | Layer | Where | What it catches |
 |---|---|---|
 | Domain logic | `agent/tests/test_systems.py` | A wrong number: the fit rule, the minimum clearance, an unknown id answered with an empty list |
+| Case ingestion | `agent/tests/test_ingest.py` | A format read wrongly (page labels, CAD structure), a file dropped without a trace note, a limit applied silently. Fixtures are built in the test, never challenge data |
+| Certivity checks | `agent/tests/test_certivity.py` | A copy of `validate.py` that drifted from Certivity's (hash test); their data committed to the repo again |
+| Regulation library | `agent/tests/test_regulations.py`, `test_regdiff.py` | An index file read wrongly, a PDF stored without its checksum, a sub-goal diff that misses a change |
 | Agent loop | `agent/tests/test_runner.py` | A risky tool that runs without approval; a denied tool that runs anyway; a tool logged twice; a run that never ends |
 | HTTP | `agent/tests/test_api.py` | An endpoint that is open when the secret is unset; wrong status codes |
 | Contract | `agent/tests/test_store_integration.py` | A migration the agent can no longer read or write through |
@@ -42,7 +45,9 @@ evals are for.
 
 ## Evals
 
-`make eval` runs `agent/evals/ecn_triage.py` with whatever `AGENT_MODEL` is set. With `scripted`
+`make eval` runs `agent/evals/ecn_triage.py` with whatever `AGENT_MODEL` is set. That is still the
+template's example task: there is no eval of the requirement writer until #4 adds one, and until
+then the Certivity score (`score_local.py` on `dev-rear-lamp`) is the only measure of it. With `scripted`
 it is free and only proves the harness works (CI does this). With a real model it spends tokens and
 answers the real question. The checks read the tool calls the agent made, so pass or fail does not
 depend on a second model's opinion.

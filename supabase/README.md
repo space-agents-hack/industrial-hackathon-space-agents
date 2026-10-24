@@ -40,8 +40,9 @@ so this project does not collide with another one running on the same machine:
 Created once by setup (`scripts/bootstrap.sh`, from the local Setup page), which also turns new sign-ups off
 and sets the site address through the Supabase API. If it reports it could not, do it in the
 dashboard: Authentication, Sign In / Providers, "Allow new users to sign up" off; Authentication,
-URL Configuration, Site URL set to the web's production address. Sign-ups must stay off: every
-signed-in user sees every run and can spend model credits.
+URL Configuration, Site URL set to the web's production address. Keep sign-ups off: a person who
+signs up joins no organisation and sees nothing (RLS), but accounts are how people are let in, and
+an admin creates them on purpose.
 
 Create users with the script. It asks for the password and does not accept the local default:
 
@@ -63,7 +64,9 @@ supabase db push
 ## What this does not do
 
 - No seed data on the hosted project: `seed.sql` runs only on a local reset.
-- One storage bucket only: `case-files`, private, created by migration `20261024160000_case_files`
-  (the engineer's uploads, issue #8). Its objects do not go away when a run is deleted; the purge
-  script empties the bucket separately. No edge functions or scheduled jobs.
-- No per-user or per-team isolation. See `docs/architecture.md`, "What this does not do".
+- Two storage buckets, both private and created by migrations: `case-files` (the engineer's
+  uploads, `20261024160000_case_files`, issue #8) and `regulations` (the library's PDFs,
+  `20261024180000_regulations`). Objects do not go away when their rows are deleted, and the purge
+  script does not empty either bucket yet (#16). No edge functions or scheduled jobs.
+- Isolation is per organisation, not per person: everyone in an organisation reads all its runs
+  and case files. See `docs/architecture.md`, "Who can do what".

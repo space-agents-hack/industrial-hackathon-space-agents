@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Copy Certivity's checking code into agent/certivity/. Only the code: their data (the regulation
 # index, the answer files) is licensed for the hackathon only and goes to the database instead,
-# with `cd agent && uv run python -m agent_service.domain.certivity load <same path>`.
+# with `make certivity-load CERTIVITY=<same path>`.
 #
 #   scripts/sync-certivity.sh ../industrial-ai-hackathon
 #
