@@ -332,7 +332,12 @@ async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> d
     await _progress(
         deps,
         f"Reading {len(jobs)} windows of {len(set(w.version.id for w in jobs))} "
-        "regulation(s) in parallel.",
+        "regulation(s) in parallel, "
+        + (
+            "in two stages: what applies clause by clause, then translators."
+            if deps.settings.writer_stages == "two"
+            else "one writer per window."
+        ),
     )
     tally: Counter[str] = Counter()
     results = await _write_windows(ctx, jobs, tally)
