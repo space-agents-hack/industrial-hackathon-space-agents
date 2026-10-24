@@ -473,6 +473,38 @@ export type Database = {
           },
         ]
       }
+      regulation_embeddings: {
+        Row: {
+          created_at: string
+          embedding: unknown
+          input_sha256: string
+          model: string
+          organization_id: string
+        }
+        Insert: {
+          created_at?: string
+          embedding: unknown
+          input_sha256: string
+          model: string
+          organization_id: string
+        }
+        Update: {
+          created_at?: string
+          embedding?: unknown
+          input_sha256?: string
+          model?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "regulation_embeddings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       regulation_import_files: {
         Row: {
           error: string | null
@@ -585,6 +617,39 @@ export type Database = {
           },
         ]
       }
+      regulation_paragraph_keys: {
+        Row: {
+          input_sha256: string
+          organization_id: string
+          paragraph_id: string
+        }
+        Insert: {
+          input_sha256: string
+          organization_id: string
+          paragraph_id: string
+        }
+        Update: {
+          input_sha256?: string
+          organization_id?: string
+          paragraph_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "regulation_paragraph_keys_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "regulation_paragraph_keys_paragraph_id_fkey"
+            columns: ["paragraph_id"]
+            isOneToOne: true
+            referencedRelation: "regulation_paragraphs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       regulation_paragraphs: {
         Row: {
           annex: string | null
@@ -679,9 +744,14 @@ export type Database = {
           pdf_path: string
           regulation_id: string
           role: string | null
+          scope_keywords: string[] | null
+          scope_summary: string | null
           sha256: string
           size_bytes: number
           status: string | null
+          summarized_at: string | null
+          summary_model: string | null
+          summary_sha256: string | null
           title: string | null
           updated_at: string
           version_label: string
@@ -701,9 +771,14 @@ export type Database = {
           pdf_path: string
           regulation_id: string
           role?: string | null
+          scope_keywords?: string[] | null
+          scope_summary?: string | null
           sha256: string
           size_bytes: number
           status?: string | null
+          summarized_at?: string | null
+          summary_model?: string | null
+          summary_sha256?: string | null
           title?: string | null
           updated_at?: string
           version_label: string
@@ -723,9 +798,14 @@ export type Database = {
           pdf_path?: string
           regulation_id?: string
           role?: string | null
+          scope_keywords?: string[] | null
+          scope_summary?: string | null
           sha256?: string
           size_bytes?: number
           status?: string | null
+          summarized_at?: string | null
+          summary_model?: string | null
+          summary_sha256?: string | null
           title?: string | null
           updated_at?: string
           version_label?: string
@@ -975,6 +1055,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      analyze_regulation_search: { Args: never; Returns: undefined }
       bootstrap_member: {
         Args: {
           make_platform_admin: boolean
@@ -993,6 +1074,34 @@ export type Database = {
       delete_provider_key: {
         Args: { key_provider: string; org: string }
         Returns: undefined
+      }
+      match_regulation_paragraphs: {
+        Args: {
+          p_candidates?: number
+          p_k?: number
+          p_model: string
+          p_organization_id: string
+          p_query: string
+          p_query_embedding: unknown
+          p_version_ids?: string[]
+        }
+        Returns: {
+          heading: string
+          kind: string
+          label: string
+          page_end: number
+          page_start: number
+          paragraph_id: string
+          regulation_code: string
+          role: string
+          score: number
+          similarity: number
+          text: string
+          text_rank: number
+          vector_rank: number
+          version_id: string
+          version_label: string
+        }[]
       }
       my_access: { Args: never; Returns: Json }
       organization_people: {
@@ -1013,6 +1122,10 @@ export type Database = {
           runs: number
           tokens: number
         }[]
+      }
+      prune_regulation_embeddings: {
+        Args: { p_model: string; p_organization_id: string }
+        Returns: number
       }
       read_provider_endpoint: {
         Args: { key_provider: string; org: string }
@@ -1054,6 +1167,37 @@ export type Database = {
           p_version_title: string
         }
         Returns: string
+      }
+      refresh_regulation_embedding_keys: {
+        Args: { p_organization_id: string }
+        Returns: number
+      }
+      regulation_embedding_input: {
+        Args: {
+          body: string
+          code: string
+          context: string
+          heading: string
+          title: string
+        }
+        Returns: string
+      }
+      regulation_embedding_key: {
+        Args: {
+          body: string
+          code: string
+          context: string
+          heading: string
+          title: string
+        }
+        Returns: string
+      }
+      regulation_texts_to_embed: {
+        Args: { p_limit?: number; p_model: string; p_organization_id: string }
+        Returns: {
+          input: string
+          input_sha256: string
+        }[]
       }
       replace_regulation_paragraphs: {
         Args: {
