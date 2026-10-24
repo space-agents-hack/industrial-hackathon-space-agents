@@ -125,6 +125,10 @@ class RunStore(Protocol):
         """Only what the organisation changed; None if it never changed anything."""
         ...
 
+    async def organization_model(self, org: UUID, process: str) -> str | None:
+        """The model the organisation chose for one process (organization_models), or None."""
+        ...
+
     async def provider_key(self, org: UUID, provider: str) -> str | None:
         """The organisation's API key for this provider, or None if it has not connected one."""
         ...
@@ -163,7 +167,7 @@ class SupabaseRunStore:
     async def get_run(self, run_id: UUID) -> Run | None:
         res = (
             await self._db.table("runs")
-            .select("id, organization_id, task, status, updated_at, case_id")
+            .select("id, organization_id, task, status, updated_at, case_id, requested_model")
             .eq("id", str(run_id))
             .limit(1)
             .execute()
@@ -406,6 +410,19 @@ class SupabaseRunStore:
             .execute()
         )
         return OrganizationSettings.model_validate(res.data[0]) if res.data else None
+
+    async def organization_model(self, org: UUID, process: str) -> str | None:
+        res = (
+            await self._db.table("organization_models")
+            .select("model")
+            .eq("organization_id", str(org))
+            .eq("process", process)
+            .limit(1)
+            .execute()
+        )
+        row = res.data[0] if res.data else None
+        model = row.get("model") if isinstance(row, dict) else None
+        return model if isinstance(model, str) else None
 
     async def provider_key(self, org: UUID, provider: str) -> str | None:
         # The only function the secret key may call and a signed-in person may not: the key is

@@ -168,6 +168,19 @@ async def test_the_organisations_key_is_used_for_its_model(store, settings, spy)
     assert store.models[run_id] == "anthropic:claude-test"
 
 
+async def test_a_model_asked_for_one_run_replaces_the_organisations(store, settings, spy) -> None:
+    # Comparing models on the same case (SYS-33): the run's own choice wins, with the
+    # organisation's key for that provider, and the run records what it really used.
+    store.settings[ORG] = OrganizationSettings(model="anthropic:claude-opus-test")
+    store.keys[(ORG, "anthropic")] = ORG_KEY
+    run_id = store.add_run(HARMLESS, requested_model="anthropic:claude-sonnet-test")
+
+    assert await advance(store, settings, run_id) == "succeeded"
+
+    assert spy.calls == [("anthropic:claude-sonnet-test", ORG_KEY)]
+    assert store.models[run_id] == "anthropic:claude-sonnet-test"
+
+
 async def test_without_a_key_the_environment_is_used(store, settings, spy) -> None:
     settings.agent_model = "openai:gpt-test"
     store.keys[(uuid4(), "openai")] = "another-organisations-key-0123"

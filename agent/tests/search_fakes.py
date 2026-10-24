@@ -25,6 +25,8 @@ class InMemorySearchStore:
     summaries: dict[UUID, tuple[ScopeSummary, str, str]] = field(default_factory=dict)
     objects: dict[str, bytes] = field(default_factory=dict)
     keys: dict[str, str] = field(default_factory=dict)
+    # What Admin stored per process (organization_models).
+    models: dict[str, str] = field(default_factory=dict)
     refreshes: int = 0
     analyses: int = 0
     matches: list[dict[str, object]] = field(default_factory=list)
@@ -45,6 +47,9 @@ class InMemorySearchStore:
 
     async def provider_key(self, org: UUID, provider: str) -> str | None:
         return self.keys.get(provider)
+
+    async def organization_model(self, org: UUID, process: str) -> str | None:
+        return self.models.get(process)
 
     async def refresh_keys(self, org: UUID) -> int:
         self.refreshes += 1

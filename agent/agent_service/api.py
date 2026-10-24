@@ -101,11 +101,18 @@ def require_secret(
 
 
 @app.get("/health")
-def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, str]:
+def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, object]:
     return {
         "status": "ok",
         "model": settings.agent_model,
         "version": os.environ.get("VERCEL_GIT_COMMIT_SHA", "unknown"),
+        # What each process uses where an organisation chose nothing, for the Admin page's
+        # "deployment default" (organization_models, SYS-33). Model names only, never a key.
+        "processes": {
+            "transcription": settings.ingest_model,
+            "summary": settings.summary_model or settings.agent_model,
+            "embedding": settings.embedding_model,
+        },
     }
 
 
@@ -225,12 +232,15 @@ async def ingest_case(
 
     async def work() -> dict[str, int]:
         org = files[0].organization_id
-        name = settings.ingest_model.strip()
+        # The organisation's choice first (Admin, SYS-33), then the deployment's.
+        chosen = await store.organization_model(org, "transcription")
+        name = (chosen or settings.ingest_model).strip()
         own = effective(settings, await store.organization_settings(org)).model
-        if _is_local(own) and not _is_local(name):
+        if chosen is None and _is_local(own) and not _is_local(name):
             # An organisation that runs its models on its own server did it so case files do not
             # reach a hosted model (SYS-30). A scanned page sent to INGEST_MODEL would undo that
-            # without anyone choosing it; it stays untranscribed and the file's notes say so.
+            # without anyone choosing it; it stays untranscribed and the file's notes say so. A
+            # hosted model the organisation picked itself in Admin is its choice, and is used.
             name = ""
         transcribe = None
         key: str | None = None

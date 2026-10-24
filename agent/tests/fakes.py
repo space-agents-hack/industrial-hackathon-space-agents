@@ -29,6 +29,7 @@ class InMemoryRunStore:
         # Per organisation, in the shape regulation_index returns.
         self.library: dict[UUID, list[dict[str, Any]]] = {}
         self.settings: dict[UUID, OrganizationSettings] = {}
+        self.process_models: dict[tuple[UUID, str], str] = {}
         self.keys: dict[tuple[UUID, str], str] = {}
         self.endpoints: dict[tuple[UUID, str], Endpoint] = {}
         # Cost already spent this month per organisation, standing in for older runs' usage.
@@ -55,6 +56,7 @@ class InMemoryRunStore:
         status: RunStatus = "queued",
         org: UUID = ORG,
         case_id: UUID | None = None,
+        requested_model: str | None = None,
     ) -> UUID:
         run_id = uuid4()
         self.runs[run_id] = Run(
@@ -64,6 +66,7 @@ class InMemoryRunStore:
             status=status,
             updated_at=datetime.now(UTC),
             case_id=case_id,
+            requested_model=requested_model,
         )
         return run_id
 
@@ -239,6 +242,9 @@ class InMemoryRunStore:
 
     async def organization_settings(self, org: UUID) -> OrganizationSettings | None:
         return self.settings.get(org)
+
+    async def organization_model(self, org: UUID, process: str) -> str | None:
+        return self.process_models.get((org, process))
 
     async def provider_key(self, org: UUID, provider: str) -> str | None:
         return self.keys.get((org, provider))

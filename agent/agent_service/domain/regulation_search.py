@@ -226,6 +226,7 @@ class Hit(BaseModel):
 
 class SearchStore(Protocol):
     async def provider_key(self, org: UUID, provider: str) -> str | None: ...
+    async def organization_model(self, org: UUID, process: str) -> str | None: ...
     async def refresh_keys(self, org: UUID) -> int: ...
     async def texts_to_embed(self, org: UUID, model: str, limit: int) -> list[tuple[str, str]]: ...
     async def save_embeddings(
@@ -267,6 +268,17 @@ class Progress:
     notes: list[str] = field(default_factory=list)
 
 
+async def embedding_model_for(store: SearchStore, settings: Settings, org: UUID) -> EmbeddingModel:
+    """The organisation's choice (Admin, organization_models, SYS-33), else EMBEDDING_MODEL.
+
+    Vectors are kept per organisation and model, so a change does not delete the old ones: the
+    indexer computes the new model's vectors, and until it has, a search with the new model finds
+    paragraphs by full text only. Changing back reuses the old vectors."""
+    return EmbeddingModel.parse(
+        await store.organization_model(org, "embedding") or settings.embedding_model
+    )
+
+
 async def _embedding_key(store: SearchStore, org: UUID, model: EmbeddingModel) -> str | None:
     """The organisation's own key first, as for runs, then the deployment's environment."""
     return await store.provider_key(org, model.provider) or os.environ.get(_KEY_ENV[model.provider])
@@ -296,7 +308,7 @@ async def _index_vectors(
     deadline: float,
     progress: Progress,
 ) -> bool:
-    model = EmbeddingModel.parse(settings.embedding_model)
+    model = await embedding_model_for(store, settings, org)
     api_key = await _embedding_key(store, org, model)
     if not api_key:
         progress.notes.append(
@@ -336,7 +348,11 @@ async def _index_vectors(
 async def _summarize(
     store: SearchStore, settings: Settings, org: UUID, deadline: float, progress: Progress
 ) -> bool:
-    name = settings.summary_model or settings.agent_model
+    name = (
+        await store.organization_model(org, "summary")
+        or settings.summary_model
+        or settings.agent_model
+    )
     if name == "scripted":
         progress.notes.append(
             "No summaries: the model is 'scripted'. Set SUMMARY_MODEL or AGENT_MODEL to a real one."
@@ -392,7 +408,7 @@ async def search(
 ) -> list[Hit]:
     """The paragraphs that best match `query`, best first. "text" and "vector" switch one half
     off, which is how the recall of each is compared with both."""
-    model = EmbeddingModel.parse(settings.embedding_model)
+    model = await embedding_model_for(store, settings, org)
     embedding: list[float] | None = None
     if mode != "text":
         api_key = await _embedding_key(store, org, model)

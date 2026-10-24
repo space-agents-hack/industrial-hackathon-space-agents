@@ -503,6 +503,36 @@ def test_ingest_parses_a_case_and_streams_the_counts(
     assert store.closed
 
 
+def test_ingest_uses_the_organisations_transcription_model(
+    client: TestClient, store: InMemoryRunStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Admin, Other agents and processes (SYS-33): the organisation's row beats INGEST_MODEL,
+    # with the organisation's key for that model's provider.
+    built: list[tuple[str, str | None]] = []
+    real = providers.build_model
+
+    def build(name: str, key: str | None, endpoint: object = None):
+        built.append((name, key))
+        return real("scripted", None)
+
+    monkeypatch.setattr(providers, "build_model", build)
+    store.process_models[(ORG, "transcription")] = "anthropic:claude-org-choice"
+    store.keys[(ORG, "anthropic")] = KEY
+    case_id = uuid4()
+    store.add_case_file(case_id, "spec.md", "md", b"M1")
+
+    response = client.post(f"/cases/{case_id}/ingest", headers=AUTH)
+
+    assert response.status_code == 200
+    assert built == [("anthropic:claude-org-choice", KEY)]
+
+
+def test_health_names_each_process_default(client: TestClient, settings: Settings) -> None:
+    processes = client.get("/health").json()["processes"]
+    assert processes["transcription"] == settings.ingest_model
+    assert processes["embedding"] == settings.embedding_model
+
+
 def test_ingest_needs_the_secret_and_a_case_with_files(client: TestClient) -> None:
     assert client.post(f"/cases/{uuid4()}/ingest").status_code == 401
     assert client.post(f"/cases/{uuid4()}/ingest", headers=AUTH).status_code == 404

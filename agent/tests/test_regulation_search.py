@@ -293,6 +293,29 @@ async def test_hybrid_search_embeds_the_query_with_the_same_model(settings: Sett
     assert provider.requests[0]["body"]["input"] == ["rear lamp"]
 
 
+async def test_the_organisations_embedding_model_is_used_to_index_and_to_search(
+    index_settings: Settings, summary_model: TestModel
+) -> None:
+    # Admin, Other agents and processes (SYS-33). Vectors are stored under the model's key, so the
+    # deployment's vectors stay and the organisation's are computed alongside them.
+    store = InMemorySearchStore(
+        keys={"openrouter": KEY},
+        inputs=["a", "b"],
+        models={"embedding": "openrouter:openai/text-embedding-3-large", "summary": "test"},
+    )
+    provider = Provider()
+    async with provider.client as http:
+        progress = await index_library(store, http, index_settings, ORG)
+        await search(store, http, index_settings, ORG, "rear lamp", k=5)
+
+    assert progress.done
+    chosen = "openrouter:openai/text-embedding-3-large@1024"
+    assert {model for model, _ in store.vectors} == {chosen}
+    assert provider.requests[0]["url"] == "https://openrouter.ai/api/v1/embeddings"
+    assert provider.requests[0]["body"]["model"] == "openai/text-embedding-3-large"
+    assert store.matches[0]["model"] == chosen
+
+
 async def test_text_search_needs_no_provider(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:

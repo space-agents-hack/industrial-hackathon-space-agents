@@ -23,7 +23,7 @@ import logging
 import sys
 import traceback
 from collections.abc import AsyncIterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -137,7 +137,13 @@ async def prepare(store: RunStore, settings: Settings, run_id: UUID) -> Plan:
 
 
 async def _config(store: RunStore, settings: Settings, run: Run) -> RunSettings:
-    return effective(settings, await store.organization_settings(run.organization_id))
+    config = effective(settings, await store.organization_settings(run.organization_id))
+    # A model asked for on the case page, for this run only. Its key is still the organisation's,
+    # looked up by its provider like any other; a model without a key fails the run with that
+    # message, as the organisation's own model would.
+    if run.requested_model:
+        config = replace(config, model=run.requested_model)
+    return config
 
 
 async def _over_cap(store: RunStore, run: Run, config: RunSettings) -> str | None:

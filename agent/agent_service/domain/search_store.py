@@ -45,6 +45,19 @@ class SupabaseSearchStore:
         ).execute()
         return res.data if isinstance(res.data, str) and res.data else None
 
+    async def organization_model(self, org: UUID, process: str) -> str | None:
+        res = (
+            await self._db.table("organization_models")
+            .select("model")
+            .eq("organization_id", str(org))
+            .eq("process", process)
+            .limit(1)
+            .execute()
+        )
+        rows = _rows(res)
+        model = rows[0].get("model") if rows else None
+        return model if isinstance(model, str) else None
+
     async def refresh_keys(self, org: UUID) -> int:
         res = await self._db.rpc(
             "refresh_regulation_embedding_keys", {"p_organization_id": str(org)}

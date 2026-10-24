@@ -29,6 +29,9 @@ class Run(BaseModel):
     # The case the run is about (migration 20261024190000_cases), or None for a run started the
     # older way, with files attached to the run itself.
     case_id: UUID | None = None
+    # Another writer model a member asked for, for this run only (migration
+    # 20261024220000_hierarchy_edits, SYS-33). None uses the organisation's.
+    requested_model: str | None = None
 
 
 class ApprovalRequest(BaseModel):
