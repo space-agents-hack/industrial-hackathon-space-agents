@@ -22,9 +22,9 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-31 | let every member of the organisation browse, create and rename projects and cases, add and remove a case's files, and see each file's parsed content by page | N-15, N-2, N-3 | web, db | D | 1, 2 | #23 |
 | SYS-32 | let a member choose which regulations of the organisation's library a project uses; by default all of them, including later imports | N-13, N-4 | web, db, regs | T, D | 3 | #24 |
 | SYS-33 | let an organisation admin choose the model of each agent and process (writer, check, case transcription, summaries, embeddings), defaulting to the deployment's, and let a member override the writer and check models for one run | N-9, N-12 | web, db, regs, ingest | T | 2, 4 | #25 |
-| SYS-35 | let a signed-in person with no organisation either ask to join an existing organisation, which one of its admins approves or declines, or ask for a new organisation of which they become admin; no one sees an organisation's data before being approved | N-15, N-9 | web, db | T | 1 | none yet |
-| SYS-36 | after sign-in, make the person pick a project of their organisation, or only offer to create one if it has none; show Runs, Regulations, Changes and Checks only inside the selected project | N-15, N-8 | web | T, D | — | none yet |
-| SYS-37 | gather setup and administration in one Settings area shown only to organisation admins, with the deployment-wide parts shown only to platform admins | N-9 | web, db | T | — | none yet |
+| SYS-35 | let a signed-in person with no organisation either ask to join an existing organisation, which one of its admins approves or declines, or ask for a new organisation of which they become admin; no one sees an organisation's data before being approved | N-15, N-9 | web, db | T | 1 | #26 |
+| SYS-36 | after sign-in, make the person pick a project of their organisation, or only offer to create one if it has none; show Runs, Regulations, Changes and Checks only inside the selected project | N-15, N-8 | web | T, D | — | #26 |
+| SYS-37 | gather setup and administration in one Settings area shown only to organisation admins, with the deployment-wide parts shown only to platform admins | N-9 | web, db | T | — | #26 |
 | **Output** | | | | | | |
 | SYS-4 | output a main-goal JSON that `validate.py` accepts, with `team_id` and `case_id` | N-7 | regs, checks | T | 4 | #4 |
 | SYS-5 | cite only catalogue regulations, with the **base** `version_label` and a page of that PDF | N-2, N-7 | regs | T | 3, 5 | #3, #4 |
