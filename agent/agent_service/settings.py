@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -42,6 +43,11 @@ class Settings(BaseSettings):
     # dev case is about 25 windows, so 6 reads it in about 5 rounds. Higher hits the provider's
     # rate limit before it saves time on a Tier 2 Anthropic key (an estimate, not measured: #14).
     writer_concurrency: int = 6
+    # "two": per window, one agent decides clause by clause what applies, and translators write
+    # each obligation, ten at a time (domain/writer.py, #48). "one": a single writer per window
+    # does both, as before. Set WRITER_STAGES=one to go back without a code change if a run gets
+    # too slow for run_timeout_s: two stages make about twice the calls.
+    writer_stages: Literal["one", "two"] = "two"
     # One writer, check or screen call that has not answered in this long is stopped and reported
     # as failed (its window can be written again), so one stalled provider request no longer holds
     # the whole run until RUN_TIMEOUT_S kills it before `submit` (#36). Under a third of the run's

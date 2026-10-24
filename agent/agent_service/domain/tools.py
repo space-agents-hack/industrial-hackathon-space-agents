@@ -645,36 +645,73 @@ async def _require_profile(deps: Deps) -> writer.ProductProfile:
 async def _write_windows(
     ctx: RunContext[Deps], jobs: list[Window], tally: Counter[str] | None = None
 ) -> list[tuple[int, str | None]]:
-    """Every window through a writer, `concurrency` at a time; (stored, error) per window.
+    """Every window through the writer, `concurrency` calls at a time; (stored, error) per window.
     `tally` counts the clauses set aside, by reason, and those left without an answer: what the
-    trace shows of the obligations the writers decided not to write (#48)."""
+    trace shows of the obligations the writers decided not to write (#48).
+
+    Two stages (settings.writer_stages, the default): the disposition agent decides per clause
+    what applies, then translators write the obligations ten at a time. One stage: a single writer
+    per window does both."""
     deps = ctx.deps
     semaphore = asyncio.Semaphore(deps.concurrency)
     case = _case(deps)
+    model = cast(Model, ctx.model)
+    two_stages = deps.settings.writer_stages == "two"
+
+    def count(window: Window, answered: set[str], set_aside: list[writer.SetAside]) -> None:
+        if tally is not None:
+            tally.update(a.reason for a in set_aside)
+            answered = answered | {a.clause for a in set_aside}
+            tally["no answer"] += len(window.clause_ids - answered)
+
+    async def ask(agent: Any, prompt: str, job: Any) -> Any:
+        async with semaphore:
+            async with asyncio.timeout(deps.settings.subagent_timeout_s):
+                result = await agent.run(
+                    # The case comes first and is the same for every call: a provider that caches
+                    # prompts (Anthropic) reads it once per run, not once per window.
+                    [*case, CachePoint(), prompt],
+                    model=model,
+                    deps=job,
+                    usage_limits=UsageLimits(request_limit=_SUB_REQUESTS),
+                )
+        _add_tokens(ctx.usage, result.usage)
+        return result.output
+
+    async def drafts_of(window: Window) -> tuple[list[writer.Draft], str | None]:
+        if not two_stages:
+            answer: writer.WindowAnswer = await ask(writer.writer_agent, window.render(), window)
+            count(window, {c for d in answer.requirements for c in d.clauses}, answer.set_aside)
+            return answer.requirements, None
+        found: writer.Disposition = await ask(writer.disposition_agent, window.render(), window)
+        count(window, {c for o in found.obligations for c in o.clauses}, found.set_aside)
+        version_paragraphs = await _paragraphs(deps, window.version.id)
+        batches = writer.translation_jobs(window, found, version_paragraphs)
+
+        async def translate(job: writer.TranslationJob) -> list[writer.Draft] | str:
+            try:
+                return await ask(writer.translator_agent, job.render(), job)
+            except Exception as exc:
+                return _failure(deps, exc)[:300]
+
+        drafts: list[writer.Draft] = []
+        errors: list[str] = []
+        for outcome in await asyncio.gather(*(translate(b) for b in batches)):
+            if isinstance(outcome, str):
+                errors.append(outcome)
+            else:
+                drafts += outcome
+        # A failed batch loses its ten obligations, not the window: the rest is stored, and the
+        # window is reported so the orchestrator can write its paragraphs again.
+        return drafts, ("; ".join(errors)[:300] or None)
 
     async def one(window: Window) -> tuple[int, str | None]:
-        async with semaphore:
-            try:
-                async with asyncio.timeout(deps.settings.subagent_timeout_s):
-                    result = await writer.writer_agent.run(
-                        # The case comes first and is the same for every window: a provider that
-                        # caches prompts (Anthropic) reads it once per run, not once per window.
-                        [*case, CachePoint(), window.render()],
-                        model=cast(Model, ctx.model),
-                        deps=window,
-                        usage_limits=UsageLimits(request_limit=_SUB_REQUESTS),
-                    )
-            except Exception as exc:
-                return 0, _failure(deps, exc)[:300]
-            _add_tokens(ctx.usage, result.usage)
-            drafts = result.output.requirements
-            if tally is not None:
-                tally.update(a.reason for a in result.output.set_aside)
-                answered = {c for d in drafts for c in d.clauses}
-                answered |= {a.clause for a in result.output.set_aside}
-                tally["no answer"] += len(window.clause_ids - answered)
+        try:
+            drafts, error = await drafts_of(window)
+        except Exception as exc:
+            return 0, _failure(deps, exc)[:300]
         if not drafts:
-            return 0, None
+            return 0, error
         async with deps.lock:
             if deps.next_number is None:
                 rows = await deps.store.run_requirements(deps.run.id)
@@ -694,7 +731,7 @@ async def _write_windows(
                     for i, d in enumerate(drafts)
                 ]
             )
-        return len(drafts), None
+        return len(drafts), error
 
     return list(await asyncio.gather(*(one(w) for w in jobs)))
 

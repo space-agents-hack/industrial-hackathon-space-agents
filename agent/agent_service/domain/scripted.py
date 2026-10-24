@@ -166,6 +166,42 @@ def _write(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
     return "", [("record_requirements", {"requirements": drafts, "set_aside": []})]
 
 
+def _dispose(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
+    # The same policy as the one-stage writer, as obligations: one per paragraph with a "shall".
+    _, calls = _write(messages)
+    drafts = calls[0][1]["requirements"]
+    obligations = [
+        {"ref": d["ref"], "clauses": d["clauses"], "what": d["text"][:400]} for d in drafts
+    ]
+    return "", [("record_disposition", {"obligations": obligations, "set_aside": []})]
+
+
+# An obligation as writer.TranslationJob.render() heads it: "## Obligation 1: [#12] 5.4.2 (page 5)".
+_OBLIGATION = re.compile(r"^## Obligation \d+: \[#(\d+)\] (.+) \(page \d+\)$")
+
+
+def _translate(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
+    drafts: list[dict[str, Any]] = []
+    for line in _prompt_text(messages).splitlines():
+        if match := _OBLIGATION.match(line):
+            drafts.append({"ref": int(match.group(1)), "label": match.group(2), "clauses": []})
+        elif line.startswith("What it obliges: ") and drafts:
+            what = line.removeprefix("What it obliges: ")
+            drafts[-1]["text"] = what if what.startswith("The product") else f"The product: {what}"
+        elif (clause := re.match(r"^Clause \{(c\d+\.\d+)\}", line)) and drafts:
+            drafts[-1]["clauses"].append(clause.group(1))
+    out = [
+        {
+            "ref": d["ref"],
+            "clauses": d["clauses"],
+            "text": d.get("text", "The product shall."),
+            "test_case": f"Inspect or test the product against {d['label']}.",
+        }
+        for d in drafts
+    ]
+    return "", [("record_translations", {"response": out})]
+
+
 # A regulation as screen.Candidate.render() heads it: "## UN R1: Title (version 00)".
 _CANDIDATE = re.compile(r"^## (.+?): ", re.M)
 
@@ -273,6 +309,10 @@ def _next_step(messages: list[ModelMessage], info: AgentInfo) -> tuple[str, list
         return _chat(messages)
     if "record_requirements" in outputs:
         return _write(messages)
+    if "record_disposition" in outputs:
+        return _dispose(messages)
+    if "record_translations" in outputs:
+        return _translate(messages)
     if "report_findings" in outputs:
         return _check(messages)
     if "report_verdicts" in outputs:

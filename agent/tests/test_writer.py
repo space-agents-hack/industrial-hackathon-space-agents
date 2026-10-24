@@ -248,3 +248,39 @@ async def test_the_last_try_is_kept_even_with_clauses_unanswered() -> None:
 
     assert len(calls) == 2  # asked once, then kept
     assert [d.text for d in result.output.requirements] == ["It shall be red."]
+
+
+async def test_a_translator_reads_the_table_an_obligation_refers_to() -> None:
+    # The values of an obligation are often in a table outside its window.
+    v = version()
+    rule = paragraph(3, 4, "5.3. It shall meet the values of Table 2.")
+    table = paragraph(80, 40, "Table 2: at least 5 N.", label="Annex 2 1")
+    window = writer.Window(v, [rule])
+    found = writer.Disposition(obligations=[writer.Obligation(ref=3, clauses=["c3.1"], what="x")])
+    [job] = writer.translation_jobs(window, found, [rule, table])
+    assert "Clause {c3.1}: It shall meet the values of Table 2." in job.render()
+    calls: list[str] = []
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        if not calls:
+            calls.append("read")
+            return ModelResponse(
+                parts=[ToolCallPart("read_version_paragraphs", {"labels": ["Annex 2 1"]})]
+            )
+        assert "at least 5 N" in str(messages)
+        draft = {"ref": 3, "text": "It shall withstand at least 5 N.", "test_case": "Pull."}
+        return ModelResponse(parts=[ToolCallPart("record_translations", {"response": [draft]})])
+
+    result = await writer.translator_agent.run(job.render(), model=FunctionModel(model), deps=job)
+
+    assert [d.text for d in result.output] == ["It shall withstand at least 5 N."]
+
+
+def test_obligations_are_translated_ten_at_a_time() -> None:
+    p = paragraph(3, 4, "5.3. It shall.")
+    window = writer.Window(version(), [p])
+    found = writer.Disposition(
+        obligations=[writer.Obligation(ref=3, what=f"item {i}") for i in range(23)]
+    )
+    jobs = writer.translation_jobs(window, found, [p])
+    assert [len(j.obligations) for j in jobs] == [10, 10, 3]

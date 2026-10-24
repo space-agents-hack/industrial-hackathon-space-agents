@@ -42,25 +42,23 @@ def deps(store: InMemoryRunStore, settings: Settings) -> tools.Deps:
 
 def stalls_on(marker: str) -> FunctionModel:
     """A writer that never answers for the window containing `marker`, and cites the first
-    paragraph it is shown for any other."""
+    paragraph it is shown for any other. It speaks both writer protocols (one stage, or the
+    disposition then the translators), by the output tool it is given."""
 
     async def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         text = str(messages)
         if marker in text:
             await asyncio.sleep(30)
         ref = int(text.split("[#", 1)[1].split("]", 1)[0])
-        return ModelResponse(
-            parts=[
-                ToolCallPart(
-                    "record_requirements",
-                    {
-                        "requirements": [
-                            {"ref": ref, "text": "The lamp shall.", "test_case": "Look."}
-                        ]
-                    },
-                )
-            ]
-        )
+        draft = {"ref": ref, "text": "The lamp shall.", "test_case": "Look."}
+        tool = info.output_tools[0].name
+        if tool == "record_disposition":
+            args: dict[str, Any] = {"obligations": [{"ref": ref, "what": "It shall."}]}
+        elif tool == "record_translations":
+            args = {"response": [draft]}
+        else:
+            args = {"requirements": [draft]}
+        return ModelResponse(parts=[ToolCallPart(tool, args)])
 
     return FunctionModel(model)
 
@@ -113,3 +111,13 @@ async def test_the_search_finds_a_regulation_whose_only_version_has_no_role(
     # A regulation's latest version is still not searched when a base exists.
     latest = await tools.search_regulations(ctx(d, stalls_on("no marker")), "four lamps")
     assert all(h["text"] != "6.10.1. Two or four lamps must be fitted." for h in latest)
+
+
+async def test_the_one_stage_writer_still_stores_what_it_writes(store, settings) -> None:
+    # WRITER_STAGES=one is the way back if two stages make a run too slow.
+    d = deps(store, settings.model_copy(update={"subagent_timeout_s": 0.2, "writer_stages": "one"}))
+
+    result = await tools.write_requirements(ctx(d, stalls_on("obsolete")), ["UN R148"])
+
+    assert result["written"]["UN R148"] == {"version": "00", "windows": 2, "requirements": 1}
+    assert len(result["failed_windows"]) == 1

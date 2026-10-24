@@ -1,10 +1,12 @@
 """Writing a case's requirements from the regulation paragraphs, and checking them (#4; docs/se
 SYS-25, SYS-28, SYS-29; design: requirements-writer.md in the project files).
 
-Three agents, all on the run's model:
+The agents, all on the run's model unless the organisation chose a check model:
 - the orchestrator (domain/__init__.py) chooses the regulations and drives the steps;
-- writers each read one window of about 15 pages of one regulation, in parallel, and propose
-  requirements that cite a paragraph of that window by its number in the window;
+- per window of about 15 pages of one regulation, in parallel: the disposition agent decides,
+  clause by clause, which obligations apply, and translators turn them into requirements ten at
+  a time, citing a paragraph of that window by its number (settings.writer_stages "two"); or one
+  writer does both ("one");
 - the check agent reads requirements next to the paragraphs they cite and flags what is wrong.
 
 Why windows and not the whole regulation in one call: R48 alone is about 85k tokens; one call
@@ -307,8 +309,8 @@ def _cites_this_window(ctx: RunContext[Window], answer: WindowAnswer) -> WindowA
         if missing:
             shown = ", ".join(missing[:40]) + (" ..." if len(missing) > 40 else "")
             parts.append(
-                f"{len(missing)} clause(s) have no answer: {shown}. Write a requirement for each "
-                "that applies, citing it in `clauses`, or put it in `set_aside` with its reason."
+                f"{len(missing)} clause(s) have no answer: {shown}. Answer each one: in an entry "
+                "that lists it in `clauses` if it applies, or in `set_aside` with its reason."
             )
         if unknown:
             parts.append(f"Not clause ids of this window: {', '.join(unknown[:20])}.")
@@ -320,6 +322,148 @@ def _cites_this_window(ctx: RunContext[Window], answer: WindowAnswer) -> WindowA
 def _clause_order(clause_id: str) -> tuple[int, int]:
     position, k = clause_id[1:].split(".")
     return int(position), int(k)
+
+
+# ------------------------------------------------------------------------------------------
+# The writer in two stages (#48; settings.writer_stages = "two")
+# ------------------------------------------------------------------------------------------
+# Why two agents and not one: one writer per window had to find every obligation, judge whether it
+# applies, split it, word it, write its test and cite it in one answer, and it gave one requirement
+# per paragraph 94% of the time. Here the first agent only decides, clause by clause, what the
+# window obliges this product to do; the second only turns each obligation into a requirement, a
+# few at a time, and can read the table or paragraph an obligation refers to anywhere in the
+# version. The check agent then reads the result as before.
+
+
+class Obligation(BaseModel):
+    ref: int = Field(description="The [#n] number of the paragraph that states it.")
+    clauses: list[str] = Field(
+        default_factory=list[str],
+        description="The {c...} clause ids it comes from. Empty for one the clause list does not "
+        "show (a heading with a value, a table row).",
+    )
+    what: str = Field(
+        max_length=400,
+        description="The obligation in one line, in the regulation's terms: which part of the "
+        "paragraph, which list item or table row, under which condition.",
+    )
+
+
+class Disposition(BaseModel):
+    obligations: list[Obligation] = Field(default_factory=list[Obligation])
+    set_aside: list[SetAside] = Field(default_factory=list[SetAside])
+
+
+disposition_agent = Agent(
+    name="obligation-finder",
+    deps_type=Window,
+    output_type=ToolOutput(Disposition, name="record_disposition"),
+    instructions=(_HERE / "disposition.md").read_text(),
+    retries=2,
+)
+
+
+@disposition_agent.output_validator
+def _disposes_of_every_clause(ctx: RunContext[Window], answer: Disposition) -> Disposition:
+    as_drafts = WindowAnswer(
+        requirements=[
+            Draft(ref=o.ref, clauses=o.clauses, text=o.what or "-", test_case="")
+            for o in answer.obligations
+        ],
+        set_aside=answer.set_aside,
+    )
+    _cites_this_window(ctx, as_drafts)  # the same refusals as the one-stage writer
+    return answer
+
+
+# Obligations per translator call: each comes with its paragraph, so ten is a few thousand tokens
+# in and a few thousand out, well inside a call's time; more per call is fewer, slower calls.
+TRANSLATE_BATCH = 10
+
+
+@dataclass(frozen=True)
+class TranslationJob:
+    """Some obligations of one window, and every paragraph of the version, for look-ups."""
+
+    window: Window
+    obligations: Sequence[Obligation]
+    by_label: dict[str, list[Paragraph]] = field(default_factory=dict[str, list[Paragraph]])
+
+    def render(self) -> str:
+        v = self.window.version
+        by_position = {p.position: p for p in self.window.paragraphs}
+        clause_text = {cid: c for found in self.window.clauses.values() for cid, c in found}
+        lines = [
+            f"Regulation {v.regulation} ({v.title or 'no title'}), version {v.version_label}.",
+            "",
+        ]
+        for n, o in enumerate(self.obligations, 1):
+            p = by_position[o.ref]
+            lines += [
+                f"## Obligation {n}: [#{p.position}] {p.label or '(unnumbered text)'} "
+                f"(page {p.page_start})",
+                f"Under: {p.heading}" if p.heading else "",
+                f"What it obliges: {o.what}",
+            ]
+            lines += [f"Clause {{{c}}}: {clause_text[c]}" for c in o.clauses if c in clause_text]
+            lines += ["Paragraph text:", p.text, ""]
+        return "\n".join(lines)
+
+
+translator_agent = Agent(
+    name="requirement-translator",
+    deps_type=TranslationJob,
+    output_type=ToolOutput(list[Draft], name="record_translations"),
+    instructions=(_HERE / "translate.md").read_text(),
+    retries=2,
+)
+
+
+@translator_agent.tool
+def read_version_paragraphs(
+    ctx: RunContext[TranslationJob], labels: list[str]
+) -> list[dict[str, Any]]:
+    """Read paragraphs of this regulation version by label: the table, annex or paragraph an
+    obligation refers to, wherever it is in the version.
+
+    Args:
+        labels: Paragraph labels as the regulation numbers them. At most 10.
+    """
+    out: list[dict[str, Any]] = []
+    for label in labels[:10]:
+        found = ctx.deps.by_label.get(label, [])
+        if not found:
+            out.append({"label": label, "error": "No paragraph with this label in the version."})
+        out += [{"label": label, "page": p.page_start, "text": p.text} for p in found]
+    return out
+
+
+@translator_agent.output_validator
+def _translates_these_obligations(
+    ctx: RunContext[TranslationJob], drafts: list[Draft]
+) -> list[Draft]:
+    known = {o.ref for o in ctx.deps.obligations}
+    wrong = sorted({d.ref for d in drafts if d.ref not in known})
+    if wrong:
+        raise ModelRetry(
+            f"[#{', #'.join(map(str, wrong))}] are not the paragraphs of these obligations. Cite "
+            "the [#n] each obligation is headed with."
+        )
+    return [d for d in drafts if d.text.strip()]
+
+
+def translation_jobs(
+    window: Window, disposition: Disposition, version_paragraphs: Sequence[Paragraph]
+) -> list[TranslationJob]:
+    by_label: dict[str, list[Paragraph]] = {}
+    for p in version_paragraphs:
+        if p.label:
+            by_label.setdefault(p.label, []).append(p)
+    obligations = list(disposition.obligations)
+    return [
+        TranslationJob(window, obligations[i : i + TRANSLATE_BATCH], by_label)
+        for i in range(0, len(obligations), TRANSLATE_BATCH)
+    ]
 
 
 def cite(
