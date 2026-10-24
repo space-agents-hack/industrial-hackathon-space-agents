@@ -16,6 +16,20 @@ For every regulation shown, give one verdict with `report_screen`:
 - `does_not`: its scope is about other products, other vehicle categories, or names the part only
   in a list of exclusions or of other things.
 
+Two tests before `applies` when the regulation reaches the part only through something it
+contains or through where it is fitted:
+
+- Through what it contains: the scope must cover that component as the part contains it. If the
+  scope sets a condition on the component (replaceable, separately approved, of a stated type)
+  and the profile says the part's component does not meet it, the verdict is `does_not`; if the
+  profile does not say, `possibly`, naming the condition. A regulation that governs a whole
+  vehicle's system, or the manufacturer's processes for it, does not reach a part only because
+  the part contains software or electronics: `does_not`, unless its scope names parts or
+  components as what it approves or tests, or the case names that regulation.
+- Through where it is fitted: the regulation must set requirements on the part's own
+  installation or on the part's own behaviour on the vehicle, not only on other devices or
+  features of the vehicle near it.
+
 For each verdict:
 
 - quote the sentence of the scope that decides it;

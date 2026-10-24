@@ -129,7 +129,9 @@ async def record_product_profile(
         does_not: Functions of the same family of parts that the case shows it does not have.
         contains: What it contains or is made of: electrical and electronic parts, light
             sources, sensors, actuators, software, wiring, glazing, materials, moving parts.
-            Include what only a drawing shows.
+            Include what only a drawing shows. For each, say what the case shows about how it
+            is built in: integrated and not replaceable, a replaceable item, or a separately
+            approved component; "not stated" when the case does not say.
         mounted: Where it is fitted on the vehicle, and which properties of the vehicle it
             affects (outer shape, impact behaviour, field of view, signalling, ...).
         vehicles: Vehicle categories it is for, as the case gives them.
