@@ -31,7 +31,45 @@ them in on their behalf. A change needs both owners to agree on the issue before
 |---|---|---|
 | IF-1 | Storage bucket `case-files` (Vercel rejects bodies over 4.5 MB). Files belong to a case in a project of the organisation (migration `20261024190000_cases.sql`, 84a33a8); `run_files` no longer starts a run (SYS-38, cb8f6b8). A check constraint on media type is the single list of formats | Size limits per file and per run. Purge must empty the bucket. Later: use Ramón's PDF layer (#3) for case PDFs |
 | IF-2 | No fixed profile (Certivity could not confirm one). Table `case_file_blocks`: text or image, with file, page and the parser or model that made it, written once at upload; runs read them (`runs.case_id`). Parser first; `INGEST_MODEL` only for what parsers cannot read, marked as a transcription (SYS-27, ADR-0006, 84a33a8) | Whether the writer also gets free-form product notes |
-| IF-3 | Catalogue loaded from `index.json` (SYS-23). `regulation` and `version_label` strings are kept exactly as in the file | Query and response shape. Pre-computed or built during the run (`RUN_TIMEOUT_S`, SYS-15). SYS-32 (project chooses its regulations, #24) filters this lookup: agreed by Clemente and Ramón, 2026-10-24. SYS-34: a re-extraction supersedes paragraph rows instead of deleting them (`superseded_at`), readers of the library read current rows only, and requirements are moved to the new row with the same label and `content_hash`: agreed by Clemente and Ramón on #3, 2026-10-24 |
+| IF-3 | Catalogue loaded from `index.json` (SYS-23). `regulation` and `version_label` strings are kept exactly as in the file | Query and response shape: **proposed** below ("IF-3 search"), waiting for Clemente's agreement on #18. Pre-computed or built during the run (`RUN_TIMEOUT_S`, SYS-15). SYS-32 (project chooses its regulations, #24) filters this lookup: agreed by Clemente and Ramón, 2026-10-24. SYS-34: a re-extraction supersedes paragraph rows instead of deleting them (`superseded_at`), readers of the library read current rows only, and requirements are moved to the new row with the same label and `content_hash`: agreed by Clemente and Ramón on #3, 2026-10-24 |
 | IF-4 | Output is the Certivity JSON itself, as a typed output, never free text | Source of `team_id` (a setting) and `case_id` |
 | IF-5 | Tools and schemas copied unchanged into `agent/certivity/` by `scripts/sync-certivity.sh` (ac791c2); the answer files (`expected.json`, `requirements_old.json`) in table `certivity_reference`, loaded by `make certivity-load`, read by the agent only. Since d1b2c15 the regulation list lives only in the organisation's library (ADR-0006). No bucket. Check results are not stored per run | — |
 | IF-6 | 5 valid uploads per hour per challenge. The **last** valid held-out upload counts. Uploads close Sunday 13:00 | Unconfirmed: whether dev-case and held-out uploads share the same quota. Ask Certivity |
+
+## IF-3 search: proposed shape
+
+Status: **proposed** by the regulation side (Ramón's thread, #18) on 2026-10-24. It is what `main`
+already does: `search_regulations` in `agent/agent_service/domain/tools.py` uses it. It is not
+agreed until Clemente, as consumer, says so on #18.
+
+**Query**, `regulation_search.search(store, http, settings, org, query, *, version_ids, k, mode, case_id)`:
+
+- `org`: the run's organisation. Paragraphs of other organisations are never returned.
+- `query`: free text. Full text matches any of its words. Vectors use the first 24,000 characters.
+- `version_ids`: the versions to search, or none for the whole library. The writer passes the
+  base versions.
+- `case_id`: the scope is narrowed further to the regulations the case's project uses (SYS-32,
+  agreed on #24).
+- `k`: how many results, best first. The writer asks for 20 by default and at most 50.
+- `mode`: `hybrid` (default), `text` or `vector`. `hybrid` and `vector` need an embedding key. If
+  there is none, `EmbeddingError` is raised and the caller retries with `text`.
+
+**Response**: a list of `Hit`, one per current (not superseded, SYS-34) paragraph:
+
+- `regulation_code`, `version_label`: exactly as in the library, which keeps the `index.json`
+  strings (SYS-5).
+- `label`: the paragraph label a submission cites (SYS-6). It can be empty for unnumbered text.
+- `page_start`, `page_end`: PDF page indices, which equal the footer page (SYS-5).
+- `paragraph_id`, `version_id`: what a requirement stores to link to the paragraph (SYS-25).
+- `role`, `heading`, `kind`, `text`: for the model to read.
+- `score`, `text_rank`, `vector_rank`, `similarity`: why the paragraph came back. A rank is
+  empty when that half did not find it.
+
+**What it does not promise:** that a regulation missing from the top k does not apply (SYS-28 says
+top-k only picks candidates), or that the vector half covers the whole library. A paragraph has a
+vector only after `make regulations-index` or the index endpoint has run since the paragraph was
+extracted; until then it is found by words only.
+
+Built in `20261024210000_regulation_search.sql`, filtered to current rows by
+`20261024270000_superseded_paragraphs.sql`. Measured on 49,680 synthetic paragraphs: 0.5 to 0.9 s
+for the whole library, about 0.1 s for 10 versions (`docs/regulations-store.md`, "As built").
