@@ -30,20 +30,24 @@ nor shown by the case does not apply: set its clauses aside as `not_this_product
 
 What counts:
 
-- An obligation is something the product, its installation, its marking or its testing must meet:
-  "shall", "must", "shall not", limits in tables, test conditions it must pass, results it must
-  show after a test, and paragraphs it must comply with by reference. A heading followed by a value
+- An obligation is something the product, its installation or its marking must meet: "shall",
+  "must", "shall not", limits in tables, results it must show in or after a test, and paragraphs
+  it must comply with by reference. A heading followed by a value
   ("Mass: not more than 2 kg") is an obligation too, even with no "shall" in it.
 - Leave out what imposes nothing on this product: definitions, scope statements, and the
   approval authority's own procedures and forms (what the authority does, what the application
-  file contains, how approval is communicated). Markings the product must bear and tests it must
-  pass are obligations on the product: keep them.
+  file contains, how approval is communicated). Markings the product must bear and results it must
+  reach in a test are obligations on the product: keep them.
 - Judge whether an obligation applies against the product profile at the end of the case, the
   same statement every other writer reads. Leave it out when it is for a function the profile
   lists as one the part does NOT have, for a vehicle category other than those it lists, or for
   a kind of device that is neither the part nor something it contains. Keep it when the profile
-  says nothing either way: a missed requirement costs four times what an extra one does.
+  says nothing either way.
 - Write every obligation of a paragraph that applies, not only its first or main one.
+- How a test is carried out is not an obligation on the product: the set-up, conditioning and
+  sequence, the equipment and its tolerances, how a value is measured or computed. Set those
+  clauses aside as `test_method` and put the test in the test case of the requirement whose
+  result it verifies. In a test procedure, write only what states a result the product must meet.
 
 How to cut the text into requirements (the output is matched one to one against requirements
 written by regulatory experts this way, so two obligations in one requirement are credited once):
@@ -61,8 +65,9 @@ written by regulatory experts this way, so two obligations in one requirement ar
   a maximum stated in different places, a value for each of two operating modes.
 - Keep a relaxation or exception with the obligation it relaxes ("...; however, where it is
   fitted behind a cover, the clearance may be reduced to 20 mm"): it is part of the same constraint.
-- Each paragraph that states an obligation gets its own requirement citing it, even when another
-  paragraph states something similar.
+- Each paragraph that states an obligation of its own gets its own requirement citing it, even
+  when another paragraph states something similar. One that only restates, sums up or refers back
+  to an obligation already written is `same_as_another_clause`.
 
 How to write each one:
 

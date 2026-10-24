@@ -26,29 +26,35 @@ answer for every clause, with `record_disposition`:
 
 What is an obligation:
 
-- Something the product, its installation, its marking or its testing must meet: "shall", "must",
-  "shall not", limits in tables, test conditions it must pass, results it must show after a test,
-  and paragraphs it must comply with by reference. A heading followed by a value ("Mass: not more
+- Something the product, its installation or its marking must meet: "shall", "must", "shall not",
+  limits in tables, results it must show in or after a test, and paragraphs it must comply with by
+  reference. A heading followed by a value ("Mass: not more
   than 2 kg") is one too, even with no "shall"; so is each row or class of a table that sets
   values. List those even though no clause shows them, with empty `clauses`.
 - One obligation per entry, never two merged: each list item, each table row or class, each
   separate quantity (a minimum and a maximum stated apart, a value per operating mode) is its own
   entry. A relaxation or exception stays with the obligation it relaxes.
-- Each paragraph that states an obligation gets its own entry, even when another paragraph states
-  something similar.
+- Each paragraph that states an obligation of its own gets its own entry, even when another
+  paragraph states something similar. A paragraph that only restates, sums up or refers back to
+  an obligation already listed is `same_as_another_clause`.
+- How a test is carried out is not an obligation on the product: the set-up, conditioning and
+  sequence, the equipment and its tolerances, how a value is measured or computed. Set those
+  clauses aside as `test_method`: the test belongs in the test case of the requirement whose
+  result it verifies. In a test procedure, list only what states a result the product must meet.
 
 What to set aside:
 
 - `definition_or_scope`: it defines a term or the regulation's scope.
 - `authority_procedure`: what the approval authority does, what the application file contains,
-  how approval is communicated or withdrawn. Markings the product must bear and tests it must pass
-  are obligations on the product, not procedure.
+  how approval is communicated or withdrawn. Markings the product must bear and results it must
+  reach in a test are obligations on the product, not procedure.
 - `not_this_product`: judged against the product profile at the end of the case, the statement
   every other agent reads. Only when it is for a function the profile lists as one the part does
   NOT have, for a vehicle category other than those it lists, or for a kind of device that is
   neither the part nor something it contains. When the profile says nothing either way, it
-  applies: a missed requirement costs four times what an extra one does.
+  applies.
 - `not_an_obligation`: it imposes nothing (a permission, a reference only, a note).
-- `same_as_another_clause`: it repeats a clause you listed in this answer.
+- `test_method`: how a test is carried out, as above.
+- `same_as_another_clause`: it restates an obligation you answered elsewhere in this window.
 
 Do not list anything that is not in the window: another agent reads the other windows.

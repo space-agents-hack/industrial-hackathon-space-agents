@@ -303,3 +303,24 @@ def test_obligations_are_translated_ten_at_a_time() -> None:
     )
     jobs = writer.translation_jobs(window, found, [p])
     assert [len(j.obligations) for j in jobs] == [10, 10, 3]
+
+
+async def test_a_translator_writes_one_requirement_per_obligation() -> None:
+    # The first stage splits; a second split multiplied the output (Clemente, 2026-10-25).
+    window = writer.Window(version(), [paragraph(3, 4, RED)])
+    found = writer.Disposition(obligations=[writer.Obligation(ref=3, clauses=["c3.1"], what="x")])
+    [job] = writer.translation_jobs(window, found, [])
+    two = [
+        {"ref": 3, "text": "It shall be red.", "test_case": "Look."},
+        {"ref": 3, "text": "It shall be visibly red.", "test_case": "Look."},
+    ]
+    calls: list[int] = []
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        calls.append(1)
+        return ModelResponse(parts=[ToolCallPart("record_translations", {"response": two})])
+
+    result = await writer.translator_agent.run(job.render(), model=FunctionModel(model), deps=job)
+
+    assert len(calls) == 2  # asked once, then the first one per obligation is kept
+    assert [d.text for d in result.output] == ["It shall be red."]

@@ -349,13 +349,17 @@ class SetAside(BaseModel):
         "authority_procedure",
         "not_this_product",
         "not_an_obligation",
+        "test_method",
         "same_as_another_clause",
     ] = Field(
         description="definition_or_scope: defines a term or the scope. authority_procedure: what "
         "the approval authority or the application file does. not_this_product: by the product "
         "profile (a function it lacks, another vehicle category, a device it neither is nor "
         "contains). not_an_obligation: imposes nothing (a permission, a reference only). "
-        "same_as_another_clause: repeats a clause written in this answer."
+        "test_method: how a test is carried out (set-up, conditioning, sequence, equipment, how a "
+        "value is measured or computed), which belongs in the test case of the requirement it "
+        "verifies. same_as_another_clause: restates an obligation answered elsewhere in this "
+        "window."
     )
     note: str = Field(default="", max_length=300, description="Why, in a few words.")
 
@@ -587,14 +591,31 @@ def read_version_paragraphs(
 def _translates_these_obligations(
     ctx: RunContext[TranslationJob], drafts: list[Draft]
 ) -> list[Draft]:
-    known = {o.ref for o in ctx.deps.obligations}
+    known = Counter(o.ref for o in ctx.deps.obligations)
     wrong = sorted({d.ref for d in drafts if d.ref not in known})
     if wrong:
         raise ModelRetry(
             f"[#{', #'.join(map(str, wrong))}] are not the paragraphs of these obligations. Cite "
             "the [#n] each obligation is headed with."
         )
-    return [d for d in drafts if d.text.strip()]
+    drafts = [d for d in drafts if d.text.strip()]
+    written = Counter(d.ref for d in drafts)
+    over = sorted(ref for ref, n in written.items() if n > known[ref])
+    # One requirement per obligation (Clemente, 2026-10-25: "make sure one obligation, one
+    # requirement is met"). The first stage already splits; a translator that splits again
+    # multiplied the output (634 requirements on dev for a key of 190). Asked once; after that the
+    # first ones per paragraph are kept, as many as it has obligations.
+    if over and ctx.retry == 0:
+        raise ModelRetry(
+            f"[#{', #'.join(map(str, over))}]: more requirements than obligations. Write exactly "
+            "one requirement per obligation; another agent already split them. Answer again."
+        )
+    kept: list[Draft] = []
+    for d in drafts:
+        if known[d.ref] > 0:
+            kept.append(d)
+            known[d.ref] -= 1
+    return kept
 
 
 def translation_jobs(
