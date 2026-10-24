@@ -16,10 +16,15 @@ from agent_service.records import (
     EventKind,
     OrganizationSettings,
     Run,
+    RunFile,
     RunStatus,
 )
 
 _approvals = TypeAdapter(list[Approval])
+_files = TypeAdapter(list[RunFile])
+
+# The private bucket the browser uploads case files to (migration 20261024160000_case_files).
+CASE_FILES_BUCKET = "case-files"
 
 # PostgREST returns at most this many rows per request (`max_rows` in supabase/config.toml and the
 # hosted default). A sum over one page would silently undercount a busy month.
@@ -48,6 +53,12 @@ class RunStore(Protocol):
     async def save_conversation(self, run_id: UUID, conversation: Any) -> None: ...
 
     async def load_conversation(self, run_id: UUID) -> Any | None: ...
+
+    async def run_files(self, run_id: UUID) -> list[RunFile]:
+        """The case files attached to the run, in upload order."""
+        ...
+
+    async def download(self, storage_path: str) -> bytes: ...
 
     async def set_status(
         self,
@@ -172,6 +183,20 @@ class SupabaseRunStore:
             return None
         row = res.data[0]
         return row["conversation"] if isinstance(row, dict) else None
+
+    async def run_files(self, run_id: UUID) -> list[RunFile]:
+        res = (
+            await self._db.table("run_files")
+            .select("id, storage_path, filename, format, bytes")
+            .eq("run_id", str(run_id))
+            .order("created_at")
+            .order("id")
+            .execute()
+        )
+        return _files.validate_python(res.data)
+
+    async def download(self, storage_path: str) -> bytes:
+        return await self._db.storage.from_(CASE_FILES_BUCKET).download(storage_path)
 
     async def set_status(
         self,

@@ -11,6 +11,7 @@ from agent_service.records import (
     EventKind,
     OrganizationSettings,
     Run,
+    RunFile,
     RunStatus,
 )
 
@@ -32,6 +33,8 @@ class InMemoryRunStore:
         self.events: list[tuple[UUID, EventKind, dict[str, Any]]] = []
         self.approvals: list[Approval] = []
         self.conversations: dict[UUID, Any] = {}
+        self.files: dict[UUID, list[RunFile]] = {}
+        self.objects: dict[str, bytes] = {}
         self.closed = False
 
     # Helpers the tests use to play the web's part.
@@ -42,6 +45,13 @@ class InMemoryRunStore:
             id=run_id, organization_id=org, task=task, status=status, updated_at=datetime.now(UTC)
         )
         return run_id
+
+    def attach(self, run_id: UUID, filename: str, fmt: str, data: bytes) -> None:
+        """What the browser upload and start_run() do: an object in the bucket and its row."""
+        path = f"{self.runs[run_id].organization_id}/{uuid4()}/{filename}"
+        self.objects[path] = data
+        row = RunFile(id=uuid4(), storage_path=path, filename=filename, format=fmt, bytes=len(data))
+        self.files.setdefault(run_id, []).append(row)
 
     def decide(self, run_id: UUID, status: str, note: str | None = None) -> None:
         self.approvals = [
@@ -95,6 +105,12 @@ class InMemoryRunStore:
 
     async def load_conversation(self, run_id: UUID) -> Any | None:
         return self.conversations.get(run_id)
+
+    async def run_files(self, run_id: UUID) -> list[RunFile]:
+        return list(self.files.get(run_id, []))
+
+    async def download(self, storage_path: str) -> bytes:
+        return self.objects[storage_path]
 
     async def set_status(
         self,

@@ -23,7 +23,7 @@ const ORG = "3941c1f6-f67c-455e-b12b-92c9f7d2d944";
 test("parseNewRun trims the task and enforces the database limits", () => {
   assert.deepEqual(parseNewRun({ task: "  Triage ECN-1001  ", organization_id: ORG }), {
     ok: true,
-    value: { task: "Triage ECN-1001", organizationId: ORG },
+    value: { task: "Triage ECN-1001", organizationId: ORG, files: [] },
   });
   assert.equal(parseNewRun({ task: "   ", organization_id: ORG }).ok, false);
   assert.equal(parseNewRun({ task: 5, organization_id: ORG }).ok, false);
@@ -75,4 +75,30 @@ test("readJson returns undefined for a body that is not JSON", async () => {
   assert.equal(await readJson(bad), undefined);
   const good = new Request("http://localhost/api/runs", { method: "POST", body: '{"task":"a"}' });
   assert.deepEqual(await readJson(good), { task: "a" });
+});
+
+const FILE = {
+  storage_path: `${ORG}/9c5e7a0e-1111-4222-8333-444455556666/1-spec.md`,
+  filename: "spec.md",
+  format: "md",
+  media_type: "text/markdown",
+  bytes: 1299,
+  sha256: "a".repeat(64),
+};
+
+test("parseNewRun names a run started from files alone after its files", () => {
+  const parsed = parseNewRun({ task: " ", organization_id: ORG, files: [FILE] });
+  assert.ok(parsed.ok);
+  if (!parsed.ok) return;
+  assert.equal(parsed.value.task, "Case files: spec.md");
+  assert.equal(parsed.value.files[0].format, "md");
+});
+
+test("parseNewRun refuses a file from another organisation, an unknown format or a bad size", () => {
+  const other = "11111111-2222-4333-8444-555566667777";
+  assert.equal(parseNewRun({ task: "x", organization_id: ORG, files: [{ ...FILE, storage_path: `${other}/u/1-spec.md` }] }).ok, false);
+  assert.equal(parseNewRun({ task: "x", organization_id: ORG, files: [{ ...FILE, filename: "notes.doc", format: "doc" }] }).ok, false);
+  assert.equal(parseNewRun({ task: "x", organization_id: ORG, files: [{ ...FILE, bytes: 0 }] }).ok, false);
+  assert.equal(parseNewRun({ task: "x", organization_id: ORG, files: "spec.md" }).ok, false);
+  assert.equal(parseNewRun({ task: "x", organization_id: ORG, files: Array(21).fill(FILE) }).ok, false);
 });

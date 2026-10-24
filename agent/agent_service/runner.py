@@ -48,8 +48,9 @@ from pydantic_ai.usage import RunUsage
 from pydantic_core import to_jsonable_python
 
 from agent_service import domain
+from agent_service.domain import ingest
 from agent_service.providers import build_model, provider_of, scrub
-from agent_service.records import Approval, ApprovalRequest, Run, RunStatus
+from agent_service.records import Approval, ApprovalRequest, Run, RunFile, RunStatus
 from agent_service.settings import RunSettings, Settings, effective
 from agent_service.store import RunStore
 
@@ -249,8 +250,11 @@ async def _run_agent(store: RunStore, plan: Plan, model: Model | str) -> RunStat
                     },
                 )
 
+    # On resume the case files are already in the saved conversation; reading them again would
+    # send them twice.
+    prompt = None if plan.conversation is not None else await _first_message(store, plan.run)
     result = await domain.agent.run(
-        None if plan.conversation is not None else plan.run.task,
+        prompt,
         conversation=plan.conversation,
         deferred_tool_results=deferred_results,
         model=model,
@@ -288,6 +292,40 @@ async def _run_agent(store: RunStore, plan: Plan, model: Model | str) -> RunStat
         return await _finish(store, run_id, "awaiting_approval", usage=usage)
 
     return await _finish(store, run_id, "succeeded", output=result.output, usage=usage)
+
+
+async def _first_message(store: RunStore, run: Run) -> str | list[ingest.Part]:
+    """The task alone, or the task followed by the run's case files (issue #8).
+
+    One `case_file` event per file, written before the model sees anything, says what was read
+    and what was not, so a person can tell from the trace whether the agent had the whole case.
+    """
+    rows = await store.run_files(run.id)
+    if not rows:
+        return run.task
+    files: list[ingest.CaseFile] = []
+    failed: list[ingest.FileReport] = []
+    for row in rows:
+        fmt = ingest.format_of(f"x.{row.format}")
+        if fmt is None:
+            failed.append(_unreadable(row, f"Format {row.format!r} has no reader in this agent."))
+            continue
+        try:
+            data = await store.download(row.storage_path)
+        except Exception as exc:
+            failed.append(_unreadable(row, f"Download failed: {type(exc).__name__}: {exc}"[:500]))
+            continue
+        files.append(ingest.CaseFile(row.filename, fmt, data))
+    # Parsing is CPU work; in a thread, the heartbeat keeps beating during a long PDF.
+    content = await asyncio.to_thread(ingest.read_case, files)
+    content.reports += failed
+    for report in content.reports:
+        await store.add_event(run.id, "case_file", report.payload())
+    return ingest.first_message(run.task, content)
+
+
+def _unreadable(row: RunFile, error: str) -> ingest.FileReport:
+    return ingest.FileReport(row.filename, row.format, row.bytes, error=error)
 
 
 async def _apply_decisions(store: RunStore, plan: Plan) -> tuple[DeferredToolResults, set[str]]:

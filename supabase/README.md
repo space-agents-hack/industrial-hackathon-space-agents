@@ -63,5 +63,7 @@ supabase db push
 ## What this does not do
 
 - No seed data on the hosted project: `seed.sql` runs only on a local reset.
-- No storage buckets, edge functions or scheduled jobs. Add them when a project needs them.
+- One storage bucket only: `case-files`, private, created by migration `20261024160000_case_files`
+  (the engineer's uploads, issue #8). Its objects do not go away when a run is deleted; the purge
+  script empties the bucket separately. No edge functions or scheduled jobs.
 - No per-user or per-team isolation. See `docs/architecture.md`, "What this does not do".

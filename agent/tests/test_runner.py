@@ -205,3 +205,28 @@ async def test_the_run_keeps_its_heartbeat_without_the_http_response(store, sett
     await advance(store, settings, run_id)
 
     assert touched, "execute() should beat on its own"
+
+
+async def test_case_files_reach_the_model_and_each_one_is_in_the_trace(store, settings) -> None:
+    run_id = store.add_run(HARMLESS)
+    store.attach(run_id, "spec.md", "md", b"# Rear lamp\nVehicle category M1.")
+    store.attach(run_id, "notes.doc", "doc", b"legacy")
+
+    await advance(store, settings, run_id)
+
+    spec, legacy = store.payloads(run_id, "case_file")
+    assert spec["filename"] == "spec.md" and spec["characters"] > 0 and spec["error"] is None
+    assert "no reader" in legacy["error"]
+    # The trace says what was read before the model's first word.
+    assert store.kinds(run_id)[1:3] == ["case_file", "case_file"]
+    saved = str(store.conversations[run_id])
+    assert "Vehicle category M1." in saved
+    assert "## Case file: spec.md (md)" in saved
+
+
+async def test_a_run_without_files_starts_from_the_task_alone(store, settings) -> None:
+    run_id = store.add_run(HARMLESS)
+
+    await advance(store, settings, run_id)
+
+    assert store.payloads(run_id, "case_file") == []

@@ -4,7 +4,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 # Local services the app does not use. Leaving them out roughly halves the first start.
-SUPABASE_SKIP := edge-runtime,logflare,vector,imgproxy,storage-api,supavisor
+SUPABASE_SKIP := edge-runtime,logflare,vector,imgproxy,supavisor
 
 # Which database local development uses. `local` runs Supabase in Docker on this machine.
 # `hosted` uses the Supabase project in the cloud and needs no Docker.

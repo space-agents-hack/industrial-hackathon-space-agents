@@ -117,6 +117,17 @@ export type ApprovalResolvedPayload = {
   note: string | null;
 };
 export type ErrorPayload = { message: string };
+// One per uploaded case file, written before the model starts (agent/agent_service/domain/ingest.py).
+export type CaseFilePayload = {
+  filename: string;
+  format: string;
+  bytes: number;
+  pages: number | null;
+  characters: number;
+  images: number;
+  notes: string[];
+  error: string | null;
+};
 
 type EventBase = { id: number; createdAt: string };
 
@@ -129,6 +140,7 @@ export type ParsedEvent = EventBase &
     | { kind: "approval_requested"; payload: ApprovalRequestedPayload }
     | { kind: "approval_resolved"; payload: ApprovalResolvedPayload }
     | { kind: "error"; payload: ErrorPayload }
+    | { kind: "case_file"; payload: CaseFilePayload }
     // A kind this build does not know, or a known kind whose payload is not the expected shape.
     | { kind: "unknown"; rawKind: string; payload: unknown }
   );
@@ -207,6 +219,22 @@ export function parseEvent(row: RunEventRow): ParsedEvent {
     case "error":
       if (!isString(p.message)) return unknown;
       return { ...base, kind: "error", payload: { message: p.message } };
+    case "case_file":
+      if (!isString(p.filename) || !isString(p.format)) return unknown;
+      return {
+        ...base,
+        kind: "case_file",
+        payload: {
+          filename: p.filename,
+          format: p.format,
+          bytes: typeof p.bytes === "number" ? p.bytes : 0,
+          pages: typeof p.pages === "number" ? p.pages : null,
+          characters: typeof p.characters === "number" ? p.characters : 0,
+          images: typeof p.images === "number" ? p.images : 0,
+          notes: Array.isArray(p.notes) ? p.notes.filter(isString) : [],
+          error: isString(p.error) && p.error !== "" ? p.error : null,
+        },
+      };
     default:
       return unknown;
   }
@@ -326,9 +354,23 @@ export function summarizeEvent(event: ParsedEvent): string {
     }
     case "error":
       return `Error: ${truncate(event.payload.message, 140)}`;
+    case "case_file":
+      return describeCaseFile(event.payload);
     case "unknown":
       return `Unrecognised event "${event.rawKind}"`;
   }
+}
+
+// What the agent read from one case file, in one line. Notes say what was skipped or cut, so the
+// engineer can tell whether the agent had the whole case.
+export function describeCaseFile(p: CaseFilePayload): string {
+  if (p.error) return `${p.filename}: ${truncate(p.error, 140)}`;
+  const read: string[] = [];
+  if (p.pages !== null) read.push(`${p.pages} page${p.pages === 1 ? "" : "s"}`);
+  if (p.characters > 0) read.push(`${p.characters.toLocaleString("en")} characters`);
+  if (p.images > 0) read.push(`${p.images} image${p.images === 1 ? "" : "s"}`);
+  const notes = p.notes.length ? `. ${p.notes.join(" ")}` : "";
+  return `Read ${p.filename}: ${read.join(", ") || "nothing"}${notes}`;
 }
 
 // ---------------------------------------------------------------------------------------------

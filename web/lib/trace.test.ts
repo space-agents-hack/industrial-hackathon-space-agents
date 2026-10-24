@@ -520,3 +520,33 @@ test("formatUtc and formatElapsed do not depend on the local time zone", () => {
   assert.equal(formatElapsed(T0, "2026-10-13T09:59:59.000Z"), "+0.0s");
   assert.equal(formatElapsed(T0, "nope"), "");
 });
+
+test("a case file event says what was read and what was not", async () => {
+  const { parseEvent, summarizeEvent } = await import("./trace.ts");
+  const row = (payload: unknown): RunEventRow => ({
+    id: 1,
+    run_id: "r",
+    created_at: "2026-10-24T15:00:00Z",
+    kind: "case_file",
+    payload,
+  });
+  const pdf = parseEvent(
+    row({
+      filename: "datasheet.pdf",
+      format: "pdf",
+      bytes: 120000,
+      pages: 12,
+      characters: 30100,
+      images: 2,
+      notes: ["Little or no text on page(s) 3, 7; sent as images."],
+      error: null,
+    }),
+  );
+  assert.equal(
+    summarizeEvent(pdf),
+    "Read datasheet.pdf: 12 pages, 30,100 characters, 2 images. Little or no text on page(s) 3, 7; sent as images.",
+  );
+  const broken = parseEvent(row({ filename: "x.pdf", format: "pdf", error: "Could not be read: PdfReadError" }));
+  assert.equal(summarizeEvent(broken), "x.pdf: Could not be read: PdfReadError");
+  assert.equal(parseEvent(row({ format: "pdf" })).kind, "unknown");
+});

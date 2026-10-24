@@ -16,6 +16,7 @@ EventKind = Literal[
     "approval_requested",
     "approval_resolved",
     "error",
+    "case_file",
 ]
 
 
@@ -46,3 +47,13 @@ class OrganizationSettings(BaseModel):
     model: str | None = None
     max_model_requests: int | None = None
     monthly_cost_cap_usd: float | None = None
+
+
+class RunFile(BaseModel):
+    """One uploaded case file (run_files). The bytes are in Storage, at `storage_path`."""
+
+    id: UUID
+    storage_path: str
+    filename: str
+    format: str
+    bytes: int

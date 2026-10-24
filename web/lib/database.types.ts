@@ -274,6 +274,60 @@ export type Database = {
           },
         ]
       }
+      run_files: {
+        Row: {
+          bytes: number
+          created_at: string
+          filename: string
+          format: string
+          id: string
+          media_type: string | null
+          organization_id: string
+          run_id: string
+          sha256: string | null
+          storage_path: string
+        }
+        Insert: {
+          bytes: number
+          created_at?: string
+          filename: string
+          format: string
+          id?: string
+          media_type?: string | null
+          organization_id: string
+          run_id: string
+          sha256?: string | null
+          storage_path: string
+        }
+        Update: {
+          bytes?: number
+          created_at?: string
+          filename?: string
+          format?: string
+          id?: string
+          media_type?: string | null
+          organization_id?: string
+          run_id?: string
+          sha256?: string | null
+          storage_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "run_files_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "run_files_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       run_state: {
         Row: {
           conversation: Json
@@ -414,6 +468,10 @@ export type Database = {
           org: string
         }
         Returns: undefined
+      }
+      start_run: {
+        Args: { p_files?: Json; p_organization_id: string; p_task: string }
+        Returns: string
       }
       update_organization_settings: {
         Args: {
