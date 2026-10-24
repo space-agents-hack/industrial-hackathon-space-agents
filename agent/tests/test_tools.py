@@ -170,3 +170,37 @@ async def test_the_summary_counts_kept_obligations_by_what_they_cover(store, set
 
     # This model names nothing, even after the nudge: kept, and counted as such.
     assert result["obligations_by_covers"] == {"UN R148": {writer.NOT_IN_PROFILE: 2}}
+
+
+async def test_a_retry_inside_the_write_reserve_answers_at_once_and_says_to_move_on(
+    store, settings
+) -> None:
+    # In production the orchestrator spent 96 s retrying windows after the writers and reached
+    # the check with 35 s left (dev-rear-lamp, 2026-10-24).
+    d = deps(store, settings)
+    d.deadline = asyncio.get_running_loop().time() + settings.write_reserve_s + 5
+
+    result = await tools.write_for_paragraphs(ctx(d, stalls_on("6.1")), "UN R148", ["6.1"])
+
+    assert result["requirements"] == 0
+    assert "submit" in result["out_of_time"]
+
+
+async def test_a_translator_may_look_up_several_paragraphs_before_it_answers(
+    store, settings
+) -> None:
+    # At 4 requests, three of four retries in a production run lost a batch to the limit.
+    d = deps(store, settings)
+    inner = stalls_on("no marker").function
+    assert inner is not None
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        asked = sum(isinstance(m, ModelResponse) for m in messages)
+        if info.output_tools[0].name == "record_translations" and asked < 4:
+            return ModelResponse(parts=[ToolCallPart("read_version_paragraphs", {"labels": ["1"]})])
+        return await inner(messages, info)  # type: ignore[misc]
+
+    result = await tools.write_requirements(ctx(d, FunctionModel(model)), ["UN R148"])
+
+    assert result["failed_windows"] == []
+    assert result["written"]["UN R148"]["requirements"] == 2

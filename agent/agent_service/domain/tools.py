@@ -41,6 +41,10 @@ _CHECK_BATCH = 15
 # A writer or check call that cannot produce a valid answer in this many requests gives up; its
 # window is reported as failed and can be written again with write_for_paragraphs.
 _SUB_REQUESTS = 4
+# Translators and the check read other paragraphs with a tool (a table, an annex), and each
+# look-up is one more request: at 4, three of the four write_for_paragraphs calls of a production
+# run (dev-rear-lamp, Opus, 2026-10-24) lost a batch to "would exceed the request_limit of 4".
+_LOOKUP_REQUESTS = _SUB_REQUESTS + 4
 # More than this is not read by anyone; the count still says how many there are.
 _MAX_LISTED = 150
 
@@ -106,6 +110,21 @@ def _call_timeout(deps: Deps, reserve_s: float) -> float:
     if left < _MIN_CALL_S:
         raise OutOfTime(f"not started: under {reserve_s + _MIN_CALL_S:.0f} s of the run were left")
     return min(limit, left)
+
+
+def _writing_time_spent(deps: Deps) -> bool:
+    """Whether the run is inside its write reserve, where no writer call would start."""
+    try:
+        _call_timeout(deps, deps.settings.write_reserve_s)
+    except OutOfTime:
+        return True
+    return False
+
+
+_NO_TIME_TO_WRITE = (
+    "No time left in this run to write more; what is stored stays. Go on with "
+    "check_requirements, export_requirements and submit."
+)
 
 
 toolset = FunctionToolset[Deps]()
@@ -428,6 +447,11 @@ async def write_for_paragraphs(
     deps = ctx.deps
     _case_id(deps.run)
     await _require_profile(deps)
+    if _writing_time_spent(deps):
+        # Answered at once, so the orchestrator moves on: in production it spent 96 s retrying
+        # windows after the writers and reached the check with 35 s left (dev-rear-lamp,
+        # 2026-10-24). A window not started for lack of time is still listed as failed.
+        return {"requirements": 0, "out_of_time": _NO_TIME_TO_WRITE}
     try:
         version = writer.citable_version(await _library(deps), regulation)
     except UnknownRegulation as exc:
@@ -491,7 +515,7 @@ async def check_requirements(ctx: RunContext[Deps]) -> dict[str, Any]:
                         [*_case(deps), CachePoint(), writer.check_batch(batch, by_id)],
                         model=cast(Model, model),
                         deps=writer.CheckDeps(by_label),
-                        usage_limits=UsageLimits(request_limit=_SUB_REQUESTS + 4),
+                        usage_limits=UsageLimits(request_limit=_LOOKUP_REQUESTS),
                     )
             except Exception as exc:
                 message = _failure(deps, exc)
@@ -739,7 +763,11 @@ async def _write_windows(
                     [*case, CachePoint(), prompt],
                     model=model,
                     deps=job,
-                    usage_limits=UsageLimits(request_limit=_SUB_REQUESTS),
+                    usage_limits=UsageLimits(
+                        request_limit=_LOOKUP_REQUESTS
+                        if agent is writer.translator_agent
+                        else _SUB_REQUESTS
+                    ),
                 )
         _add_tokens(ctx.usage, result.usage)
         return result.output
