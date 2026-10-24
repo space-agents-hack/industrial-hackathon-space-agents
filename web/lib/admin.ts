@@ -13,14 +13,24 @@ export const MIN_PASSWORD_LENGTH = 12;
 // Providers and models
 // ---------------------------------------------------------------------------------------------
 
-// The four the database accepts (provider_connections.provider check). Order is the page's.
+// The five the database accepts (provider_connections.provider check). Order is the page's.
 export const PROVIDERS = [
   { id: "anthropic", label: "Anthropic" },
   { id: "openai", label: "OpenAI" },
   { id: "openrouter", label: "OpenRouter" },
   { id: "deepseek", label: "DeepSeek" },
+  { id: "ollama", label: "Ollama" },
 ] as const;
 export type ProviderId = (typeof PROVIDERS)[number]["id"];
+
+// Configured with the URL of a server the organisation runs (SYS-30), not with a key.
+export const ENDPOINT_PROVIDERS = ["ollama"] as const;
+export type EndpointProviderId = (typeof ENDPOINT_PROVIDERS)[number];
+export type KeyProviderId = Exclude<ProviderId, EndpointProviderId>;
+
+export function isEndpointProvider(value: unknown): value is EndpointProviderId {
+  return ENDPOINT_PROVIDERS.some((p) => p === value);
+}
 
 export function isProviderId(value: unknown): value is ProviderId {
   return typeof value === "string" && PROVIDERS.some((p) => p.id === value);
@@ -31,7 +41,7 @@ export function providerLabel(id: string): string {
 }
 
 // What the model picker offers: the scripted model (no provider, no network, always there) and
-// the four providers.
+// the five providers.
 export type ModelSource = "scripted" | ProviderId;
 export const SCRIPTED_MODEL = "scripted";
 
@@ -39,7 +49,8 @@ export function isModelSource(value: unknown): value is ModelSource {
   return value === SCRIPTED_MODEL || isProviderId(value);
 }
 
-// OpenRouter publishes its catalogue; the others list models only to a caller with a key.
+// OpenRouter publishes its catalogue; the others list models only to a caller with a key (or,
+// for Ollama, once its server is connected).
 export function listNeedsKey(source: ModelSource): boolean {
   return source !== SCRIPTED_MODEL && source !== "openrouter";
 }
@@ -53,6 +64,7 @@ const PREFIXES: Record<string, ProviderId> = {
   "openai-responses": "openai",
   openrouter: "openrouter",
   deepseek: "deepseek",
+  ollama: "ollama",
 };
 
 // Which picker a stored model belongs to. Null for an empty value (the default applies) and for
@@ -214,15 +226,82 @@ export function parseOrgOnly(body: unknown): Parsed<{ org: string }> {
 
 export function parseProviderKey(
   body: unknown,
-): Parsed<{ org: string; provider: ProviderId; apiKey: string }> {
+): Parsed<{ org: string; provider: KeyProviderId; apiKey: string }> {
   if (!isRecord(body) || !isUuid(body.org)) return { ok: false, error: "Unknown organisation." };
   if (!isProviderId(body.provider)) return { ok: false, error: "Unknown provider." };
+  if (isEndpointProvider(body.provider)) return { ok: false, error: "Connect this provider with its server URL." };
   const apiKey = typeof body.api_key === "string" ? body.api_key.trim() : "";
   // The same rule as set_provider_key, checked first so the agent is not asked about a typo.
   if (apiKey.length < 16 || /\s/.test(apiKey) || apiKey.length > 1000) {
     return { ok: false, error: "That does not look like an API key." };
   }
   return { ok: true, value: { org: body.org, provider: body.provider, apiKey } };
+}
+
+export type AuthScheme = "none" | "bearer" | "basic";
+export const AUTH_SCHEMES: { id: AuthScheme; label: string }[] = [
+  { id: "none", label: "None" },
+  { id: "bearer", label: "Bearer token" },
+  { id: "basic", label: "User name and password" },
+];
+
+export function isAuthScheme(value: unknown): value is AuthScheme {
+  return AUTH_SCHEMES.some((a) => a.id === value);
+}
+
+export function authSchemeLabel(id: string | null | undefined): string {
+  return AUTH_SCHEMES.find((a) => a.id === id)?.label ?? id ?? "?";
+}
+
+export type EndpointInput = {
+  org: string;
+  provider: EndpointProviderId;
+  baseUrl: string;
+  authScheme: AuthScheme;
+  username: string | null;
+  // Null keeps the stored one: moving the server to another port should not mean typing the
+  // token again (set_provider_endpoint does the same).
+  secret: string | null;
+};
+
+// The same rule as private.valid_endpoint_url, checked first so the agent is not asked about a
+// typo. No user:password@ in the URL: that would put a secret where every member can read it.
+const ENDPOINT_URL = /^https?:\/\/[^/@\s?#]+(\/[^\s?#@]*)?$/;
+
+export function parseProviderEndpoint(body: unknown): Parsed<EndpointInput> {
+  if (!isRecord(body) || !isUuid(body.org)) return { ok: false, error: "Unknown organisation." };
+  if (!isEndpointProvider(body.provider)) return { ok: false, error: "Unknown provider." };
+  const baseUrl = typeof body.base_url === "string" ? body.base_url.trim() : "";
+  if (baseUrl === "") return { ok: false, error: "Enter the server URL, for example http://localhost:11434." };
+  if (/^https?:\/\/[^/]*@/.test(baseUrl)) {
+    return { ok: false, error: "Put the user name and password in their own fields, not in the URL." };
+  }
+  if (!ENDPOINT_URL.test(baseUrl) || baseUrl.length > 500) {
+    return { ok: false, error: "The server URL must start with http:// or https:// and have no query." };
+  }
+  const authScheme = body.auth_scheme;
+  if (!isAuthScheme(authScheme)) {
+    return { ok: false, error: "Choose how the server checks who is calling." };
+  }
+  const username = typeof body.username === "string" && body.username.trim() !== "" ? body.username.trim() : null;
+  if (authScheme === "basic" && (username === null || /[:\s]/.test(username) || username.length > 200)) {
+    return { ok: false, error: "Enter a user name without colons or spaces." };
+  }
+  const secret = typeof body.secret === "string" && body.secret !== "" ? body.secret : null;
+  if (secret !== null && (secret.length > 1000 || /[\r\n]/.test(secret))) {
+    return { ok: false, error: "That does not look like a token or password." };
+  }
+  return {
+    ok: true,
+    value: {
+      org: body.org,
+      provider: body.provider,
+      baseUrl,
+      authScheme,
+      username: authScheme === "basic" ? username : null,
+      secret: authScheme === "none" ? null : secret,
+    },
+  };
 }
 
 export function parseProviderDelete(body: unknown): Parsed<{ org: string; provider: ProviderId }> {
@@ -384,6 +463,14 @@ export function summarizeAuditEvent(
     }
     case "provider.connected":
     case "provider.rotated": {
+      const baseUrl = text(detail.base_url);
+      if (baseUrl) {
+        const verb = event.action === "provider.connected" ? "Connected" : "Changed";
+        const last4 = text(detail.last4);
+        return `${verb} the ${providerLabel(text(detail.provider) ?? "?")} server ${baseUrl} (authentication: ${authSchemeLabel(
+          text(detail.auth_scheme),
+        ).toLowerCase()}${last4 ? `, token ending ${last4}` : ""}).`;
+      }
       const verb = event.action === "provider.connected" ? "Connected" : "Replaced the key of";
       const source = text(detail.source);
       return `${verb} ${providerLabel(text(detail.provider) ?? "?")} (key ending ${text(detail.last4) ?? "?"}${
@@ -391,7 +478,9 @@ export function summarizeAuditEvent(
       }).`;
     }
     case "provider.deleted":
-      return `Removed the ${providerLabel(text(detail.provider) ?? "?")} key.`;
+      return isEndpointProvider(detail.provider)
+        ? `Disconnected the ${providerLabel(detail.provider)} server.`
+        : `Removed the ${providerLabel(text(detail.provider) ?? "?")} key.`;
     case "member.set": {
       const userId = text(detail.user_id);
       const role = text(detail.role);

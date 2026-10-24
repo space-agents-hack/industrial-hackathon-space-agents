@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -18,6 +18,7 @@ import {
   parseAddPerson,
   parseModelList,
   parseOrganizationName,
+  parseProviderEndpoint,
   parseProviderKey,
   parseSetMember,
   parseSetPassword,
@@ -31,11 +32,12 @@ const ORG = "11111111-1111-4111-8111-111111111111";
 const USER = "22222222-2222-4222-8222-222222222222";
 
 test("the providers are exactly the ones the database accepts", () => {
-  const migration = readFileSync(
-    new URL("../../supabase/migrations/20261014120000_platform.sql", import.meta.url),
-    "utf8",
-  );
-  const check = migration.match(/provider in \(([^)]+)\)/);
+  // The latest migration that sets the check is the one in force.
+  const dir = new URL("../../supabase/migrations/", import.meta.url);
+  const checks = readdirSync(dir)
+    .sort()
+    .flatMap((name) => [...readFileSync(new URL(name, dir), "utf8").matchAll(/\bprovider in \(([^)]+)\)/g)]);
+  const check = checks.at(-1);
   assert.ok(check);
   const allowed = check[1].split(",").map((s) => s.trim().replace(/'/g, ""));
   assert.deepEqual(PROVIDERS.map((p) => p.id).sort(), allowed.sort());
@@ -48,6 +50,9 @@ test("a stored model maps to its picker, including OpenAI's three prefixes", () 
   assert.equal(modelSourceOf("openai-chat:gpt-5"), "openai");
   assert.equal(modelSourceOf("openrouter:anthropic/claude-opus-5-5"), "openrouter");
   assert.equal(modelSourceOf("deepseek:deepseek-chat"), "deepseek");
+  // Ollama tags carry their own colon; the first one is the prefix.
+  assert.equal(modelSourceOf("ollama:llama3.1:8b"), "ollama");
+  assert.equal(modelName("ollama:llama3.1:8b"), "llama3.1:8b");
   assert.equal(modelSourceOf(null), null);
   assert.equal(modelSourceOf("mistral:large"), null);
   assert.equal(modelSourceOf(":nothing"), null);
@@ -58,6 +63,7 @@ test("only direct providers need a key to list models", () => {
   assert.equal(listNeedsKey("openrouter"), false);
   assert.equal(listNeedsKey("anthropic"), true);
   assert.equal(listNeedsKey("deepseek"), true);
+  assert.equal(listNeedsKey("ollama"), true);
 });
 
 test("model ids and prices read the way someone choosing a model needs", () => {
@@ -134,9 +140,47 @@ test("people and keys: bodies are checked before anything is called", () => {
   assert.equal(parseProviderKey({ org: ORG, provider: "anthropic", api_key: "too-short" }).ok, false);
   assert.equal(parseProviderKey({ org: ORG, provider: "anthropic", api_key: "has a space in the middle" }).ok, false);
   assert.equal(parseProviderKey({ org: ORG, provider: "mistral", api_key: "x".repeat(16) }).ok, false);
+  assert.equal(parseProviderKey({ org: ORG, provider: "ollama", api_key: "x".repeat(16) }).ok, false);
 
   assert.deepEqual(parseOrganizationName({ name: "  Acme  " }), { ok: true, value: { name: "Acme" } });
   assert.equal(parseOrganizationName({ name: " " }).ok, false);
+});
+
+test("an Ollama server: URL and credentials are checked before anything is called", () => {
+  const server = { org: ORG, provider: "ollama", base_url: " http://localhost:11434 ", auth_scheme: "none" };
+  assert.deepEqual(parseProviderEndpoint({ ...server, username: "ignored", secret: "ignored" }), {
+    ok: true,
+    value: {
+      org: ORG,
+      provider: "ollama",
+      baseUrl: "http://localhost:11434",
+      authScheme: "none",
+      username: null,
+      secret: null,
+    },
+  });
+  const basic = parseProviderEndpoint({ ...server, auth_scheme: "basic", username: " eng ", secret: "pw" });
+  assert.ok(basic.ok);
+  assert.equal(basic.value.username, "eng");
+  assert.equal(basic.value.secret, "pw");
+  // An empty secret means "keep the stored one", which the database decides.
+  const bearer = parseProviderEndpoint({ ...server, base_url: "https://gpu.example.test/ollama", auth_scheme: "bearer", secret: "" });
+  assert.ok(bearer.ok);
+  assert.equal(bearer.value.secret, null);
+
+  const refused = (fields: Record<string, unknown>) => parseProviderEndpoint({ ...server, ...fields }).ok === false;
+  assert.ok(refused({ base_url: "http://admin:pw@localhost:11434" }));
+  assert.ok(refused({ base_url: "file:///etc/passwd" }));
+  assert.ok(refused({ base_url: "http://localhost:11434/?token=x" }));
+  assert.ok(refused({ base_url: "" }));
+  assert.ok(refused({ auth_scheme: "digest" }));
+  assert.ok(refused({ auth_scheme: "basic", username: "" }));
+  assert.ok(refused({ auth_scheme: "basic", username: "a:b", secret: "pw" }));
+  assert.ok(refused({ auth_scheme: "bearer", secret: "two\nlines" }));
+  assert.ok(refused({ provider: "openai" }));
+  // The message about credentials in the URL names the fields to use instead.
+  const inUrl = parseProviderEndpoint({ ...server, base_url: "https://u:p@host" });
+  assert.ok(!inUrl.ok && /own fields/.test(inUrl.error));
 });
 
 test("generated passwords are long enough and avoid look-alike characters", () => {
@@ -192,6 +236,27 @@ test("audit lines are readable sentences", () => {
     "Replaced the key of Anthropic (key ending zz99, pasted).",
   );
   assert.equal(summarizeAuditEvent({ action: "provider.deleted", detail: { provider: "deepseek" } }, nameOf), "Removed the DeepSeek key.");
+  assert.equal(
+    summarizeAuditEvent(
+      {
+        action: "provider.rotated",
+        detail: { provider: "ollama", base_url: "https://gpu.example.test", auth_scheme: "bearer", last4: "wxyz" },
+      },
+      nameOf,
+    ),
+    "Changed the Ollama server https://gpu.example.test (authentication: bearer token, token ending wxyz).",
+  );
+  assert.equal(
+    summarizeAuditEvent(
+      {
+        action: "provider.connected",
+        detail: { provider: "ollama", base_url: "http://localhost:11434", auth_scheme: "none", last4: null },
+      },
+      nameOf,
+    ),
+    "Connected the Ollama server http://localhost:11434 (authentication: none).",
+  );
+  assert.equal(summarizeAuditEvent({ action: "provider.deleted", detail: { provider: "ollama" } }, nameOf), "Disconnected the Ollama server.");
   assert.equal(
     summarizeAuditEvent(
       { action: "settings.updated", detail: { model: null, max_model_requests: 12, monthly_cost_cap_usd: 50 } },

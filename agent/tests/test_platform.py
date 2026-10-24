@@ -11,6 +11,7 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, DeltaToolCalls, FunctionModel
 
 from agent_service import providers, runner
+from agent_service.providers import Endpoint
 from agent_service.records import OrganizationSettings
 from agent_service.settings import RunSettings, Settings, effective
 from tests.fakes import ORG, InMemoryRunStore
@@ -136,9 +137,13 @@ async def test_an_approved_run_resumes_even_past_the_cap(store, settings) -> Non
 class BuildSpy:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str | None]] = []
+        self.endpoints: list[Endpoint | None] = []
 
-    def __call__(self, name: str, api_key: str | None) -> Model | str:
+    def __call__(
+        self, name: str, api_key: str | None, endpoint: Endpoint | None = None
+    ) -> Model | str:
         self.calls.append((name, api_key))
+        self.endpoints.append(endpoint)
         # The scripted model stands in for the provider so nothing leaves the machine.
         return providers.build_model("scripted", None)
 
@@ -183,6 +188,20 @@ async def test_scripted_never_reads_a_key(store, settings, spy) -> None:
     assert spy.calls == [("scripted", None)]
 
 
+async def test_the_organisations_ollama_server_is_used_for_its_model(store, settings, spy) -> None:
+    store.settings[ORG] = OrganizationSettings(model="ollama:qwen3:32b")
+    server = Endpoint("https://ollama.example.test", "bearer", None, ORG_KEY)
+    store.endpoints[(ORG, "ollama")] = server
+    store.keys[(ORG, "ollama")] = "never-read-as-a-key-0123456789"
+    run_id = store.add_run(HARMLESS)
+
+    assert await advance(store, settings, run_id) == "succeeded"
+
+    # The token is passed as the secret to scrub every error of; the server builds the model.
+    assert spy.calls == [("ollama:qwen3:32b", ORG_KEY)]
+    assert spy.endpoints == [server]
+
+
 def _leaky_model(key: str) -> FunctionModel:
     def fail(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         raise RuntimeError(f"401 from provider: invalid api key {key!r}")
@@ -201,7 +220,7 @@ async def test_a_provider_error_quoting_the_key_is_scrubbed_everywhere(
 ) -> None:
     store.settings[ORG] = OrganizationSettings(model="anthropic:claude-test")
     store.keys[(ORG, "anthropic")] = ORG_KEY
-    monkeypatch.setattr(runner, "build_model", lambda _name, key: _leaky_model(key))
+    monkeypatch.setattr(runner, "build_model", lambda _name, key, _endpoint=None: _leaky_model(key))
     run_id = store.add_run(HARMLESS)
 
     with caplog.at_level(logging.DEBUG):

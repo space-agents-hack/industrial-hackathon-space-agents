@@ -21,7 +21,7 @@ flowchart LR
   A -->|runs, events, approvals, saved conversation, regulation library, with the secret key| D
   A -->|reads case files, stores regulation PDFs| F
   A -->|tool calls| S[Mock company systems, template example]
-  A -->|model calls| M[Model provider chosen by AGENT_MODEL]
+  A -->|model calls| M[Model provider chosen by AGENT_MODEL, or the organisation's Ollama server]
 ```
 
 - **web/** knows nothing about models or tools. It shows rows, uploads files to Storage as the
@@ -46,7 +46,11 @@ database, checked by row-level security and by the functions that change things
 
 Settings have their defaults in the agent's environment; an organisation's row stores only what
 it changed. Provider keys live in Supabase Vault; the browser sees provider and last four
-characters, only the agent reads a key back. Every change to settings, keys and people writes a
+characters, only the agent reads a key back. Ollama is the exception to "one key": it is a server
+the organisation runs, stored as a URL and an authentication scheme (none, bearer, basic) that
+members can see, plus a token or password in Vault (`set_provider_endpoint`,
+`read_provider_endpoint`). The agent calls that URL, so it must be reachable from where the agent
+runs. Every change to settings, keys and people writes a
 row to `audit_events`.
 
 ## A run, step by step

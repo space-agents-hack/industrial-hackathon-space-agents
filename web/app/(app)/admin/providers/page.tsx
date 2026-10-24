@@ -3,7 +3,7 @@ import { Suspense } from "react";
 
 import { AdminNotice } from "@/components/admin/admin-notice";
 import { type Connection, ProvidersList } from "@/components/admin/providers-list";
-import { isProviderId, shortId } from "@/lib/admin";
+import { isAuthScheme, isProviderId, shortId } from "@/lib/admin";
 import { adminPage, peopleById } from "@/lib/admin-page";
 import { openRouterResultMessage } from "@/lib/openrouter-oauth";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,14 @@ export default function ProvidersPage(props: PageProps<"/admin/providers">) {
           A key belongs to the organisation, not to a person. It is stored encrypted in Supabase
           Vault; this page and the browser only ever see its last four characters. The agent reads
           it when a run starts.
+        </p>
+        <p>
+          Ollama runs the models on a server you control, so prompts and case content go to that
+          server instead of a hosted provider. Its URL and user name are visible to members; its
+          token or password is stored in Vault like a key. While an Ollama model is the
+          organisation&apos;s model, scanned pages in case files are not sent to a hosted model for
+          transcription either. Case files themselves are still stored in this deployment&apos;s
+          Supabase project.
         </p>
         <p>
           Why there is no &quot;sign in with Claude&quot; or &quot;sign in with ChatGPT&quot;:
@@ -43,7 +51,7 @@ async function Providers({ searchParams }: { searchParams: PageProps<"/admin/pro
     searchParams,
     supabase
       .from("provider_connections")
-      .select("provider, last4, source, created_at, created_by")
+      .select("provider, last4, source, created_at, created_by, base_url, auth_scheme, auth_username")
       .eq("organization_id", org.id),
     peopleById(supabase, org.id),
   ]);
@@ -66,6 +74,9 @@ async function Providers({ searchParams }: { searchParams: PageProps<"/admin/pro
       createdAt: c.created_at,
       // Someone who is not a member (a platform admin) has no email on this page.
       createdBy: c.created_by ? (people.get(c.created_by) ?? shortId(c.created_by)) : null,
+      baseUrl: c.base_url,
+      authScheme: isAuthScheme(c.auth_scheme) ? c.auth_scheme : null,
+      username: c.auth_username,
     }));
 
   return (

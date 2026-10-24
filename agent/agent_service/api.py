@@ -18,7 +18,7 @@ import logging
 import os
 import re
 from collections.abc import AsyncIterator, Callable
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
 import httpx
@@ -34,8 +34,8 @@ from agent_service.domain.library_store import SupabaseLibraryStore
 from agent_service.domain.regulation_search import SearchStore
 from agent_service.domain.regulations import LibraryStore
 from agent_service.domain.search_store import SupabaseSearchStore
-from agent_service.providers import Provider
-from agent_service.settings import Settings, get_settings
+from agent_service.providers import AuthScheme, Provider
+from agent_service.settings import Settings, effective, get_settings
 from agent_service.store import RunStore, SupabaseRunStore
 
 log = logging.getLogger(__name__)
@@ -207,6 +207,10 @@ async def advance_import(
 
 # Parse a case's pending files once (domain/case_ingest.py). The web calls this after the files are
 # uploaded and their rows inserted; a requirements run never parses, it reads what is stored.
+def _is_local(model: str) -> bool:
+    return providers.provider_of(model) in providers.ENDPOINT_PROVIDERS
+
+
 # Streamed like a run, because a scanned PDF with model transcription can take a minute.
 @app.post("/cases/{case_id}/ingest", dependencies=[Depends(require_secret)])
 async def ingest_case(
@@ -220,14 +224,19 @@ async def ingest_case(
         raise HTTPException(404, "No files in this case.")
 
     async def work() -> dict[str, int]:
+        org = files[0].organization_id
         name = settings.ingest_model.strip()
+        own = effective(settings, await store.organization_settings(org)).model
+        if _is_local(own) and not _is_local(name):
+            # An organisation that runs its models on its own server did it so case files do not
+            # reach a hosted model (SYS-30). A scanned page sent to INGEST_MODEL would undo that
+            # without anyone choosing it; it stays untranscribed and the file's notes say so.
+            name = ""
         transcribe = None
         key: str | None = None
         if name and name != "scripted":
-            provider = providers.provider_of(name)
-            if provider is not None:
-                key = await store.provider_key(files[0].organization_id, provider)
-            transcribe = case_ingest.transcriber(providers.build_model(name, key))
+            key, endpoint = await providers.credentials(store, org, name)
+            transcribe = case_ingest.transcriber(providers.build_model(name, key, endpoint))
         try:
             return await case_ingest.ingest_case(
                 store,
@@ -402,9 +411,47 @@ class KeyToCheck(BaseModel):
 async def check_provider_key(
     body: KeyToCheck, http: Annotated[httpx.AsyncClient, Depends(get_http)]
 ) -> dict[str, str | bool]:
+    if body.provider in providers.ENDPOINT_PROVIDERS:
+        raise HTTPException(422, f"{body.provider} is checked with its URL, not a key.")
     if not body.api_key.strip():
         raise HTTPException(422, "The key is empty.")
     check = await providers.check_key(http, body.provider, body.api_key)
+    return {"ok": check.ok, "detail": check.detail}
+
+
+class EndpointToCheck(BaseModel):
+    organization_id: UUID
+    provider: Literal["ollama"]
+    base_url: str = Field(pattern=r"^https?://[^/@\s?#]+(/[^\s?#@]*)?$", max_length=500)
+    auth_scheme: AuthScheme
+    username: str | None = Field(default=None, max_length=200)
+    # None keeps the stored one, as set_provider_endpoint does: changing the port does not mean
+    # typing the token again, so checking that change must not need it either.
+    secret: str | None = Field(default=None, max_length=1000)
+
+
+@app.post("/providers/endpoint/check", dependencies=[Depends(require_secret)])
+async def check_provider_endpoint(
+    body: EndpointToCheck,
+    store: Annotated[RunStore, Depends(get_store)],
+    http: Annotated[httpx.AsyncClient, Depends(get_http)],
+) -> dict[str, str | bool]:
+    secret = body.secret or None
+    try:
+        if secret is None and body.auth_scheme != "none":
+            stored = await store.provider_endpoint(body.organization_id, body.provider)
+            if stored is None or stored.auth_scheme != body.auth_scheme or not stored.secret:
+                raise HTTPException(422, "Enter the token or password for this server.")
+            secret = stored.secret
+    finally:
+        await store.aclose()
+    endpoint = providers.Endpoint(
+        base_url=body.base_url,
+        auth_scheme=body.auth_scheme,
+        username=body.username,
+        secret=secret if body.auth_scheme != "none" else None,
+    )
+    check = await providers.check_endpoint(http, endpoint)
     return {"ok": check.ok, "detail": check.detail}
 
 
@@ -418,12 +465,19 @@ async def list_provider_models(
     try:
         if provider == "openrouter":
             options = await providers.openrouter_catalogue(http)
+        elif provider == "ollama":
+            endpoint = await store.provider_endpoint(organization_id, provider)
+            if endpoint is None:
+                raise HTTPException(409, "No Ollama server is connected for this organisation.")
+            options = await providers.ollama_models(http, endpoint)
         else:
             key = await store.provider_key(organization_id, provider)
             if key is None:
                 raise HTTPException(409, f"No {provider} key is connected for this organisation.")
             options = await providers.list_models(http, provider, key)
-    except providers.KeyRejected:
+    except providers.KeyRejected as exc:
+        if provider in providers.ENDPOINT_PROVIDERS:
+            raise HTTPException(502, f"{exc} Update the server in Admin, Providers.") from None
         raise HTTPException(
             502, f"{provider} rejected the stored key. Replace it in Admin, Providers."
         ) from None

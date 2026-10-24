@@ -10,6 +10,7 @@ from pydantic import TypeAdapter
 from supabase import AsyncClient, acreate_client
 from supabase_auth.errors import AuthApiError
 
+from agent_service.providers import Endpoint
 from agent_service.records import (
     Approval,
     ApprovalRequest,
@@ -126,6 +127,10 @@ class RunStore(Protocol):
 
     async def provider_key(self, org: UUID, provider: str) -> str | None:
         """The organisation's API key for this provider, or None if it has not connected one."""
+        ...
+
+    async def provider_endpoint(self, org: UUID, provider: str) -> Endpoint | None:
+        """The organisation's own server for this provider (Ollama), or None if it set none."""
         ...
 
     async def month_cost(self, org: UUID) -> float:
@@ -409,6 +414,22 @@ class SupabaseRunStore:
             "read_provider_key", {"org": str(org), "key_provider": provider}
         ).execute()
         return res.data if isinstance(res.data, str) and res.data else None
+
+    async def provider_endpoint(self, org: UUID, provider: str) -> Endpoint | None:
+        # Same rule as read_provider_key: only the secret key may call it.
+        res = await self._db.rpc(
+            "read_provider_endpoint", {"org": str(org), "key_provider": provider}
+        ).execute()
+        data = res.data
+        if not isinstance(data, dict) or not data.get("base_url"):
+            return None
+        row = cast(dict[str, Any], data)
+        return Endpoint(
+            base_url=str(row["base_url"]),
+            auth_scheme=row.get("auth_scheme") or "none",
+            username=row.get("username"),
+            secret=row.get("secret"),
+        )
 
     async def month_cost(self, org: UUID) -> float:
         # Same rule as the database's organization_usage(): by the run's created_at, so the cap

@@ -7,8 +7,9 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from agent_service import providers
+from agent_service import api, providers
 from agent_service.api import app, get_http, get_store
+from agent_service.records import OrganizationSettings
 from agent_service.settings import Settings, get_settings
 from tests.fakes import ORG, InMemoryRunStore
 
@@ -505,3 +506,206 @@ def test_ingest_parses_a_case_and_streams_the_counts(
 def test_ingest_needs_the_secret_and_a_case_with_files(client: TestClient) -> None:
     assert client.post(f"/cases/{uuid4()}/ingest").status_code == 401
     assert client.post(f"/cases/{uuid4()}/ingest", headers=AUTH).status_code == 404
+
+
+# Ollama: a server the organisation runs, reached at its URL, sometimes behind a proxy.
+
+OLLAMA = "https://ollama.example.test:8443/proxy"
+OLLAMA_TAGS = {
+    "models": [
+        {"name": "qwen3:32b", "model": "qwen3:32b", "details": {"parameter_size": "32.8B"}},
+        {"name": "llama3.1:8b", "model": "llama3.1:8b", "details": {"family": "llama"}},
+        {
+            "name": "nomic-embed-text:latest",
+            "model": "nomic-embed-text:latest",
+            "details": {"family": "nomic-bert", "families": ["nomic-bert"]},
+        },
+        {"name": "bge-m3:latest", "model": "bge-m3:latest", "details": {"families": ["bert"]}},
+    ]
+}
+
+
+def _ollama_check(**fields: object) -> dict[str, object]:
+    return {"organization_id": str(ORG), "provider": "ollama", "base_url": OLLAMA, **fields}
+
+
+def test_an_ollama_server_is_checked_with_its_credentials(
+    client: TestClient, provider_api: ProviderApi
+) -> None:
+    provider_api.answers[f"{OLLAMA}/api/tags"] = httpx.Response(200, json=OLLAMA_TAGS)
+
+    response = client.post(
+        "/providers/endpoint/check",
+        json=_ollama_check(auth_scheme="basic", username="eng", secret=KEY),
+        headers=AUTH,
+    )
+
+    assert response.json() == {"ok": True, "detail": "The server answered with 2 chat model(s)."}
+    [request] = provider_api.requests
+    assert request.headers["authorization"].startswith("Basic ")
+    assert KEY not in response.text
+
+
+def test_an_ollama_check_reuses_the_stored_secret_when_none_is_typed(
+    client: TestClient, store: InMemoryRunStore, provider_api: ProviderApi
+) -> None:
+    store.endpoints[(ORG, "ollama")] = providers.Endpoint(OLLAMA, "bearer", None, KEY)
+    provider_api.answers[f"{OLLAMA}/api/tags"] = httpx.Response(200, json={"models": []})
+
+    response = client.post(
+        "/providers/endpoint/check", json=_ollama_check(auth_scheme="bearer"), headers=AUTH
+    )
+
+    assert response.json()["ok"] is True
+    assert provider_api.requests[0].headers["authorization"] == f"Bearer {KEY}"
+    assert store.closed
+
+
+def test_an_ollama_check_without_a_secret_to_reuse_is_422(
+    client: TestClient, store: InMemoryRunStore, provider_api: ProviderApi
+) -> None:
+    # Stored with basic auth: its password is no bearer token.
+    store.endpoints[(ORG, "ollama")] = providers.Endpoint(OLLAMA, "basic", "eng", KEY)
+
+    response = client.post(
+        "/providers/endpoint/check", json=_ollama_check(auth_scheme="bearer"), headers=AUTH
+    )
+
+    assert response.status_code == 422
+    assert provider_api.requests == []
+
+
+@pytest.mark.parametrize(
+    ("answer", "detail"),
+    [
+        (httpx.Response(401), "The server refused these credentials."),
+        (httpx.Response(200, text="<html>router login</html>"), "not like Ollama"),
+        (httpx.ConnectError("connection refused"), "Could not reach ollama"),
+    ],
+)
+def test_an_ollama_server_that_does_not_answer_right_says_why(
+    client: TestClient, provider_api: ProviderApi, answer, detail: str
+) -> None:
+    provider_api.answers[f"{OLLAMA}/api/tags"] = answer
+
+    response = client.post(
+        "/providers/endpoint/check",
+        json=_ollama_check(auth_scheme="bearer", secret=KEY),
+        headers=AUTH,
+    )
+
+    assert response.json()["ok"] is False
+    assert detail in response.json()["detail"]
+    # Whatever answered at the URL is not echoed back.
+    assert "router login" not in response.text
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"base_url": "http://admin:pw@ollama.internal:11434"},
+        {"base_url": "file:///etc/passwd"},
+        {"base_url": "http://ollama.internal:11434/?x=1"},
+        {"auth_scheme": "digest"},
+        {"provider": "openai"},
+    ],
+)
+def test_an_ollama_check_is_validated(
+    client: TestClient, provider_api: ProviderApi, fields: dict[str, str]
+) -> None:
+    body = {**_ollama_check(auth_scheme="none"), **fields}
+    response = client.post("/providers/endpoint/check", json=body, headers=AUTH)
+    assert response.status_code == 422
+    assert provider_api.requests == []
+    assert "pw@" not in response.text
+
+
+def test_an_ollama_server_is_not_checked_as_a_key(
+    client: TestClient, provider_api: ProviderApi
+) -> None:
+    response = client.post(
+        "/providers/check", json={"provider": "ollama", "api_key": KEY}, headers=AUTH
+    )
+    assert response.status_code == 422
+    assert provider_api.requests == []
+
+
+def test_ollama_models_are_the_chat_models_pulled_on_the_server_and_free(
+    client: TestClient, store: InMemoryRunStore, provider_api: ProviderApi
+) -> None:
+    store.endpoints[(ORG, "ollama")] = providers.Endpoint(f"{OLLAMA}/v1/", "none")
+    provider_api.answers[f"{OLLAMA}/api/tags"] = httpx.Response(200, json=OLLAMA_TAGS)
+
+    response = client.get(f"/providers/models?organization_id={ORG}&provider=ollama", headers=AUTH)
+
+    assert response.json()["models"] == [
+        {
+            "id": "ollama:llama3.1:8b",
+            "label": "llama3.1:8b",
+            "prompt_usd_per_mtok": 0.0,
+            "completion_usd_per_mtok": 0.0,
+        },
+        {
+            "id": "ollama:qwen3:32b",
+            "label": "qwen3:32b (32.8B)",
+            "prompt_usd_per_mtok": 0.0,
+            "completion_usd_per_mtok": 0.0,
+        },
+    ]
+    assert "authorization" not in provider_api.requests[0].headers
+
+
+def test_ollama_models_without_a_server_is_409(
+    client: TestClient, store: InMemoryRunStore, provider_api: ProviderApi
+) -> None:
+    store.endpoints[(uuid4(), "ollama")] = providers.Endpoint(OLLAMA)
+    response = client.get(f"/providers/models?organization_id={ORG}&provider=ollama", headers=AUTH)
+    assert response.status_code == 409
+    assert provider_api.requests == []
+
+
+def test_an_ollama_server_refusing_the_stored_credentials_is_a_502(
+    client: TestClient, store: InMemoryRunStore, provider_api: ProviderApi
+) -> None:
+    store.endpoints[(ORG, "ollama")] = providers.Endpoint(OLLAMA, "bearer", None, KEY)
+    provider_api.answers[f"{OLLAMA}/api/tags"] = httpx.Response(403)
+
+    response = client.get(f"/providers/models?organization_id={ORG}&provider=ollama", headers=AUTH)
+
+    assert response.status_code == 502
+    assert "Update the server in Admin, Providers" in response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    ("org_model", "ingest_model", "transcribes"),
+    [
+        ("ollama:qwen3:32b", "anthropic:claude-haiku-test", False),
+        ("ollama:qwen3:32b", "ollama:qwen2.5vl:7b", True),
+        ("anthropic:claude-test", "anthropic:claude-haiku-test", True),
+    ],
+)
+def test_an_organisation_on_its_own_server_never_sends_case_files_to_a_hosted_model(
+    client: TestClient,
+    store: InMemoryRunStore,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    org_model: str,
+    ingest_model: str,
+    transcribes: bool,
+) -> None:
+    store.settings[ORG] = OrganizationSettings(model=org_model)
+    store.endpoints[(ORG, "ollama")] = providers.Endpoint(OLLAMA)
+    settings.ingest_model = ingest_model
+    seen: list[object] = []
+
+    async def fake_ingest(_store, _case_id, *, transcribe, **_kwargs) -> dict[str, int]:
+        seen.append(transcribe)
+        return {"parsed": 1, "failed": 0}
+
+    monkeypatch.setattr(api.case_ingest, "ingest_case", fake_ingest)
+    case_id = uuid4()
+    store.add_case_file(case_id, "scan.pdf", "pdf", b"%PDF")
+
+    client.post(f"/cases/{case_id}/ingest", headers=AUTH)
+
+    assert (seen[0] is not None) == transcribes

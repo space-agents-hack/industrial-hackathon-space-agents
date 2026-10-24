@@ -19,6 +19,7 @@ from postgrest.exceptions import APIError
 from supabase import AsyncClient, acreate_client
 
 from agent_service import runner
+from agent_service.providers import Endpoint
 from agent_service.records import CaseFileBlock, OrganizationSettings
 from agent_service.settings import Settings
 from agent_service.store import SupabaseRunStore
@@ -250,6 +251,44 @@ async def test_a_key_stored_by_an_admin_is_readable_by_the_agent_only(
         await close(person)
 
     assert await store.provider_key(UUID(org), "openrouter") is None
+
+
+async def test_an_ollama_server_stored_by_an_admin_reaches_the_agent_with_its_password(
+    db: AsyncClient, store: SupabaseRunStore, user: tuple[str, str], org: str
+) -> None:
+    _, email = user
+    person = await acreate_client(URL, KEY)
+    await person.auth.sign_in_with_password({"email": email, "password": PASSWORD})
+    password = f"pw-{uuid4().hex}"
+    try:
+        await person.rpc(
+            "set_provider_endpoint",
+            {
+                "org": org,
+                "key_provider": "ollama",
+                "endpoint_url": "https://ollama.example.test",
+                "endpoint_auth": "basic",
+                "endpoint_username": "engineer",
+                "endpoint_secret": password,
+            },
+        ).execute()
+
+        assert await store.provider_endpoint(UUID(org), "ollama") == Endpoint(
+            "https://ollama.example.test", "basic", "engineer", password
+        )
+        # A hosted provider has no endpoint, and Ollama's password is not a key to anyone.
+        assert await store.provider_endpoint(UUID(org), "openrouter") is None
+
+        with pytest.raises(APIError) as denied:
+            await person.rpc(
+                "read_provider_endpoint", {"org": org, "key_provider": "ollama"}
+            ).execute()
+        assert denied.value.code == "42501"
+    finally:
+        await person.rpc("delete_provider_key", {"org": org, "key_provider": "ollama"}).execute()
+        await close(person)
+
+    assert await store.provider_endpoint(UUID(org), "ollama") is None
 
 
 async def test_users_are_created_once_and_passwords_set_through_real_auth(

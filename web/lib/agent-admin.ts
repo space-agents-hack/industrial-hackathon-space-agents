@@ -1,6 +1,6 @@
 import "server-only";
 
-import { type ModelOption, type ProviderId, parseModelList } from "@/lib/admin";
+import { type EndpointInput, type ModelOption, type ProviderId, parseModelList } from "@/lib/admin";
 import { type CheckResult, parseCheckResult } from "@/lib/certivity";
 import {
   type ChangesRequest,
@@ -140,10 +140,31 @@ export async function checkProviderKey(
   return { ok: body.ok, detail: typeof body.detail === "string" ? body.detail : "" };
 }
 
+// One request to the organisation's own server (Ollama's list of models), with the URL and
+// credentials as typed. A null secret means "the stored one", which the agent reads from Vault.
+export async function checkProviderEndpoint(endpoint: EndpointInput): Promise<{ ok: boolean; detail: string }> {
+  const body = await call("/providers/endpoint/check", {
+    method: "POST",
+    body: {
+      organization_id: endpoint.org,
+      provider: endpoint.provider,
+      base_url: endpoint.baseUrl,
+      auth_scheme: endpoint.authScheme,
+      username: endpoint.username,
+      secret: endpoint.secret,
+    },
+    messages: { 404: "This version of the agent cannot connect an Ollama server yet. Deploy the agent again." },
+  });
+  if (!isRecord(body) || typeof body.ok !== "boolean") {
+    throw new AgentAdminError("The agent answered the server check in an unexpected form.", 200);
+  }
+  return { ok: body.ok, detail: typeof body.detail === "string" ? body.detail : "" };
+}
+
 export async function listProviderModels(organizationId: string, provider: ProviderId): Promise<ModelOption[]> {
   const query = new URLSearchParams({ organization_id: organizationId, provider });
   const body = await call(`/providers/models?${query}`, {
-    messages: { 409: "Connect a key for this provider first." },
+    messages: { 409: provider === "ollama" ? "Connect the Ollama server first." : "Connect a key for this provider first." },
   });
   return parseModelList(body);
 }

@@ -15,6 +15,7 @@ import {
   type ProviderId,
   SCRIPTED_MODEL,
   formatModelPrice,
+  isEndpointProvider,
   listNeedsKey,
   modelName,
   modelSourceOf,
@@ -177,9 +178,10 @@ export function SettingsForm({
         {provider !== null ? (
           missingKey && listNeedsKey(provider) ? (
             <p className="text-xs text-attention">
-              No {providerLabel(provider)} key is connected, so its models cannot be listed.{" "}
+              No {providerLabel(provider)} {isEndpointProvider(provider) ? "server" : "key"} is connected, so its
+              models cannot be listed.{" "}
               <Link href="/admin/providers" className="underline underline-offset-4">
-                Connect a key first
+                {isEndpointProvider(provider) ? "Connect the server first" : "Connect a key first"}
               </Link>
               .
             </p>

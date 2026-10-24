@@ -36,7 +36,7 @@ Methods: **T** automated test in `make check`, **S** score, **D** demonstration,
 | V-25 | SYS-25 | T: every stored requirement points to exactly one existing catalogue paragraph whose regulation, version and page match its citation; S: requirement-level score | none yet |
 | V-28 | SYS-28 | T: with a fake index, the regulations returned by top-k are then read in full (all their paragraphs reach the writer); S: regulation-level recall on the dev case | none yet |
 | V-29 | SYS-29 | T: a requirement citing a paragraph that is not in the DB, or a duplicate, is caught by the check agent before output; a paragraph with "shall" in a selected regulation that no requirement cites is listed | none yet |
-| V-30 | SYS-30 | D: one dev-case run with a local model (future) | none yet |
+| V-30 | SYS-30 | T: `supabase/tests/ollama_provider_test.sql` (URL visible, secret only to the agent), agent tests for the headers a proxy sees and for ingestion not using a hosted model; D: one dev-case run with a local model | T in `make check`; D none yet |
 | V-31 | SYS-31 | D: a second member renames a case, removes a file and opens its parsed pages | none yet |
 | V-32 | SYS-32 | T: a project limited to some regulations gives the writer only those; a new import reaches an "all" project | none yet |
 | V-33 | SYS-33 | T: the model set per process by the admin is the one each agent uses, and a per-run override wins for writer and check | none yet |

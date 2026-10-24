@@ -51,7 +51,7 @@ from pydantic_core import to_jsonable_python
 
 from agent_service import domain
 from agent_service.domain import case_ingest, ingest
-from agent_service.providers import build_model, provider_of, scrub
+from agent_service.providers import build_model, credentials, scrub
 from agent_service.records import Approval, ApprovalRequest, Run, RunFile, RunStatus
 from agent_service.settings import RunSettings, Settings, effective
 from agent_service.store import RunStore
@@ -186,10 +186,8 @@ async def _execute(store: RunStore, settings: Settings, plan: Plan) -> RunStatus
     key: str | None = None
     try:
         await store.add_event(run_id, "status", {"status": "running"})
-        provider = provider_of(plan.config.model)
-        if provider is not None:
-            key = await store.provider_key(plan.run.organization_id, provider)
-        model = build_model(plan.config.model, key)
+        key, endpoint = await credentials(store, plan.run.organization_id, plan.config.model)
+        model = build_model(plan.config.model, key, endpoint)
         async with asyncio.timeout(settings.run_timeout_s):
             return await _run_agent(store, plan, model)
     except TimeoutError:

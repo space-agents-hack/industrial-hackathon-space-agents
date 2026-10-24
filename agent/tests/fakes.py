@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+from agent_service.providers import Endpoint
 from agent_service.records import (
     Approval,
     ApprovalRequest,
@@ -29,6 +30,7 @@ class InMemoryRunStore:
         self.library: dict[UUID, list[dict[str, Any]]] = {}
         self.settings: dict[UUID, OrganizationSettings] = {}
         self.keys: dict[tuple[UUID, str], str] = {}
+        self.endpoints: dict[tuple[UUID, str], Endpoint] = {}
         # Cost already spent this month per organisation, standing in for older runs' usage.
         self.spent: dict[UUID, float] = {}
         self.users: dict[UUID, tuple[str, str]] = {}
@@ -240,6 +242,9 @@ class InMemoryRunStore:
 
     async def provider_key(self, org: UUID, provider: str) -> str | None:
         return self.keys.get((org, provider))
+
+    async def provider_endpoint(self, org: UUID, provider: str) -> Endpoint | None:
+        return self.endpoints.get((org, provider))
 
     async def month_cost(self, org: UUID) -> float:
         recorded = sum(

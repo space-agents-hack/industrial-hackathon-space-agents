@@ -428,30 +428,39 @@ export type Database = {
       }
       provider_connections: {
         Row: {
+          auth_scheme: string | null
+          auth_username: string | null
+          base_url: string | null
           created_at: string
           created_by: string | null
           last4: string
           organization_id: string
           provider: string
-          secret_id: string
+          secret_id: string | null
           source: string
         }
         Insert: {
+          auth_scheme?: string | null
+          auth_username?: string | null
+          base_url?: string | null
           created_at?: string
           created_by?: string | null
           last4: string
           organization_id: string
           provider: string
-          secret_id: string
+          secret_id?: string | null
           source?: string
         }
         Update: {
+          auth_scheme?: string | null
+          auth_username?: string | null
+          base_url?: string | null
           created_at?: string
           created_by?: string | null
           last4?: string
           organization_id?: string
           provider?: string
-          secret_id?: string
+          secret_id?: string | null
           source?: string
         }
         Relationships: [
@@ -1005,6 +1014,10 @@ export type Database = {
           tokens: number
         }[]
       }
+      read_provider_endpoint: {
+        Args: { key_provider: string; org: string }
+        Returns: Json
+      }
       read_provider_key: {
         Args: { key_provider: string; org: string }
         Returns: string
@@ -1057,6 +1070,17 @@ export type Database = {
           member: string
           member_role: string
           member_status?: string
+          org: string
+        }
+        Returns: undefined
+      }
+      set_provider_endpoint: {
+        Args: {
+          endpoint_auth: string
+          endpoint_secret?: string
+          endpoint_url: string
+          endpoint_username?: string
+          key_provider: string
           org: string
         }
         Returns: undefined
