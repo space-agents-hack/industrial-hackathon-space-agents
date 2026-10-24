@@ -1,81 +1,37 @@
 # Interface control
 
-Where two parts built by different people or agents meet. Each interface has one owner per side.
-**Owners are `UNASSIGNED` until Clemente or Ramón assigns them**; nobody fills them in on their
-behalf. Change rule: the owners of both sides agree on the issue before the change is merged
-(`README.md` in this folder).
+All `proposed`. **Owners are `UNASSIGNED` until Clemente or Ramón assigns them.** Nobody fills
+them in on their behalf. A change needs both owners to agree on the issue before merge.
 
-All interfaces below are `proposed`. Designs in progress are in the project's shared folder
-(`design/case-ingestion.md`, `design/certivity-checks-on-web.md`), not in the repo yet.
+## Interface register
 
-## IF-1 Case files: web to database to agent
+| IF | From → To | Carries | Owner (from / to) | SYS | Issue |
+|---|---|---|---|---|---|
+| IF-1 | web → db/Storage → ingest | Case files | `UNASSIGNED` / `UNASSIGNED` | 1, 2, 16 | #8 |
+| IF-2 | ingest → regs | Case content tagged by file and page, plus optional notes | `UNASSIGNED` / `UNASSIGNED` | 2, 3, 8 | — |
+| IF-3 | regs catalogue → requirement writer | Paragraphs with regulation, version, page, paragraph | `UNASSIGNED` / `UNASSIGNED` | 5, 6, 15, 23 | #3 |
+| IF-4 | agent → db → web, checks | Run output: `submission_main` JSON | `UNASSIGNED` / `UNASSIGNED` | 4, 14 | #4 |
+| IF-5 | Certivity → checks, regs | `validate.py`, `score_local.py`, schemas, `index.json`, `expected.json` | `UNASSIGNED` | 10, 11, 16, 19 | — |
+| IF-6 | ops → Certivity platform | Uploads | `UNASSIGNED` (one person on Sunday) | 20 | #7 |
 
-- Producer: web (upload form). Consumer: ingest (agent). Carrier: db and Supabase Storage.
-- Owners: web side `UNASSIGNED`, agent side `UNASSIGNED`.
-- Proposed design: the browser uploads each file to a private Storage bucket `case-files`; a new table
-  `run_files` (run, organisation, storage path, filename, media type, bytes, sha256) lists them;
-  a check constraint on media type holds the accepted formats, so web and agent read one list.
-- Why not issue #8's `run_inputs` table of bytes: a Vercel function rejects request bodies over
-  4.5 MB, and a PDF datasheet can exceed it; bytes in Postgres count against database size.
-- Decided by Clemente 2026-10-24: buckets, not #8's table of bytes. Issue: #8 (to be updated).
-- Requirements: SYS-1, SYS-2, SYS-16.
-- Open: per-file and per-run limits; `purge-challenge-data.sh` must empty the bucket (SYS-16).
-- Later: case PDFs may go through Ramón's regulation ingestion layer (#3) instead of a second
-  PDF reader. Not decided; noted so it is not forgotten.
+## N² view (what each part hands to the next)
 
-## IF-2 Case content: ingest to regulation pipeline
+| From \ To | web | ingest | regs | checks | Certivity |
+|---|---|---|---|---|---|
+| **web** | — | IF-1 files | | | |
+| **ingest** | | — | IF-2 content | | |
+| **regs** | IF-4 output | | IF-3 lookup | IF-4 output | |
+| **checks** | IF-4 results | | | — | |
+| **Certivity** | | | IF-5 index | IF-5 tools, answers | — |
+| **ops** | | | | | IF-6 uploads |
 
-- Producer: ingest. Consumer: regs (regulation selection and extraction).
-- Owners: producer `UNASSIGNED`, consumer `UNASSIGNED` (Ramón is building the regulation side).
-- Proposed: the case content itself, not a fixed profile. A list of blocks, each text or image,
-  each tagged with file name and page (or sheet, or "whole file" for a single image). Optionally,
-  free-form notes from a quick, cheap model (parts, functions, vehicle category), each citing a
-  block. The notes are not a schema the consumer may rely on field by field.
-- Why no fixed profile: Certivity could not confirm which product attributes matter (Clemente,
-  2026-10-24). A fixed schema would bake in a guess on both sides.
-- Requirements: SYS-2, SYS-3, SYS-8. Issue: none yet.
+## Details
 
-## IF-3 Regulation lookup: regulation index to requirement writer
-
-- Producer: regs (index of the base-version PDFs at paragraph level with page numbers).
-  Consumer: whatever writes the requirements (agent tools).
-- Owners: producer `UNASSIGNED`, consumer `UNASSIGNED`.
-- To define: query in (regulation, topic, paragraph?), paragraphs out with regulation, version
-  label, page and paragraph label; whether it is pre-computed or built during the run (SYS-15:
-  the run has 270 s).
-- Source of the catalogue: Certivity's `index.json`, ingested automatically into the database
-  (SYS-23). The `regulation` and `version_label` strings are kept exactly as in the file, because
-  `validate.py` and the platform compare against the file (SYS-5).
-- Requirements: SYS-5, SYS-6, SYS-15, SYS-23. Issue: #3.
-
-## IF-4 Run output: agent to database to web
-
-- Producer: regs (the run's final output). Consumers: checks, web (display, export, download).
-- Owners: producer `UNASSIGNED`, consumer `UNASSIGNED`.
-- Proposed: the output is the Certivity `submission_main` JSON itself, produced as a Pydantic
-  output type that matches `submission_main.schema.json`, so the model cannot return free text.
-  Today `runs.output` is plain text.
-- Open: where `team_id` comes from (an agent setting, not hard-coded); where `case_id` comes from.
-- Requirements: SYS-4, SYS-14. Issue: #4.
-
-## IF-5 Certivity tools and reference data
-
-- Producer: Certivity (`tools/validate.py`, `tools/score_local.py`, `schemas/`, MIT) and the
-  reference data (`regulations/index.json`, `cases/*/expected.json`, hackathon use only).
-  Consumers: checks (agent), regs (reads `index.json` too).
-- Owners: `UNASSIGNED`.
-- Proposed: tools and schemas copied unchanged into the agent, with a hash test and a sync
-  command for when Certivity updates them; reference data in a private Storage bucket
-  `challenge`, read at run time, never committed, purged after the event.
-- Why unchanged: Certivity says the platform runs the same `validate.py`; a rewrite loses that.
-- Requirements: SYS-10, SYS-11, SYS-16, SYS-19. Issue: none yet.
-
-## IF-6 Certivity platform: us to Certivity
-
-- Producer: ops (a person uploads). Consumer: Certivity scoring platform.
-- Owner: `UNASSIGNED` (one named person should hold the uploads on Sunday).
-- Limits: 5 valid uploads per hour per challenge (main goal, sub-goal); invalid files do not
-  count. Held-out: the **last** valid upload counts. Uploads close Sunday 13:00.
-- Assumption, not checked: uploads for the dev case and the held-out case share the hourly quota
-  of the same challenge. Ask Certivity.
-- Requirements: SYS-20. Issue: #7.
+| IF | Decided | Open |
+|---|---|---|
+| IF-1 | Storage bucket `case-files` + table `run_files` (path, name, media type, bytes, sha256) instead of #8's table of bytes (Clemente, 2026-10-24). Reason: Vercel rejects bodies over 4.5 MB. A check constraint on media type is the single list of formats | Size limits per file and per run. Purge must empty the bucket. Later: use Ramón's PDF layer (#3) for case PDFs |
+| IF-2 | No fixed profile, because Certivity could not confirm the attributes (2026-10-24). Blocks of text or image, each with file and page. Notes are free-form and cite a block | Block format. Which cheap model writes the notes (the template runs one model per run) |
+| IF-3 | Catalogue loaded from `index.json` (SYS-23). `regulation` and `version_label` strings are kept exactly as in the file | Query and response shape. Pre-computed or built during the run (270 s limit) |
+| IF-4 | Output is the Certivity JSON itself, as a typed output, never free text | Source of `team_id` (a setting) and `case_id` |
+| IF-5 | Tools copied unchanged, with a hash test and a sync command. Data in a private bucket `challenge`, never committed, purged after the event | — |
+| IF-6 | 5 valid uploads per hour per challenge. The **last** valid held-out upload counts. Uploads close Sunday 13:00 | Unconfirmed: whether dev-case and held-out uploads share the same quota. Ask Certivity |

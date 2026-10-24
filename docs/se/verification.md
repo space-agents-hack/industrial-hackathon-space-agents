@@ -1,6 +1,6 @@
 # Verification
 
-How each requirement is shown to be met, and the evidence once it is. A requirement is
+How each requirement is shown to be met. A requirement is
 `verified` only when the evidence column links to something a person can open: a test, a CI run,
 a recorded score, a demo note. Nothing here is verified yet (2026-10-24).
 
@@ -12,7 +12,7 @@ Methods: **T** automated test in `make check`, **S** score, **D** demonstration,
 | V-2 | SYS-2 | T: trace has one event per file, with pages read and anything skipped | none yet |
 | V-3 | SYS-3 | T: every content block carries file and page; S: regulation-level recall | none yet |
 | V-4 | SYS-4 | T: a run's output passes the vendored `validate.py` | none yet |
-| V-5 | SYS-5 | T: every cited regulation and version label is in `index.json`, version is `base` | none yet |
+| V-5 | SYS-5 | T: every cited regulation and version label is in `index.json` exactly, version is `base` | none yet |
 | V-6 | SYS-6 | T: no requirement without a paragraph | none yet |
 | V-7 | SYS-7 | S: requirement-level precision and recall on the platform; I: sample of 20 read by a person | none yet |
 | V-8 | SYS-8 | S: `score_local.py` on `dev-rear-lamp` meets the targets, once set | none yet |
