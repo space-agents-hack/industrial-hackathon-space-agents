@@ -76,7 +76,7 @@ async function Organizations() {
       <OrganizationsPanel organizations={organizations} myEmail={me?.email ?? null} />
       <p className="max-w-prose text-xs text-muted-foreground">
         One account can belong to several organisations, with a different role in each; its owner
-        switches between them in the organisation switcher. Organisations are not deleted or renamed from the app. Platform admins are added by whoever
+        switches between them in the organisation switcher. Organisations are not deleted from the app; their admins rename them in Models and limits. Platform admins are added by whoever
         operates the deployment (scripts/create-user.sh --platform-admin), never from a page.
       </p>
     </div>

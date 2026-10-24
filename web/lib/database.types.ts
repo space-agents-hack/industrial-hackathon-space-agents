@@ -1568,6 +1568,10 @@ export type Database = {
         Args: { member: string; org: string }
         Returns: undefined
       }
+      rename_organization: {
+        Args: { new_name: string; org: string }
+        Returns: undefined
+      }
       replace_regulation_paragraphs: {
         Args: {
           p_extracted_with: string

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import { AdminNotice } from "@/components/admin/admin-notice";
+import { OrganizationNameForm } from "@/components/admin/organization-name-form";
 import { type ProcessId, ProcessModelsForm } from "@/components/admin/process-models-form";
 import { SettingsForm } from "@/components/admin/settings-form";
 import { isProviderId } from "@/lib/admin";
@@ -48,6 +49,7 @@ async function Settings() {
         What new runs of {org.name} use. Only what you change is stored; an empty field follows the
         deployment&apos;s default, so a new default reaches every organisation that did not choose.
       </p>
+      <OrganizationNameForm key={`name-${org.id}`} org={org.id} name={org.name} />
       <SettingsForm
         key={org.id}
         org={org.id}

@@ -10,6 +10,7 @@ import {
   formatModelPrice,
   formatMonth,
   formatUsd,
+  looksLikeTeamId,
   formatUsdPerMtok,
   generatePassword,
   listNeedsKey,
@@ -19,6 +20,7 @@ import {
   parseCreateOrganization,
   parseModelList,
   parseOrganizationName,
+  parseRenameOrganization,
   parseProviderEndpoint,
   parseProviderKey,
   parseRemoveMember,
@@ -164,6 +166,18 @@ test("people and keys: bodies are checked before anything is called", () => {
   });
   assert.equal(parseCreateOrganization({ name: "Acme", admin_email: "ana" }).ok, false);
   assert.equal(parseCreateOrganization({ name: "", admin_email: "ana@example.com" }).ok, false);
+});
+
+test("renaming an organisation: its id and a trimmed name; the team id hint", () => {
+  assert.deepEqual(parseRenameOrganization({ org: ORG, name: "  team-09 " }), {
+    ok: true,
+    value: { org: ORG, name: "team-09" },
+  });
+  assert.equal(parseRenameOrganization({ org: "nope", name: "team-09" }).ok, false);
+  assert.equal(parseRenameOrganization({ org: ORG, name: "  " }).ok, false);
+  assert.equal(looksLikeTeamId("team-09"), true);
+  assert.equal(looksLikeTeamId("Space agents"), false);
+  assert.equal(looksLikeTeamId("team-09 "), false);
 });
 
 test("an Ollama server: URL and credentials are checked before anything is called", () => {

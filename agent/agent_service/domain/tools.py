@@ -528,7 +528,8 @@ async def submit(ctx: RunContext[Deps], summary: str) -> str:
     if not re.fullmatch(r"team-\d+", deps.team_id):
         lines.append(
             f"team_id {deps.team_id!r} is the organisation's name and does not look like a "
-            "platform team id (team-07): rename the organisation and run again before uploading."
+            "platform team id (team-07): rename it in Settings, Models and limits, and run again "
+            "before uploading."
         )
     # case_id is the case's name in the app. Clemente's first dev-case run was named otherwise and
     # the platform would have scored it against nothing; the run is where he looks, not /checks.

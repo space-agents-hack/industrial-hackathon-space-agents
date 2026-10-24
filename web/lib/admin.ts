@@ -367,6 +367,21 @@ export function parseOrganizationName(body: unknown): Parsed<{ name: string }> {
   return { ok: true, value: { name } };
 }
 
+// A new name for an organisation (#35). The name is also the `team_id` of every submission its
+// runs write (3090885), which is why an admin needs to change it at all.
+export function parseRenameOrganization(body: unknown): Parsed<{ org: string; name: string }> {
+  if (!isRecord(body) || !isUuid(body.org)) return { ok: false, error: "Unknown organisation." };
+  const named = parseOrganizationName(body);
+  if (!named.ok) return named;
+  return { ok: true, value: { org: body.org, name: named.value.name } };
+}
+
+// The platform's team ids look like "team-07". Only a hint for the form: nothing here knows the
+// list, and an organisation that is not a hackathon team may be named anything.
+export function looksLikeTeamId(name: string): boolean {
+  return /^team-\d+$/.test(name);
+}
+
 // A new organisation and, optionally, the existing account that becomes its first admin. An
 // empty admin email creates it with nobody in it.
 export function parseCreateOrganization(body: unknown): Parsed<{ name: string; adminEmail: string | null }> {
