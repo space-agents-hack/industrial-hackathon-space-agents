@@ -35,13 +35,14 @@ import argparse
 import json
 import re
 import sys
+from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
-from agent_service.domain import certivity
+from agent_service.domain import certivity, paragraphs
 
 Status = Literal["unchanged", "modified", "removed", "added"]
 
@@ -84,10 +85,10 @@ _STOPWORDS = frozenset(
 
 class ParagraphLike(Protocol):
     """What this module needs from a paragraph. `agent_service.domain.paragraphs.Paragraph`
-    (the store's extraction, #3) has these fields; so does the interim `_Paragraph` below."""
+    (the store's extraction, #3) has these fields, with a label that is never None here."""
 
     @property
-    def label(self) -> str: ...
+    def label(self) -> str | None: ...
     @property
     def text(self) -> str: ...
     @property
@@ -205,19 +206,20 @@ def segment_paragraph(label: str, page: int, text: str) -> list[tuple[str, bool,
 
 
 def build_version(
-    regulation: str, version_label: str, paragraphs: Iterable[ParagraphLike]
+    regulation: str, version_label: str, paragraph_list: Iterable[ParagraphLike]
 ) -> Version:
     segments: list[Segment] = []
     titles: dict[str, str] = {}
-    for p in paragraphs:
-        parts = segment_paragraph(p.label, p.page_start, p.text)
-        top = p.label.split(".")[0] if p.label and "." not in p.label.strip(".") else None
+    for p in paragraph_list:
+        label = p.label or ""
+        parts = segment_paragraph(label, p.page_start, p.text)
+        top = label.split(".")[0] if label and "." not in label.strip(".") else None
         if top is not None and parts:
             titles[top] = parts[0][0]
         for text, heading, lead, item in parts:
             segments.append(
                 Segment(
-                    len(segments), p.label, p.page_start, text, normalize(text), heading, lead, item
+                    len(segments), label, p.page_start, text, normalize(text), heading, lead, item
                 )
             )
     return Version(regulation, version_label, segments, titles)
@@ -554,82 +556,30 @@ def submission(team_id: str, case_id: str, changes: Sequence[Change]) -> dict[st
 
 
 # ------------------------------------------------------------------------------------------
-# Interim PDF splitter. Replaced by agent_service.domain.paragraphs.extract once that is on main
-# (#3); kept minimal on purpose.
+# From a PDF
 # ------------------------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class _Paragraph:
-    label: str
-    text: str
-    page_start: int
+def version_from_pdf(pdf: bytes, regulation: str) -> Version:
+    """A version from the store's paragraph extraction (#3). Unnumbered text before the first
+    heading (an introduction) has no label and is left out: nothing cites it."""
+    extraction = paragraphs.extract(pdf)
+    return build_version(
+        regulation,
+        extraction.version_label or "?",
+        [p for p in extraction.paragraphs if p.label],
+    )
 
 
-_FOOTER = re.compile(r"\|\s*page\s+\d+\s+of\s+\d+\s*$")
-_HEADER = re.compile(r"^(?P<reg>.+?)\s*\(version\s+(?P<ver>[^)]+)\)\s*$")
-_LABEL_LINE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s+(\S.*)$")
-_ANNEX_LINE = re.compile(r"^Annex\s+(\d+)(?:\s*-\s*Appendix\s+(\d+))?\b(?!.*\.$)")
-
-
-def _plausible_next(prev: tuple[int, ...] | None, cand: tuple[int, ...]) -> bool:
-    if prev is None:
-        return len(cand) == 1 or cand[-1] == 1
-    if cand == (*prev, 1):
-        return True
-    return any(cand == (*prev[:k], prev[k] + 1) for k in range(len(prev)))
-
-
-def interim_paragraphs(pdf: bytes) -> tuple[str, str, list[_Paragraph]]:
-    """(regulation, version label, paragraphs) from a Certivity-rendered regulation PDF."""
-    import pypdfium2
-
-    doc = pypdfium2.PdfDocument(pdf)
-    regulation, version = "", ""
-    paragraphs: list[_Paragraph] = []
-    label, lines, page_start = "", [], 1
-    prev: tuple[int, ...] | None = None
-    annex = ""
-    for page_no in range(len(doc)):
-        raw = doc[page_no].get_textpage().get_text_range().replace("\r\n", "\n")
-        for line in raw.split("\n"):
-            stripped = line.strip()
-            if not regulation and (m := _HEADER.match(stripped)):
-                regulation, version = m["reg"].strip(), m["ver"].strip()
-                continue
-            if not stripped or _FOOTER.search(stripped):
-                continue
-            # Footnote markers on their own line, footnote bodies, their links.
-            if re.fullmatch(r"\d{1,2}", stripped) or stripped.startswith("http"):
-                continue
-            m_annex = _ANNEX_LINE.match(stripped)
-            m_label = _LABEL_LINE.match(stripped)
-            starts = None
-            if m_annex and not stripped.endswith("."):
-                paragraphs.append(_Paragraph(label, "\n".join(lines), page_start))
-                annex = f"Annex {m_annex[1]}" + (f" Appendix {m_annex[2]}" if m_annex[2] else "")
-                label, lines, page_start, prev = annex, [stripped], page_no + 1, None
-                continue
-            if m_label:
-                cand = tuple(int(x) for x in m_label[1].split("."))
-                if _plausible_next(prev, cand):
-                    starts = cand
-                elif len(cand) == 1 and not stripped[: len(m_label[1]) + 1].endswith("."):
-                    continue  # footnote body: "3 This condition shall be reviewed ..."
-            if starts is not None:
-                paragraphs.append(_Paragraph(label, "\n".join(lines), page_start))
-                number = ".".join(str(x) for x in starts)
-                label = f"{annex} {number}".strip()
-                lines, page_start, prev = [stripped], page_no + 1, starts
-            else:
-                lines.append(stripped)
-    paragraphs.append(_Paragraph(label, "\n".join(lines), page_start))
-    return regulation, version, [p for p in paragraphs if p.text.strip()]
-
-
-def version_from_pdf(pdf: bytes) -> Version:
-    regulation, label, paragraphs = interim_paragraphs(pdf)
-    return build_version(regulation, label, paragraphs)
+def cited_regulation(requirements_old: Sequence[dict[str, Any]]) -> str | None:
+    """The regulation the requirements cite most: the one the reasons name."""
+    cited = Counter(
+        (r.get("source") or {}).get("regulation")
+        for r in requirements_old
+        if isinstance(r.get("source"), dict)
+    )
+    cited.pop(None, None)
+    return cited.most_common(1)[0][0] if cited else None
 
 
 # ------------------------------------------------------------------------------------------
@@ -686,15 +636,19 @@ def _main(argv: list[str]) -> int:
     parser.add_argument("old_pdf", type=Path)
     parser.add_argument("new_pdf", type=Path)
     parser.add_argument("requirements_old", type=Path)
+    parser.add_argument(
+        "--regulation", help="name in the reasons (default: what the requirements cite most)"
+    )
     parser.add_argument("--team-id", default="team-00")
     parser.add_argument("--case-id", default="subgoal-dev")
     parser.add_argument("--out", type=Path, help="write the submission here (default: stdout)")
     parser.add_argument("--expected", type=Path, help="print a local score against this file")
     args = parser.parse_args(argv)
 
-    old = version_from_pdf(args.old_pdf.read_bytes())
-    new = version_from_pdf(args.new_pdf.read_bytes())
     reqs = json.loads(args.requirements_old.read_text(encoding="utf-8"))
+    regulation = args.regulation or cited_regulation(reqs) or "the regulation"
+    old = version_from_pdf(args.old_pdf.read_bytes(), regulation)
+    new = version_from_pdf(args.new_pdf.read_bytes(), regulation)
     result = submission(args.team_id, args.case_id, diff_versions(reqs, old, new))
     text = json.dumps(result, indent=2, ensure_ascii=False)
     if args.out:

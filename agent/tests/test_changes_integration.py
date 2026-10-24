@@ -84,6 +84,8 @@ async def test_a_stored_version_reads_with_its_code_and_its_file(
             "1.1.0",
         )
         assert await store.download(version.pdf_path) == latest
+        # A made-up PDF has no paragraphs; what matters is that the query runs.
+        assert isinstance(await store.paragraphs(version_id), list)
         assert await store.version(uuid4()) is None
     finally:
         await store.aclose()

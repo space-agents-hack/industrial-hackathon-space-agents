@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agent_service.api import app, get_store, get_versions
-from agent_service.domain import certivity, changes, regdiff
+from agent_service.domain import certivity, changes, paragraphs, regdiff
 from agent_service.settings import Settings, get_settings
 from tests.fakes import InMemoryRunStore
 
@@ -229,7 +229,7 @@ FOREIGN_ID = UUID("00000000-0000-0000-0000-000000000003")
 OTHER_REG_ID = UUID("00000000-0000-0000-0000-000000000004")
 
 # What "extracting" each stored file gives. The fake store returns the path as the file's bytes,
-# so no PDF is needed: the extraction itself is regdiff's and tested above.
+# so no PDF is needed: the extraction itself is paragraphs.py's and tested there.
 LAMP = {
     "old.pdf": [
         SPEC,
@@ -257,20 +257,33 @@ class FakeVersions:
             OTHER_REG_ID: v(OTHER_REG_ID, ORG, UUID(int=999), "1.0.0", "new.pdf"),
         }
         self.closed = False
+        self.downloaded: list[str] = []
 
     async def version(self, version_id: UUID) -> changes.StoredVersion | None:
         return self.rows.get(version_id)
 
+    async def paragraphs(self, version_id: UUID) -> list[changes.StoredParagraph]:
+        # The old version was extracted at import; the new one was not, so its PDF is read.
+        if version_id != OLD_ID:
+            return []
+        return [changes.StoredParagraph(p.label, p.text, p.page_start) for p in LAMP["old.pdf"]]
+
     async def download(self, path: str) -> bytes:
+        self.downloaded.append(path)
         return path.encode()
 
     async def aclose(self) -> None:
         self.closed = True
 
 
+@dataclass(frozen=True)
+class _Extraction:
+    paragraphs: list[P]
+
+
 @pytest.fixture
 def versions(monkeypatch: pytest.MonkeyPatch) -> FakeVersions:
-    monkeypatch.setattr(regdiff, "interim_paragraphs", lambda pdf: ("", "", LAMP[pdf.decode()]))
+    monkeypatch.setattr(paragraphs, "extract", lambda pdf: _Extraction(LAMP[pdf.decode()]))
     return FakeVersions()
 
 
@@ -315,6 +328,7 @@ async def test_the_endpoint_uses_the_loaded_case_and_names_the_library_versions(
         json.dumps(body["submission"]), certivity.Reference.from_rows(store.reference)
     )["valid"]
     assert versions.closed
+    assert versions.downloaded == ["new.pdf"]  # the old version's paragraphs were stored
 
 
 def test_an_uploaded_requirements_file_needs_no_loaded_case(client: TestClient) -> None:

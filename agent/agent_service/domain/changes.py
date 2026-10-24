@@ -6,22 +6,28 @@ Certivity's `requirements_old.json` loaded into `certivity_reference` (by sub-go
 from a file the person uploaded, for a client's own requirements. The result is not stored and
 not validated here: the web sends it through POST /checks, the same check every file gets.
 
-What this does NOT do: compare two different regulations (refused), or read paragraphs from the
-database. It downloads both PDFs and extracts them on every call, about a second for a 200-page
-regulation; it switches to stored paragraphs once the extraction of #3 fills them.
+Paragraphs come from `regulation_paragraphs`, which every import fills (#3). A version imported
+before that table existed has none there; its PDF is then downloaded and extracted on the spot,
+about a second for a 200-page regulation, with the same extractor.
+
+What this does NOT do: compare two different regulations (refused), or store what it extracted on
+the spot (the next import does that).
 """
 
 import asyncio
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
 from uuid import UUID
 
 from supabase import AsyncClient, acreate_client
 
-from agent_service.domain import regdiff
+from agent_service.domain import paragraphs, regdiff
 from agent_service.domain.regulations import BUCKET
 
+# PostgREST's page size (supabase/config.toml `max_rows`, and the hosted default).
+_PAGE = 1000
 # Certivity's schema allows 5,000 changes; requirements in are capped the same way so one
 # request cannot keep the function busy for minutes.
 MAX_REQUIREMENTS = 5000
@@ -45,8 +51,17 @@ class ChangesRefused(Exception):
         self.status = status
 
 
+@dataclass(frozen=True)
+class StoredParagraph:
+    label: str
+    text: str
+    page_start: int
+
+
 class VersionStore(Protocol):
     async def version(self, version_id: UUID) -> StoredVersion | None: ...
+    # In document order, numbered ones only; empty if the version was never extracted.
+    async def paragraphs(self, version_id: UUID) -> list[StoredParagraph]: ...
     async def download(self, path: str) -> bytes: ...
     async def aclose(self) -> None: ...
 
@@ -84,6 +99,25 @@ class SupabaseVersionStore:
             version_label=r["version_label"],
             pdf_path=r["pdf_path"],
         )
+
+    async def paragraphs(self, version_id: UUID) -> list[StoredParagraph]:
+        out: list[StoredParagraph] = []
+        start = 0
+        while True:
+            res = (
+                await self._db.table("regulation_paragraphs")
+                .select("label, text, page_start")
+                .eq("version_id", str(version_id))
+                .not_.is_("label", "null")
+                .order("position")
+                .range(start, start + _PAGE - 1)
+                .execute()
+            )
+            page = cast(list[dict[str, Any]], res.data)
+            out += [StoredParagraph(r["label"], r["text"], r["page_start"]) for r in page]
+            if len(page) < _PAGE:
+                return out
+            start += _PAGE
 
     async def download(self, path: str) -> bytes:
         return await self._db.storage.from_(BUCKET).download(path)
@@ -141,12 +175,9 @@ async def build(
             "compares two versions of the same one.",
             400,
         )
-    old_pdf, new_pdf = await asyncio.gather(
-        store.download(old_v.pdf_path), store.download(new_v.pdf_path)
-    )
-    # Extraction is CPU work of about a second per version; off the event loop so the stream's
-    # other requests are not held.
-    changes = await asyncio.to_thread(_diff, old_pdf, new_pdf, old_v, new_v, requirements_old)
+    old_p, new_p = await asyncio.gather(_paragraphs(store, old_v), _paragraphs(store, new_v))
+    # Up to a few seconds of CPU on a rewritten regulation (3.3 s for R40 1.1.0 -> 2.0.0).
+    changes = await asyncio.to_thread(_diff, old_p, new_p, old_v, new_v, requirements_old)
     submission = regdiff.submission(team_id, case_id, changes)
     counts = {
         kind: sum(c.change == kind for c in changes) for kind in ("modified", "removed", "added")
@@ -161,17 +192,27 @@ async def build(
     }
 
 
+async def _paragraphs(
+    store: VersionStore, version: StoredVersion
+) -> Sequence[regdiff.ParagraphLike]:
+    stored = await store.paragraphs(version.id)
+    if stored:
+        return stored
+    pdf = await store.download(version.pdf_path)
+    # CPU work of about a second; off the event loop so other requests are not held.
+    extraction = await asyncio.to_thread(paragraphs.extract, pdf)
+    return [p for p in extraction.paragraphs if p.label]
+
+
 def _diff(
-    old_pdf: bytes,
-    new_pdf: bytes,
+    old_p: Sequence[regdiff.ParagraphLike],
+    new_p: Sequence[regdiff.ParagraphLike],
     old_v: StoredVersion,
     new_v: StoredVersion,
     requirements_old: list[dict[str, Any]],
 ) -> list[regdiff.Change]:
-    _, _, old_paragraphs = regdiff.interim_paragraphs(old_pdf)
-    _, _, new_paragraphs = regdiff.interim_paragraphs(new_pdf)
-    # The names come from the library, not from the PDF's first line: the reason cites what the
-    # index calls the regulation and the version.
-    old = regdiff.build_version(old_v.regulation, old_v.version_label, old_paragraphs)
-    new = regdiff.build_version(new_v.regulation, new_v.version_label, new_paragraphs)
+    # The names come from the library, not from the PDF: the reasons cite what the index calls
+    # the regulation and the version.
+    old = regdiff.build_version(old_v.regulation, old_v.version_label, old_p)
+    new = regdiff.build_version(new_v.regulation, new_v.version_label, new_p)
     return regdiff.diff_versions(requirements_old, old, new)
