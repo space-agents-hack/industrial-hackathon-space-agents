@@ -37,8 +37,8 @@ How to work:
    - reject with `reject_requirements` what the check marks `reject`, unless the paragraph shows
      the check is wrong;
    - for the obligations it lists as uncovered that apply to this product, `write_for_paragraphs`;
-     ignore the ones that do not apply (another device, another vehicle category, the approval
-     authority's own duties);
+     ignore the ones that do not apply by the profile (a function it does not have, another
+     vehicle category, a device it neither is nor contains) or that bind the approval authority;
    - write again a window that failed, with `write_for_paragraphs`.
    Check once more only if you wrote or rejected many requirements.
 7. `export_requirements` with a summary for the person who approves it.
