@@ -1,0 +1,495 @@
+"""Fill the regulation library from an uploaded index file (docs/regulations-store.md).
+
+The index is the challenge's regulations/index.json format: a list of regulations, each with
+versions, each version with one PDF given as a temporary download link and its sha256. This is
+what the challenge's tools/fetch_regulations.py downloads to a laptop; here the same files go to
+the `regulations` bucket and the catalogue tables instead, so the deployment has them.
+
+Like runner.py, two halves so the HTTP layer can refuse with a status code before streaming:
+
+  prepare()  checks the import can advance and claims it. Raises ImportNotFound or CannotAdvance.
+  execute()  works through the files until done or until the slice of time runs out. Never
+             raises; what happened is in the import's status and in each file's row.
+
+One request handles one slice (`import_slice_s`), because a whole library does not fit in one
+serverless call. An import that runs out of time is left `paused`; the web page sends it back.
+
+Resuming is safe here, unlike a run: a file already stored with the same sha256 is skipped, and
+storing one twice writes the same bytes to the same path. So a running import whose heartbeat has
+gone stale is simply taken over, not failed.
+
+What this does NOT do:
+  - delete anything. An import adds and updates; a version missing from a new index stays.
+  - extract text, pictures or embeddings. Those are later steps on the stored PDFs.
+  - follow redirects or fetch from private addresses. The links come from a file a person
+    uploaded, so a link to the deployment's own network must not be fetched (see `fetch_pdf`).
+"""
+
+import asyncio
+import hashlib
+import ipaddress
+import logging
+import re
+import socket
+import time
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any, Literal, Protocol
+from urllib.parse import urlsplit
+from uuid import UUID
+
+import httpx
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from agent_service.settings import Settings
+
+log = logging.getLogger(__name__)
+
+BUCKET = "regulations"
+
+ImportStatus = Literal["queued", "running", "paused", "succeeded", "failed", "cancelled"]
+FileStatus = Literal["pending", "stored", "unchanged", "failed"]
+
+_SHA256 = r"^[0-9a-fA-F]{64}$"
+# Also a folder name in the bucket, so no slashes and nothing that starts with a dot.
+_VERSION_LABEL = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$"
+_SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
+# Well above the challenge's 92 files; a file with more is more likely a mistake than a library.
+MAX_FILES = 2000
+# How many problems an index is reported with. A wrong file has hundreds; the first few say why.
+_MAX_PROBLEMS = 10
+
+
+# ------------------------------------------------------------------------------------------
+# The index file
+# ------------------------------------------------------------------------------------------
+
+
+# extra="ignore": the challenge may add fields to its index; an unknown field is not an error.
+class _IndexFile(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    name: str = Field(min_length=1, max_length=255)
+    pdf_url: str = Field(min_length=1, max_length=4000)
+    sha256: str = Field(pattern=_SHA256)
+    size_bytes: int | None = Field(default=None, gt=0)
+
+
+class _IndexVersion(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    version_label: str = Field(pattern=_VERSION_LABEL)
+    role: Literal["base", "latest"] | None = None
+    status: str | None = Field(default=None, max_length=50)
+    title: str | None = Field(default=None, max_length=500)
+    files: list[_IndexFile] = Field(min_length=1)
+
+
+class _IndexRegulation(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    regulation: str = Field(min_length=1, max_length=100)
+    title: str | None = Field(default=None, max_length=500)
+    source_url: str | None = Field(default=None, max_length=2000)
+    versions: list[_IndexVersion] = Field(min_length=1)
+
+
+class IndexProblem(Exception):
+    """The uploaded index cannot be imported. The message is for the person who uploaded it."""
+
+
+@dataclass(frozen=True)
+class PlannedFile:
+    """One PDF to store: everything the import needs, flattened from the index."""
+
+    position: int
+    regulation_code: str
+    regulation_title: str | None
+    regulation_source_url: str | None
+    version_label: str
+    role: Literal["base", "latest"] | None
+    status: str | None
+    version_title: str | None
+    file_name: str
+    url: str
+    sha256: str
+    size_bytes: int | None
+
+    @property
+    def slug(self) -> str:
+        return slug_of(self.regulation_code)
+
+    @property
+    def kind(self) -> str:
+        return kind_of(self.regulation_code)
+
+    def path(self, organization_id: UUID) -> str:
+        return storage_path(organization_id, self.regulation_code, self.version_label)
+
+
+def slug_of(code: str) -> str:
+    # The same rule as the challenge's fetch script, so the bucket's folders match the folders a
+    # person gets on their laptop: "UN R10" -> "UN_R10", "UN GTR 9" -> "UN_GTR_9".
+    return "_".join(code.replace("/", " ").split())
+
+
+def kind_of(code: str) -> str:
+    if re.match(r"^UN R\s*\d", code):
+        return "UN R"
+    if re.match(r"^UN GTR\s*\d", code):
+        return "UN GTR"
+    return "other"
+
+
+def storage_path(organization_id: UUID, code: str, version_label: str) -> str:
+    # The organisation first: each has its own library, and the bucket's read policy takes the
+    # organisation from the path (as for case-files). By version, not by role: the role moves when
+    # a newer version arrives, and a path built on it would overwrite the file an older catalogue
+    # row still points to.
+    slug = slug_of(code)
+    return f"{organization_id}/{slug}/{version_label}/{slug}_{version_label}.pdf"
+
+
+def parse_index(raw: Any) -> list[PlannedFile]:
+    """The files to import, in the order of the index, or IndexProblem saying what is wrong."""
+    if not isinstance(raw, list) or not raw:
+        raise IndexProblem("The index must be a non-empty list of regulations.")
+
+    problems: list[str] = []
+    regulations: list[_IndexRegulation] = []
+    for number, entry in enumerate(raw, start=1):
+        name = entry.get("regulation") if isinstance(entry, dict) else None
+        where = f"Entry {number}" + (f" ({name})" if isinstance(name, str) else "")
+        try:
+            regulations.append(_IndexRegulation.model_validate(entry))
+        except ValidationError as exc:
+            for error in exc.errors():
+                field = ".".join(str(part) for part in error["loc"])
+                problems.append(f"{where}, {field}: {error['msg']}")
+
+    files: list[PlannedFile] = []
+    seen_codes: set[str] = set()
+    for reg in regulations:
+        # Kept exactly as written, spaces included: Certivity's validate.py compares a submission's
+        # `regulation` with this file, not with our tables (docs/se/requirements.md, SYS-5).
+        code = reg.regulation
+        if not _SLUG.match(slug_of(code)):
+            problems.append(f"{code}: the name cannot be used as a folder name.")
+            continue
+        if code in seen_codes:
+            problems.append(f"{code}: appears twice in the index.")
+            continue
+        seen_codes.add(code)
+        labels: set[str] = set()
+        roles: set[str] = set()
+        for version in reg.versions:
+            where = f"{code} {version.version_label}"
+            if version.version_label in labels:
+                problems.append(f"{where}: the same version appears twice.")
+            labels.add(version.version_label)
+            if version.role is not None:
+                if version.role in roles:
+                    problems.append(f"{code}: two versions are marked {version.role}.")
+                roles.add(version.role)
+            if len(version.files) != 1:
+                # One PDF per version is what the bucket layout and the page citations assume.
+                count = len(version.files)
+                problems.append(f"{where}: has {count} files; one PDF per version is supported.")
+                continue
+            file = version.files[0]
+            if urlsplit(file.pdf_url).scheme != "https":
+                problems.append(f"{where}: the download link must start with https://.")
+                continue
+            files.append(
+                PlannedFile(
+                    position=len(files),
+                    regulation_code=code,
+                    regulation_title=reg.title,
+                    regulation_source_url=reg.source_url,
+                    version_label=version.version_label,
+                    role=version.role,
+                    status=version.status,
+                    version_title=version.title,
+                    file_name=file.name,
+                    url=file.pdf_url,
+                    sha256=file.sha256.lower(),
+                    size_bytes=file.size_bytes,
+                )
+            )
+
+    if len(files) > MAX_FILES:
+        problems.append(f"The index lists {len(files)} files; at most {MAX_FILES} are accepted.")
+    if problems:
+        shown = problems[:_MAX_PROBLEMS]
+        more = len(problems) - len(shown)
+        raise IndexProblem("; ".join(shown) + (f"; and {more} more." if more else "."))
+    return files
+
+
+# ------------------------------------------------------------------------------------------
+# Downloading one PDF
+# ------------------------------------------------------------------------------------------
+
+
+class FileProblem(Exception):
+    """This file could not be stored. The message goes to the file's row as it is."""
+
+
+Resolver = Callable[[str, int], Awaitable[list[str]]]
+
+
+async def resolve_host(host: str, port: int) -> list[str]:
+    infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    return [str(info[4][0]) for info in infos]
+
+
+async def fetch_pdf(
+    http: httpx.AsyncClient,
+    url: str,
+    sha256: str,
+    *,
+    max_bytes: int,
+    timeout_s: float,
+    resolve: Resolver = resolve_host,
+    retries: int = 2,
+) -> bytes:
+    """The verified bytes of the PDF at `url`, or FileProblem.
+
+    The link comes from a file someone uploaded, and this service holds the database's secret key,
+    so the request must not reach anything private: https only, every address of the host must be
+    public, and no redirects (a public URL could otherwise bounce to an internal one). DNS could
+    still change between this check and the connection; the sha256 check below means such a
+    response is never stored, though the request itself would have been made.
+    """
+    parts = urlsplit(url)
+    if parts.scheme != "https" or not parts.hostname:
+        raise FileProblem("The download link must be an https:// address.")
+    try:
+        addresses = await resolve(parts.hostname, parts.port or 443)
+    except OSError:
+        raise FileProblem(f"The host {parts.hostname} could not be found.") from None
+    if not addresses or not all(ipaddress.ip_address(a).is_global for a in addresses):
+        raise FileProblem(f"The host {parts.hostname} is not a public address; not downloaded.")
+
+    last = "unknown error"
+    for attempt in range(1, retries + 1):
+        try:
+            # A total bound per attempt: httpx's own timeout is per read, and a server that trickles
+            # one byte at a time would never trip it.
+            async with asyncio.timeout(timeout_s):
+                return await _download(http, url, sha256, max_bytes)
+        except FileProblem:
+            raise  # a wrong checksum or an oversized file will not change on a retry
+        except (httpx.HTTPError, TimeoutError) as exc:
+            last = "timed out" if isinstance(exc, TimeoutError) else type(exc).__name__
+            if attempt < retries:
+                await asyncio.sleep(attempt)
+    raise FileProblem(f"The download failed {retries} times ({last}).")
+
+
+async def _download(http: httpx.AsyncClient, url: str, sha256: str, max_bytes: int) -> bytes:
+    async with http.stream("GET", url, follow_redirects=False) as response:
+        if response.status_code in (401, 403, 404, 410):
+            # Signed links expire: after the event the challenge's links answer like this.
+            raise FileProblem(f"The link answered {response.status_code}; it may have expired.")
+        if response.status_code != 200:
+            raise FileProblem(f"The link answered {response.status_code}.")
+        declared = response.headers.get("content-length")
+        if declared is not None and declared.isdigit() and int(declared) > max_bytes:
+            raise FileProblem(f"The file is larger than {max_bytes // 1_000_000} MB.")
+        digest = hashlib.sha256()
+        chunks: list[bytes] = []
+        size = 0
+        async for chunk in response.aiter_bytes():
+            size += len(chunk)
+            if size > max_bytes:
+                raise FileProblem(f"The file is larger than {max_bytes // 1_000_000} MB.")
+            digest.update(chunk)
+            chunks.append(chunk)
+    data = b"".join(chunks)
+    if digest.hexdigest() != sha256:
+        raise FileProblem("The downloaded file does not match the sha256 in the index; not stored.")
+    if not data.startswith(b"%PDF-"):
+        raise FileProblem("The downloaded file is not a PDF.")
+    return data
+
+
+# ------------------------------------------------------------------------------------------
+# Where an import lives
+# ------------------------------------------------------------------------------------------
+
+
+class ImportRow(BaseModel):
+    id: UUID
+    # Whose library this import fills.
+    organization_id: UUID
+    status: ImportStatus
+    index: Any
+    updated_at: Any
+
+
+class LibraryStore(Protocol):
+    async def get_import(self, import_id: UUID) -> ImportRow | None: ...
+
+    async def claim_import(
+        self, import_id: UUID, expected: ImportStatus, *, idle_s: float = 0
+    ) -> bool:
+        """Move the import from `expected` to running. With idle_s, only if its heartbeat is at
+        least that old. False if someone else got there first."""
+        ...
+
+    async def touch_import(self, import_id: UUID) -> bool:
+        """Heartbeat. False if the import is no longer running (cancelled from the app)."""
+        ...
+
+    async def end_import(
+        self, import_id: UUID, status: ImportStatus, error: str | None = None
+    ) -> None:
+        """Paused, succeeded or failed; only while it is still running."""
+        ...
+
+    async def has_files(self, import_id: UUID) -> bool: ...
+
+    async def add_files(self, import_id: UUID, files: list[PlannedFile]) -> None: ...
+
+    async def pending_files(self, import_id: UUID) -> list[PlannedFile]: ...
+
+    async def failed_count(self, import_id: UUID) -> int: ...
+
+    async def set_file(
+        self, import_id: UUID, position: int, status: FileStatus, error: str | None = None
+    ) -> None: ...
+
+    async def stored_file(
+        self, organization_id: UUID, code: str, version_label: str
+    ) -> tuple[str, int] | None:
+        """(sha256, size in bytes) of the version already in this organisation's library."""
+        ...
+
+    async def object_exists(self, path: str) -> bool: ...
+
+    async def upload_pdf(self, path: str, data: bytes) -> None: ...
+
+    async def record_version(self, job: ImportRow, file: PlannedFile, size_bytes: int) -> None: ...
+
+    async def aclose(self) -> None: ...
+
+
+# ------------------------------------------------------------------------------------------
+# One slice of an import
+# ------------------------------------------------------------------------------------------
+
+
+class ImportNotFound(Exception):
+    pass
+
+
+class CannotAdvance(Exception):
+    """The import exists but is not in a state this request can move forward."""
+
+
+async def prepare(store: LibraryStore, settings: Settings, import_id: UUID) -> ImportRow:
+    job = await store.get_import(import_id)
+    if job is None:
+        raise ImportNotFound(str(import_id))
+    if job.status in ("queued", "paused"):
+        if not await store.claim_import(import_id, job.status):
+            raise CannotAdvance("Another request picked this import up first.")
+        return job
+    if job.status == "running":
+        if not await store.claim_import(import_id, "running", idle_s=settings.import_stale_after_s):
+            raise CannotAdvance("The import is already running.")
+        log.warning("Import %s had no heartbeat; taking it over.", import_id)
+        return job
+    raise CannotAdvance(f"The import is already {job.status}.")
+
+
+async def execute(
+    store: LibraryStore,
+    http: httpx.AsyncClient,
+    settings: Settings,
+    job: ImportRow,
+    *,
+    resolve: Resolver = resolve_host,
+) -> ImportStatus:
+    """Never raises: an unexpected error ends the import as failed, with the reason."""
+    try:
+        return await _execute(store, http, settings, job, resolve)
+    except Exception as exc:
+        log.exception("Import %s failed", job.id)
+        message = f"The import stopped on an unexpected error ({type(exc).__name__}). Resume it."
+        await store.end_import(job.id, "failed", message)
+        return "failed"
+
+
+async def _execute(
+    store: LibraryStore,
+    http: httpx.AsyncClient,
+    settings: Settings,
+    job: ImportRow,
+    resolve: Resolver,
+) -> ImportStatus:
+    deadline = time.monotonic() + settings.import_slice_s
+
+    if not await store.has_files(job.id):
+        try:
+            planned = parse_index(job.index)
+        except IndexProblem as exc:
+            await store.end_import(job.id, "failed", str(exc))
+            return "failed"
+        await store.add_files(job.id, planned)
+
+    for file in await store.pending_files(job.id):
+        if time.monotonic() >= deadline:
+            await store.end_import(job.id, "paused")
+            return "paused"
+        if not await store.touch_import(job.id):
+            return "cancelled"
+        status, error = await _store_one(store, http, settings, job, file, resolve)
+        await store.set_file(job.id, file.position, status, error)
+
+    failed = await store.failed_count(job.id)
+    if failed:
+        message = f"{failed} file(s) could not be stored; see the list."
+        await store.end_import(job.id, "failed", message)
+        return "failed"
+    await store.end_import(job.id, "succeeded")
+    return "succeeded"
+
+
+async def _store_one(
+    store: LibraryStore,
+    http: httpx.AsyncClient,
+    settings: Settings,
+    job: ImportRow,
+    file: PlannedFile,
+    resolve: Resolver,
+) -> tuple[FileStatus, str | None]:
+    path = file.path(job.organization_id)
+    limit = settings.import_max_file_bytes
+    if file.size_bytes is not None and file.size_bytes > limit:
+        return "failed", f"The index says {file.size_bytes} bytes; the limit is {limit}."
+    try:
+        # Same file already in the library: record it again (its role or title may have changed in
+        # this index) without downloading. This is what makes re-importing an index cheap.
+        stored = await store.stored_file(
+            job.organization_id, file.regulation_code, file.version_label
+        )
+        if stored is not None and stored[0] == file.sha256 and await store.object_exists(path):
+            await store.record_version(job, file, stored[1])
+            return "unchanged", None
+        data = await fetch_pdf(
+            http,
+            file.url,
+            file.sha256,
+            max_bytes=settings.import_max_file_bytes,
+            timeout_s=settings.import_download_timeout_s,
+            resolve=resolve,
+        )
+        await store.upload_pdf(path, data)
+        await store.record_version(job, file, len(data))
+        return "stored", None
+    except FileProblem as exc:
+        return "failed", str(exc)
+    except Exception as exc:
+        # The storage API or the database refused. Logged in full here; the row gets the type,
+        # which is enough to tell a network failure from a refusal without leaking a response body.
+        log.exception("Import %s: %s %s", job.id, file.regulation_code, file.version_label)
+        return "failed", f"Could not be stored ({type(exc).__name__})."

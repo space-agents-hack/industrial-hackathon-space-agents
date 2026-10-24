@@ -38,6 +38,17 @@ class Settings(BaseSettings):
     # A run marked running whose heartbeat is older than this is treated as dead.
     stale_after_s: float = 60
 
+    # Regulation imports (domain/regulations.py). One request starts new files for this long, then
+    # leaves the import paused for the next request. The worst case is a file started just before
+    # the end: 2 attempts of import_download_timeout_s plus its upload, about 260 s in all. That
+    # fits Vercel Hobby's 300 s as well as Pro's 800 s, and keeps progress visible between slices.
+    import_slice_s: float = 150
+    import_download_timeout_s: float = 45
+    # An import heartbeats after every file; longer than one download can take.
+    import_stale_after_s: float = 150
+    # The bucket's limit, which is the Supabase free plan's limit per file.
+    import_max_file_bytes: int = 50 * 1024 * 1024
+
 
 @dataclass(frozen=True)
 class RunSettings:

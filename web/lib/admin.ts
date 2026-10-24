@@ -297,6 +297,7 @@ const PLAIN_CODES: Record<string, number> = {
   "42501": 403, // insufficient_privilege: "only an admin of this organisation ..."
   "23514": 409, // check_violation: the last-admin rule
   "22023": 400, // invalid_parameter_value: "that does not look like an API key"
+  "55000": 409, // object_not_in_prerequisite_state: "another import is still in progress"
 };
 
 export type DbError = { code?: string | null; message?: string | null };

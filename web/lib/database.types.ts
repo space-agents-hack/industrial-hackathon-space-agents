@@ -242,6 +242,244 @@ export type Database = {
           },
         ]
       }
+      regulation_import_files: {
+        Row: {
+          error: string | null
+          file_name: string
+          import_id: string
+          position: number
+          regulation_code: string
+          regulation_title: string | null
+          role: string | null
+          sha256: string
+          size_bytes: number | null
+          source_url: string | null
+          status: string
+          updated_at: string
+          url: string
+          version_label: string
+          version_status: string | null
+          version_title: string | null
+        }
+        Insert: {
+          error?: string | null
+          file_name: string
+          import_id: string
+          position: number
+          regulation_code: string
+          regulation_title?: string | null
+          role?: string | null
+          sha256: string
+          size_bytes?: number | null
+          source_url?: string | null
+          status?: string
+          updated_at?: string
+          url: string
+          version_label: string
+          version_status?: string | null
+          version_title?: string | null
+        }
+        Update: {
+          error?: string | null
+          file_name?: string
+          import_id?: string
+          position?: number
+          regulation_code?: string
+          regulation_title?: string | null
+          role?: string | null
+          sha256?: string
+          size_bytes?: number | null
+          source_url?: string | null
+          status?: string
+          updated_at?: string
+          url?: string
+          version_label?: string
+          version_status?: string | null
+          version_title?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "regulation_import_files_import_id_fkey"
+            columns: ["import_id"]
+            isOneToOne: false
+            referencedRelation: "regulation_imports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      regulation_imports: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          error: string | null
+          finished_at: string | null
+          id: string
+          index: Json
+          organization_id: string
+          source_name: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          index: Json
+          organization_id: string
+          source_name: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          index?: Json
+          organization_id?: string
+          source_name?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "regulation_imports_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      regulation_versions: {
+        Row: {
+          created_at: string
+          extracted_at: string | null
+          file_name: string
+          id: string
+          last_import_id: string | null
+          md_path: string | null
+          organization_id: string
+          page_count: number | null
+          pdf_path: string
+          regulation_id: string
+          role: string | null
+          sha256: string
+          size_bytes: number
+          status: string | null
+          title: string | null
+          updated_at: string
+          version_label: string
+        }
+        Insert: {
+          created_at?: string
+          extracted_at?: string | null
+          file_name: string
+          id?: string
+          last_import_id?: string | null
+          md_path?: string | null
+          organization_id: string
+          page_count?: number | null
+          pdf_path: string
+          regulation_id: string
+          role?: string | null
+          sha256: string
+          size_bytes: number
+          status?: string | null
+          title?: string | null
+          updated_at?: string
+          version_label: string
+        }
+        Update: {
+          created_at?: string
+          extracted_at?: string | null
+          file_name?: string
+          id?: string
+          last_import_id?: string | null
+          md_path?: string | null
+          organization_id?: string
+          page_count?: number | null
+          pdf_path?: string
+          regulation_id?: string
+          role?: string | null
+          sha256?: string
+          size_bytes?: number
+          status?: string | null
+          title?: string | null
+          updated_at?: string
+          version_label?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "regulation_versions_last_import_id_fkey"
+            columns: ["last_import_id"]
+            isOneToOne: false
+            referencedRelation: "regulation_imports"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "regulation_versions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "regulation_versions_regulation_id_fkey"
+            columns: ["regulation_id"]
+            isOneToOne: false
+            referencedRelation: "regulations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      regulations: {
+        Row: {
+          code: string
+          created_at: string
+          id: string
+          kind: string
+          organization_id: string
+          slug: string
+          source_url: string | null
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          id?: string
+          kind: string
+          organization_id: string
+          slug: string
+          source_url?: string | null
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          organization_id?: string
+          slug?: string
+          source_url?: string | null
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "regulations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       run_events: {
         Row: {
           created_at: string
@@ -418,7 +656,12 @@ export type Database = {
         Returns: string
       }
       can_reset_password: { Args: { member: string }; Returns: boolean }
+      cancel_regulation_import: { Args: { job: string }; Returns: undefined }
       create_organization: { Args: { org_name: string }; Returns: string }
+      create_regulation_import: {
+        Args: { org: string; regulation_index: Json; source_name: string }
+        Returns: string
+      }
       delete_provider_key: {
         Args: { key_provider: string; org: string }
         Returns: undefined
@@ -450,6 +693,26 @@ export type Database = {
       record_deployment_change: {
         Args: { change: string; detail: Json }
         Returns: undefined
+      }
+      record_regulation_version: {
+        Args: {
+          p_code: string
+          p_file_name: string
+          p_import_id: string
+          p_kind: string
+          p_organization_id: string
+          p_pdf_path: string
+          p_role: string
+          p_sha256: string
+          p_size_bytes: number
+          p_slug: string
+          p_source_url: string
+          p_status: string
+          p_title: string
+          p_version_label: string
+          p_version_title: string
+        }
+        Returns: string
       }
       set_member: {
         Args: {

@@ -1,5 +1,6 @@
-"""HTTP surface: a health check, the operation "advance this run", and the few things the web's
-admin pages need a secret for (creating users, checking keys, listing models).
+"""HTTP surface: a health check, the operations "advance this run" and "advance this regulation
+import", and the few things the web's admin pages need a secret for (creating users, checking
+keys, listing models).
 
 The admin endpoints trust the web to have checked the person's role in the database first: this
 service sees the shared secret, not who is behind it. That is why each one does one narrow thing
@@ -16,7 +17,7 @@ import json
 import logging
 import os
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
@@ -28,7 +29,9 @@ from pydantic import BaseModel
 from supabase_auth.errors import AuthApiError
 
 from agent_service import providers, runner
-from agent_service.domain import certivity
+from agent_service.domain import certivity, regulations
+from agent_service.domain.library_store import SupabaseLibraryStore
+from agent_service.domain.regulations import LibraryStore
 from agent_service.providers import Provider
 from agent_service.settings import Settings, get_settings
 from agent_service.store import RunStore, SupabaseRunStore
@@ -52,6 +55,22 @@ async def get_store(settings: Annotated[Settings, Depends(get_settings)]) -> Run
     # One client per request: a function instance may be reused across event loops, and a client
     # kept from a previous one fails in ways that only show up in production.
     return await SupabaseRunStore.connect(settings.supabase_url, settings.supabase_secret_key)
+
+
+async def get_library(settings: Annotated[Settings, Depends(get_settings)]) -> LibraryStore:
+    if not settings.supabase_url or not settings.supabase_secret_key:
+        raise HTTPException(503, "SUPABASE_URL and SUPABASE_SECRET_KEY are not configured.")
+    return await SupabaseLibraryStore.connect(settings.supabase_url, settings.supabase_secret_key)
+
+
+DownloadClient = Callable[[], httpx.AsyncClient]
+
+
+def get_download_client() -> DownloadClient:
+    # A factory, not a client: the import outlives this request's dependencies (it keeps going if
+    # the caller hangs up), so it opens and closes its own client. Replaced in tests by one on
+    # httpx.MockTransport, so no test downloads anything.
+    return lambda: httpx.AsyncClient(timeout=30)
 
 
 async def get_http() -> AsyncIterator[httpx.AsyncClient]:
@@ -131,6 +150,47 @@ async def advance(
             if not task.done():
                 await asyncio.shield(task)
             await store.aclose()
+
+    return StreamingResponse(body(), media_type="application/x-ndjson")
+
+
+# One slice of a regulation import (domain/regulations.py), streamed like a run: accepted at once,
+# heartbeats while it works, done with the import's status. The web sends a paused import back
+# here for the next slice.
+@app.post("/regulations/imports/{import_id}/advance", dependencies=[Depends(require_secret)])
+async def advance_import(
+    import_id: UUID,
+    settings: Annotated[Settings, Depends(get_settings)],
+    library: Annotated[LibraryStore, Depends(get_library)],
+    download_client: Annotated[DownloadClient, Depends(get_download_client)],
+) -> StreamingResponse:
+    try:
+        job = await regulations.prepare(library, settings, import_id)
+    except regulations.ImportNotFound:
+        await library.aclose()
+        raise HTTPException(404, "No such import.") from None
+    except regulations.CannotAdvance as exc:
+        await library.aclose()
+        raise HTTPException(409, str(exc)) from None
+
+    async def work() -> str:
+        async with download_client() as http:
+            return await regulations.execute(library, http, settings, job)
+
+    async def body() -> AsyncIterator[str]:
+        yield _line(event="accepted", import_id=str(import_id))
+        task = asyncio.create_task(work())
+        try:
+            while True:
+                done, _ = await asyncio.wait({task}, timeout=settings.heartbeat_s)
+                if done:
+                    break
+                yield _line(event="heartbeat")
+            yield _line(event="done", status=task.result())
+        finally:
+            if not task.done():
+                await asyncio.shield(task)
+            await library.aclose()
 
     return StreamingResponse(body(), media_type="application/x-ndjson")
 

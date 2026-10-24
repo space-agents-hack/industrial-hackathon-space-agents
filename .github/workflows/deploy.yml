@@ -161,9 +161,10 @@ jobs:
 
       # Starting from nothing applies every migration in order, which is the test that a fresh
       # project can be built from this repo. Services the checks do not use are left out because
-      # pulling their images is most of the start-up time.
+      # pulling their images is most of the start-up time. Storage stays: the regulations
+      # migration creates a bucket and the integration tests write to it.
       - name: Start Supabase
-        run: supabase start -x edge-runtime,logflare,vector,imgproxy,storage-api,supavisor,studio,mailpit
+        run: supabase start -x edge-runtime,logflare,vector,imgproxy,supavisor,studio,mailpit
 
       - name: RLS tests (pgTAP)
         run: supabase test db --local

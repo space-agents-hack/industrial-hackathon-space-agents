@@ -64,6 +64,7 @@ row to `audit_events`.
 | Certivity's reference data (index, answer files) | `make certivity-load`, table `certivity_reference` |
 | The loop, limits, what gets logged | `agent/agent_service/runner.py`, `settings.py` |
 | Tables, who can read and write | `supabase/migrations/` and `supabase/tests/` |
+| The regulation library and its import | `agent/agent_service/domain/regulations.py`, `web/app/(app)/regulations/`, `docs/regulations-store.md` |
 | Pages and the trace | `web/app/`, `web/lib/trace.ts` |
 | What runs on a push | `.github/workflows/deploy.yml`, `Makefile` |
 
@@ -80,7 +81,9 @@ row to `audit_events`.
 
 ## What this does not do
 
-- **No queue and no background workers.** A run executes inside one HTTP request. A step longer
+- **No queue and no background workers.** A run executes inside one HTTP request. A regulation
+  import is cut into slices of one request each, and the next slice starts only while an import
+  page is open in a browser. A step longer
   than the function limit (300 s on Vercel Hobby, 800 s on Pro) does not fit; the way out is the
   container in `agent/Dockerfile`.
 - **No emails.** Admins create people with an initial password and share it themselves.

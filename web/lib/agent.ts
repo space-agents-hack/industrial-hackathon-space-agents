@@ -25,11 +25,24 @@ export class AgentConfigError extends Error {
 // Asks the agent service to work on a run. Resolves as soon as the agent has accepted the
 // request; the work itself is reported through the database, not through this call.
 export async function advanceRun(runId: string): Promise<void> {
+  await startOnAgent(`/runs/${encodeURIComponent(runId)}/advance`, `advanceRun(${runId})`);
+}
+
+// The same for one slice of a regulation import (agent/agent_service/domain/regulations.py). The
+// agent leaves an import `paused` when its slice of time runs out; the import page calls this again.
+export async function advanceRegulationImport(importId: string): Promise<void> {
+  await startOnAgent(
+    `/regulations/imports/${encodeURIComponent(importId)}/advance`,
+    `advanceRegulationImport(${importId})`,
+  );
+}
+
+async function startOnAgent(path: string, label: string): Promise<void> {
   const baseUrl = process.env.AGENT_URL;
   const secret = process.env.AGENT_SHARED_SECRET;
   if (!baseUrl || !secret) throw new AgentConfigError();
 
-  const url = `${baseUrl.replace(/\/+$/, "")}/runs/${encodeURIComponent(runId)}/advance`;
+  const url = `${baseUrl.replace(/\/+$/, "")}${path}`;
   // A bound on the wait for the agent's first line only. Once it has answered, the run may last
   // as long as the function does; before that, a hung agent would keep the person's click
   // spinning for minutes with no message.
@@ -66,13 +79,13 @@ export async function advanceRun(runId: string): Promise<void> {
       let done = false;
       while (!done) ({ done } = await reader.read());
     } catch (error) {
-      console.error(`advanceRun(${runId}): the connection to the agent dropped before the run ended`, error);
+      console.error(`${label}: the connection to the agent dropped before the work ended`, error);
     }
   });
 }
 
 // What to tell the person at the keyboard. Never includes the URL or the secret.
-export function describeAgentFailure(error: unknown): string {
+export function describeAgentFailure(error: unknown, subject: "run" | "import" = "run"): string {
   if (error instanceof AgentConfigError) {
     return "The agent is not configured on the web server (AGENT_URL / AGENT_SHARED_SECRET).";
   }
@@ -83,9 +96,9 @@ export function describeAgentFailure(error: unknown): string {
       case 401:
         return "The agent rejected the shared secret.";
       case 404:
-        return "The agent does not know this run.";
+        return `The agent does not know this ${subject}.`;
       case 409:
-        return "The agent says this run cannot advance right now. It may already be running.";
+        return `The agent says this ${subject} cannot advance right now. It may already be running.`;
       default:
         return `The agent answered with an error (${error.status}).`;
     }
