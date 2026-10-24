@@ -160,3 +160,13 @@ async def test_a_windows_translations_start_while_other_windows_are_still_dispos
 
     last_disposition_ends = max(i for i, e in enumerate(order) if e == "end record_disposition")
     assert order.index("start record_translations") < last_disposition_ends
+
+
+async def test_the_summary_counts_kept_obligations_by_what_they_cover(store, settings) -> None:
+    # The lead thread's check on the next run: whether "the part" swallows most obligations.
+    d = deps(store, settings)
+
+    result = await tools.write_requirements(ctx(d, stalls_on("no marker")), ["UN R148"])
+
+    # This model names nothing, even after the nudge: kept, and counted as such.
+    assert result["obligations_by_covers"] == {"UN R148": {writer.NOT_IN_PROFILE: 2}}

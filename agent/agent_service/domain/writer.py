@@ -365,6 +365,18 @@ def _not_in_profile(window: Window, drafts: Sequence[Draft]) -> list[str]:
     return sorted({str(d.ref) for d in drafts if _normal(d.covers) not in allowed}, key=int)
 
 
+# How the trace counts an obligation whose `covers` names nothing in the profile even after the
+# nudge (it is kept: a wrongly dropped obligation costs four times a kept one).
+NOT_IN_PROFILE = "(not in the profile, kept)"
+
+
+def covered_entry(window: Window, covers: str) -> str:
+    """The profile entry `covers` names, spelt as the profile spells it, or NOT_IN_PROFILE. For
+    the trace: how many obligations each entry, and the part as a whole, account for."""
+    wanted = _normal(covers)
+    return next((c for c in window.covers_from if _normal(c) == wanted), NOT_IN_PROFILE)
+
+
 def _clause_order(clause_id: str) -> tuple[int, int]:
     position, k = clause_id[1:].split(".")
     return int(position), int(k)

@@ -366,7 +366,8 @@ async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> d
         ),
     )
     tally: Counter[str] = Counter()
-    results = await _write_windows(ctx, jobs, tally)
+    covers: dict[str, Counter[str]] = {}
+    results = await _write_windows(ctx, jobs, tally, covers)
 
     written: dict[str, dict[str, Any]] = {}
     failed: list[dict[str, Any]] = []
@@ -393,6 +394,9 @@ async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> d
     return {
         "written": written,
         "clauses_set_aside": dict(tally),
+        # Kept obligations per regulation by what of the profile they cover: if "the part" holds
+        # most of a regulation, the writers may be filing other devices' obligations under it.
+        "obligations_by_covers": {reg: dict(c.most_common()) for reg, c in covers.items()},
         "failed_windows": failed,
         "refused": refused,
     }
@@ -676,11 +680,15 @@ async def _require_profile(deps: Deps) -> writer.ProductProfile:
 
 
 async def _write_windows(
-    ctx: RunContext[Deps], jobs: list[Window], tally: Counter[str] | None = None
+    ctx: RunContext[Deps],
+    jobs: list[Window],
+    tally: Counter[str] | None = None,
+    covers: dict[str, Counter[str]] | None = None,
 ) -> list[tuple[int, str | None]]:
     """Every window through the writer; (stored, error) per window. `tally` counts the clauses
     set aside, by reason, and those left without an answer: what the trace shows of the
-    obligations the writers decided not to write (#48).
+    obligations the writers decided not to write (#48). `covers` counts the kept obligations per
+    regulation by the profile entry they cover.
 
     Two stages (settings.writer_stages, the default): the disposition agent decides per clause
     what applies, then translators write the obligations ten at a time. One stage: a single writer
@@ -695,7 +703,16 @@ async def _write_windows(
     model = cast(Model, ctx.model)
     two_stages = deps.settings.writer_stages == "two"
 
-    def count(window: Window, answered: set[str], set_aside: list[writer.SetAside]) -> None:
+    def count(
+        window: Window,
+        kept: list[writer.Obligation] | list[writer.Draft],
+        set_aside: list[writer.SetAside],
+    ) -> None:
+        if covers is not None and window.covers_from:
+            covers.setdefault(window.version.regulation, Counter()).update(
+                writer.covered_entry(window, k.covers) for k in kept
+            )
+        answered = {c for k in kept for c in k.clauses}
         if tally is not None:
             tally.update(a.reason for a in set_aside)
             answered = answered | {a.clause for a in set_aside}
@@ -743,7 +760,7 @@ async def _write_windows(
         found: writer.Disposition = await ask(
             window_lane, writer.disposition_agent, window.render(), window
         )
-        count(window, {c for o in found.obligations for c in o.clauses}, found.set_aside)
+        count(window, found.obligations, found.set_aside)
         version_paragraphs = await _paragraphs(deps, window.version.id)
         batches = writer.translation_jobs(window, found, version_paragraphs)
 
@@ -775,7 +792,7 @@ async def _write_windows(
             answer: writer.WindowAnswer = await ask(
                 window_lane, writer.writer_agent, window.render(), window
             )
-            count(window, {c for d in answer.requirements for c in d.clauses}, answer.set_aside)
+            count(window, answer.requirements, answer.set_aside)
             return await store(window, answer.requirements), None
         except Exception as exc:
             return 0, _failure(deps, exc)[:300]
