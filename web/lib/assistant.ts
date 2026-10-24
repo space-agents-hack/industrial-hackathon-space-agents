@@ -8,7 +8,9 @@ import { isUuid } from "./validation.ts";
 
 export type ChatRole = "user" | "assistant";
 export type ChatTurn = { role: ChatRole; content: string };
-export type ChatAnswer = { answer: string; model: string; costUsd: number | null };
+// `notices`: what the agent says about how the answer was found, shown as it is under the answer
+// whatever the model wrote (a search that matched words only, #37).
+export type ChatAnswer = { answer: string; model: string; costUsd: number | null; notices: string[] };
 // Where the question is asked from. The agent checks every id belongs to the project.
 export type ChatPage = { path: string; run_id?: string; case_id?: string; regulation_id?: string };
 export type ChatRequest = { projectId: string; page: ChatPage; messages: ChatTurn[] };
@@ -91,5 +93,6 @@ export function parseChatAnswer(body: unknown): ChatAnswer | null {
   if (!isRecord(body) || typeof body.answer !== "string" || typeof body.model !== "string") return null;
   const usage = isRecord(body.usage) ? body.usage : {};
   const cost = typeof usage.cost_usd === "number" && Number.isFinite(usage.cost_usd) ? usage.cost_usd : null;
-  return { answer: body.answer, model: body.model, costUsd: cost };
+  const notices = Array.isArray(body.notices) ? body.notices.filter((n): n is string => typeof n === "string") : [];
+  return { answer: body.answer, model: body.model, costUsd: cost, notices };
 }

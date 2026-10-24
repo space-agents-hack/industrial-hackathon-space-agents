@@ -28,7 +28,13 @@ export const PROCESSES = [
   {
     id: "summary",
     label: "Regulation summaries",
-    help: "Writes one line of scope per regulation version when the library is indexed. A cheap model is enough: it reads the first pages of each PDF once.",
+    help: "Writes the scope summary and keywords of each regulation version when the library is indexed; the agent reads them to choose which regulations to open. A cheap model is enough: it reads the first pages of each PDF once (about 0.7M tokens for 92 versions).",
+    used: true,
+  },
+  {
+    id: "chat",
+    label: "Assistant",
+    help: "Answers questions in the chat bubble on every page of a project, from the project's rows and a few paragraphs. Not the run's model: a small model does this well, and people ask many questions. An organisation whose run model is on its own Ollama server keeps the assistant there unless it chooses one here.",
     used: true,
   },
   {

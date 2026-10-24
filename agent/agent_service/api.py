@@ -118,7 +118,8 @@ def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, ob
         # "deployment default" (organization_models, SYS-33). Model names only, never a key.
         "processes": {
             "transcription": settings.ingest_model,
-            "summary": settings.summary_model or settings.agent_model,
+            "summary": settings.summary_model,
+            "chat": settings.chat_model,
             "embedding": settings.embedding_model,
         },
     }
@@ -233,7 +234,12 @@ async def chat(
     finally:
         await store.aclose()
         await projects.aclose()
-    return {"answer": result.text, "model": result.model, "usage": result.usage}
+    return {
+        "answer": result.text,
+        "model": result.model,
+        "usage": result.usage,
+        "notices": result.notices,
+    }
 
 
 # The model that will answer, for the panel to name before the first question.

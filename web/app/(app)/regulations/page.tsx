@@ -4,11 +4,24 @@ import { Suspense } from "react";
 
 import { NoAccess } from "@/components/no-access";
 import { NoProject } from "@/components/projects/no-project";
+import { RelativeTime } from "@/components/relative-time";
 import { type ImportView, ImportPanel } from "@/components/regulations/import-panel";
+import { IndexPanel } from "@/components/regulations/index-panel";
 import { hasNoAccess } from "@/lib/access";
+import { agentHealth } from "@/lib/agent-admin";
 import { getCurrentOrg } from "@/lib/current-org";
 import { getCurrentProject } from "@/lib/current-project";
-import { type ImportStatus, countFiles, formatBytes } from "@/lib/regulations";
+import {
+  DEFAULT_EMBEDDING_MODEL,
+  DIMENSIONS,
+  type VersionIndex,
+  type VersionSummary,
+  libraryIndex,
+  parseIndexStatus,
+  vectorKey,
+  versionSummary,
+} from "@/lib/regulation-index";
+import { ACTIVE_IMPORT, type ImportStatus, countFiles, formatBytes } from "@/lib/regulations";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Regulations" };
@@ -38,6 +51,7 @@ type Version = {
   // Null until the import splits the file (agent domain/paragraphs.py).
   paragraphCount: number | null;
   extractionError: string | null;
+  summary: VersionSummary;
 };
 
 async function Regulations() {
@@ -52,11 +66,11 @@ async function Regulations() {
   // Each organisation has its own library (ADR-0006); a project uses all of it or a chosen part
   // (SYS-32), and this page shows that part (SYS-36). RLS lets a platform admin read every library,
   // so the filter is what keeps this page to the organisation in the header.
-  const [{ data, error }, scope] = await Promise.all([
+  const [{ data, error }, scope, indexStatus, chosenEmbedding, health, latestImport] = await Promise.all([
     supabase
       .from("regulations")
       .select(
-        "id, code, kind, title, regulation_versions(id, version_label, role, status, size_bytes, pdf_path, paragraph_count, extraction_error)",
+        "id, code, kind, title, regulation_versions(id, version_label, role, status, size_bytes, pdf_path, paragraph_count, extraction_error, sha256, scope_summary, scope_keywords, summary_model, summarized_at, summary_sha256)",
       )
       .eq("organization_id", current.id),
     supabase
@@ -64,7 +78,24 @@ async function Regulations() {
       .select("all_regulations, project_regulations(regulation_id)")
       .eq("id", project.id)
       .maybeSingle(),
+    // Counts per version, from the agent's own tables (#37): what the search index holds.
+    supabase.rpc("regulation_index_status", { org: current.id }),
+    supabase
+      .from("organization_models")
+      .select("model")
+      .eq("organization_id", current.id)
+      .eq("process", "embedding")
+      .maybeSingle(),
+    agentHealth(),
+    supabase
+      .from("regulation_imports")
+      .select("status")
+      .eq("organization_id", current.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
+  if (indexStatus.error) console.error("Regulations: reading the index status failed", indexStatus.error);
   if (error || scope.error) {
     console.error("Regulations: read failed", error);
     return (
@@ -73,6 +104,18 @@ async function Regulations() {
       </p>
     );
   }
+
+  // The model searches use now: the organisation's choice, else the deployment's (the agent's
+  // /health), else the code's default. Vectors of another model are not counted: a search never
+  // compares them with the query.
+  const embeddingModel = chosenEmbedding.data?.model ?? health?.processes.embedding ?? DEFAULT_EMBEDDING_MODEL;
+  const status = parseIndexStatus(indexStatus.data ?? []);
+  const index = libraryIndex(
+    status,
+    data.flatMap((r) => r.regulation_versions.map((v) => versionSummary(v))),
+    embeddingModel,
+  );
+  const importActive = latestImport.data ? ACTIVE_IMPORT.includes(latestImport.data.status as ImportStatus) : false;
 
   const all = scope.data?.all_regulations ?? true;
   const chosen = new Set(scope.data?.project_regulations.map((r) => r.regulation_id) ?? []);
@@ -96,6 +139,16 @@ async function Regulations() {
       {/* First, so an import's progress is in view right after uploading. Imports fill the
           organisation's library, shared by all its projects. */}
       {permissions.manage ? <Imports org={current.id} /> : null}
+      {data.length > 0 ? (
+        <IndexPanel
+          org={current.id}
+          index={index}
+          model={embeddingModel}
+          canManage={permissions.manage}
+          // An import added paragraphs the indexer has not seen yet, and is no longer adding more.
+          autoStart={!importActive && index.unkeyed > 0}
+        />
+      ) : null}
       <section className="grid gap-2">
         <h2 className="text-sm font-semibold">Regulations of {project.name}</h2>
         <p className="text-sm text-muted-foreground">
@@ -133,6 +186,7 @@ async function Regulations() {
                     pdfPath: v.pdf_path,
                     paragraphCount: v.paragraph_count,
                     extractionError: v.extraction_error,
+                    summary: versionSummary(v),
                   }))
                   .sort((a, b) => a.versionLabel.localeCompare(b.versionLabel, "en", { numeric: true }));
                 return (
@@ -148,6 +202,7 @@ async function Regulations() {
                         <VersionLink key={version.id} version={version} href={links.get(version.pdfPath)} />
                       ))}
                     </span>
+                    <IndexDetails versions={versions} status={status} model={embeddingModel} />
                   </li>
                 );
               })}
@@ -190,6 +245,92 @@ function VersionLink({ version, href }: { version: Version; href: string | undef
     <a href={href} target="_blank" rel="noreferrer" title={detail} className="text-primary underline-offset-4 hover:underline">
       {label}
     </a>
+  );
+}
+
+// What the agent knows about each version before it opens one: the scope summary it reads to choose
+// regulations, and how much of the version vector search can find (#37). Collapsed: 92 summaries
+// open at once would bury the list.
+function IndexDetails({
+  versions,
+  status,
+  model,
+}: {
+  versions: Version[];
+  status: ReadonlyMap<string, VersionIndex>;
+  model: string;
+}) {
+  const key = vectorKey(model);
+  return (
+    <details className="w-full text-xs">
+      <summary className="cursor-pointer text-muted-foreground">Summary and search index</summary>
+      <div className="mt-2 grid gap-3">
+        {versions.map((version) => {
+          const s = version.summary;
+          const v = status.get(version.id);
+          const embedded = v ? Math.min(v.paragraphs, v.vectors[key] ?? 0) : 0;
+          const others = v ? Object.entries(v.vectors).filter(([k]) => k !== key) : [];
+          return (
+            <div key={version.id} className="grid gap-1 border-l-2 pl-3">
+              <span className="font-medium">
+                {version.versionLabel}
+                {version.role ? ` ${version.role}` : ""}
+              </span>
+              <span>
+                <span className="text-muted-foreground">Scope summary: </span>
+                {s.summary === null ? (
+                  <span className="text-attention">none yet. The agent sees only the code and title.</span>
+                ) : (
+                  <>
+                    {s.summary}{" "}
+                    <span className="text-muted-foreground">
+                      (<span className="font-mono">{s.model ?? "unknown model"}</span>
+                      {s.summarizedAt ? (
+                        <>
+                          , <RelativeTime iso={s.summarizedAt} />
+                        </>
+                      ) : null}
+                      {s.stale ? ", from an older file: it is written again at the next indexing" : ""})
+                    </span>
+                  </>
+                )}
+              </span>
+              {s.keywords.length > 0 ? (
+                <span>
+                  <span className="text-muted-foreground">Keywords: </span>
+                  {s.keywords.join(", ")}
+                </span>
+              ) : null}
+              <span>
+                <span className="text-muted-foreground">Vectors: </span>
+                {v ? (
+                  <span className={embedded < v.paragraphs ? "text-attention" : ""}>
+                    {embedded} of {v.paragraphs} paragraphs
+                  </span>
+                ) : (
+                  "no paragraphs"
+                )}{" "}
+                <span className="text-muted-foreground">
+                  (<span className="font-mono">{model}</span>, {DIMENSIONS} dimensions
+                  {v?.lastEmbeddedAt ? (
+                    <>
+                      , last <RelativeTime iso={v.lastEmbeddedAt} />
+                    </>
+                  ) : null}
+                  )
+                </span>
+                {others.length > 0 ? (
+                  <span className="text-muted-foreground">
+                    {" "}
+                    Also kept, unused by search: {others.map(([k, n]) => `${n} of ${k}`).join(", ")}.
+                  </span>
+                ) : null}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </details>
   );
 }
 

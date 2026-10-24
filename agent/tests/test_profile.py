@@ -142,3 +142,15 @@ async def test_the_drawings_of_the_case_reach_the_model_before_it_records_the_pr
         )
     )
     assert first_image < profile_call
+
+
+async def test_a_search_that_matched_words_only_says_so_once_in_the_trace(store, settings) -> None:
+    # No embedding key in the fake store: every search of the run falls back to words (#37).
+    run_id = case_run(store)
+    plan = await runner.prepare(store, settings, run_id)
+    await runner.execute(store, settings, plan)
+
+    said = [p["text"] for p in store.payloads(run_id, "text") if "words only" in p.get("text", "")]
+    assert len(said) == 1
+    assert "no openai key is connected" in said[0]
+    assert "Regulations page" in said[0]

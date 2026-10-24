@@ -28,4 +28,7 @@ def settings() -> Settings:
         heartbeat_s=0.01,
         # No transcription model in tests; case_ingest tests pass a fake one.
         ingest_model="",
+        # The assistant and the indexer on the scripted model too, unless a test chooses one.
+        chat_model="scripted",
+        summary_model="scripted",
     )

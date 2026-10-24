@@ -77,6 +77,8 @@ class Deps:
     next_number: int | None = None
     # Recorded by `record_product_profile` (SYS-43), and read back from the trace after a pause.
     profile: writer.ProductProfile | None = None
+    # Said once per run in the trace, not after every search (#37).
+    words_only_noted: bool = False
 
 
 toolset = FunctionToolset[Deps]()
@@ -241,6 +243,7 @@ async def search_regulations(
         return []
     k = max(1, min(limit, 50))
     store = deps.store.search_store()
+    reason: str | None = None
     async with httpx.AsyncClient(timeout=30) as http:
         try:
             hits = await regulation_search.search(
@@ -254,7 +257,10 @@ async def search_regulations(
                 case_id=deps.run.case_id,
                 meter=deps.meter,
             )
-        except (regulation_search.EmbeddingError, ValueError):
+            if regulation_search.words_only(hits):
+                reason = regulation_search.NOT_INDEXED
+        except (regulation_search.EmbeddingError, ValueError) as exc:
+            reason = str(exc).rstrip(".")
             # No embedding key, or no embedding model configured: words alone still find the
             # regulations that name the product, which is what this step needs.
             hits = await regulation_search.search(
@@ -268,6 +274,10 @@ async def search_regulations(
                 mode="text",
                 case_id=deps.run.case_id,
             )
+    if reason is not None and not deps.words_only_noted:
+        # For the person reading the trace, not for the model: its tool result is unchanged.
+        deps.words_only_noted = True
+        await _progress(deps, regulation_search.WORDS_ONLY.format(reason=reason))
     return [
         {
             "regulation": h.regulation_code,

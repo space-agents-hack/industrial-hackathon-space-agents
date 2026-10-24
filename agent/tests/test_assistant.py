@@ -7,7 +7,14 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from agent_service import providers, runner
@@ -228,6 +235,29 @@ async def test_the_conversation_so_far_reaches_the_model(
     assert lengths == [3]
 
 
+async def test_an_answer_from_a_word_only_search_says_so_under_the_answer(
+    store, projects, settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No embedding key in the fake store: the search falls back to words (#37). The notice is the
+    # agent's, not the model's: it is there whatever the model writes.
+    project_id, _ = await finished_run(store, projects, settings)
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        returned = any(isinstance(p, ToolReturnPart) for m in messages for p in m.parts)
+        if returned:
+            return ModelResponse(parts=[TextPart("ok")])
+        call = ToolCallPart("search_regulations", {"query": "rear position lamp"})
+        return ModelResponse(parts=[call, ToolCallPart("search_regulations", {"query": "red"})])
+
+    monkeypatch.setattr(providers, "build_model", lambda *_: FunctionModel(model))
+
+    result = await assistant.answer(store, projects, settings, project_id, Page(), ask("?"))
+
+    assert len(result.notices) == 1
+    assert "words only" in result.notices[0]
+    assert result.text == "ok"
+
+
 async def test_it_writes_nothing(store, projects, settings) -> None:
     project_id, run_id = await finished_run(store, projects, settings)
     events, rows = list(store.events), list(store.requirements)
@@ -245,7 +275,7 @@ async def test_it_uses_the_organisations_model_and_key_and_hides_the_key(
     store, projects, settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     project_id, run_id = await finished_run(store, projects, settings)
-    store.settings[ORG] = OrganizationSettings(model="openai:gpt-test")
+    store.process_models[(ORG, "chat")] = "openai:gpt-test"
     store.keys[(ORG, "openai")] = KEY
     built: list[tuple[str, str | None]] = []
 
@@ -261,7 +291,7 @@ async def test_it_uses_the_organisations_model_and_key_and_hides_the_key(
     with pytest.raises(ChatRefused) as refused:
         await assistant.answer(store, projects, settings, project_id, Page(run_id=run_id), ask("?"))
 
-    # The organisation's model, not the one the run happened to use.
+    # The organisation's chat model, not the one the run happened to use.
     assert built == [("openai:gpt-test", KEY)]
     assert refused.value.status == 502
     assert KEY not in str(refused.value)
@@ -272,7 +302,7 @@ async def test_an_answer_records_its_usage_against_the_run_on_the_page(
     store, projects, settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     project_id, run_id = await finished_run(store, projects, settings)
-    store.settings[ORG] = OrganizationSettings(model="openai:gpt-test")
+    store.process_models[(ORG, "chat")] = "openai:gpt-test"
     store.keys[(ORG, "openai")] = KEY
     before = len(store.usage_rows)
 
@@ -377,14 +407,15 @@ async def test_post_chat_answers(client: TestClient, store, projects, settings) 
     assert "cited by" in body["answer"]
     assert body["model"] == "scripted"
     assert set(body["usage"]) == {"input_tokens", "output_tokens", "requests", "cost_usd"}
+    assert isinstance(body["notices"], list)
     assert store.closed and projects.closed
 
 
-async def test_get_chat_model_names_the_organisations_model(
+async def test_get_chat_model_names_the_organisations_chat_model(
     client: TestClient, store, projects
 ) -> None:
     project_id = projects.add_project("P")
-    store.settings[ORG] = OrganizationSettings(model="anthropic:claude-test")
+    store.process_models[(ORG, "chat")] = "anthropic:claude-test"
 
     response = client.get("/chat/model", headers=AUTH, params={"project_id": str(project_id)})
 
@@ -393,6 +424,24 @@ async def test_get_chat_model_names_the_organisations_model(
         client.get("/chat/model", headers=AUTH, params={"project_id": str(uuid4())}).status_code
         == 404
     )
+
+
+async def test_without_a_chat_model_it_uses_the_default_not_the_run_model(store, settings) -> None:
+    store.settings[ORG] = OrganizationSettings(model="anthropic:claude-opus-5-5")
+    settings.chat_model = "anthropic:claude-haiku-5-5"
+
+    assert await assistant.model_name(store, settings, ORG) == "anthropic:claude-haiku-5-5"
+
+
+async def test_an_organisation_on_its_own_ollama_server_keeps_its_questions_there(
+    store, settings
+) -> None:
+    store.settings[ORG] = OrganizationSettings(model="ollama:qwen3:32b")
+    settings.chat_model = "anthropic:claude-haiku-5-5"
+
+    assert await assistant.model_name(store, settings, ORG) == "ollama:qwen3:32b"
+    store.process_models[(ORG, "chat")] = "anthropic:claude-haiku-5-5"
+    assert await assistant.model_name(store, settings, ORG) == "anthropic:claude-haiku-5-5"
 
 
 def test_post_chat_needs_the_secret(client: TestClient) -> None:

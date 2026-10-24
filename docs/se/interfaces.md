@@ -70,8 +70,9 @@ object on #18; a change then needs both owners again.
 
 **What it does not promise:** that a regulation missing from the top k does not apply (SYS-28 says
 top-k only picks candidates), or that the vector half covers the whole library. A paragraph has a
-vector only after `make regulations-index` or the index endpoint has run since the paragraph was
-extracted; until then it is found by words only.
+vector only after the indexer has run since the paragraph was extracted (the Regulations page starts
+it after an import, #37); until then it is found by words only, and the run's trace and the
+assistant say so (`regulation_search.words_only`).
 
 Built in `20261024210000_regulation_search.sql`, filtered to current rows by
 `20261024270000_superseded_paragraphs.sql`. Measured on 49,680 synthetic paragraphs: 0.5 to 0.9 s

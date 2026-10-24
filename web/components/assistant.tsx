@@ -67,6 +67,8 @@ export function Assistant({ projectId, projectName }: { projectId: string; proje
   const [error, setError] = useState<string | null>(null);
   const [model, setModel] = useState<string | null>(null);
   const [lastCost, setLastCost] = useState<number | null>(null);
+  // The agent's notices about the last answer (#37), under it; not kept with the conversation.
+  const [notices, setNotices] = useState<string[]>([]);
   const list = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
@@ -112,6 +114,7 @@ export function Assistant({ projectId, projectName }: { projectId: string; proje
     saveTurns(projectId, next);
     setDraft("");
     setError(null);
+    setNotices([]);
     setWaiting(true);
     try {
       const response = await fetch("/api/chat", {
@@ -131,6 +134,7 @@ export function Assistant({ projectId, projectName }: { projectId: string; proje
       saveTurns(projectId, answered);
       setModel(answer.model);
       setLastCost(answer.costUsd);
+      setNotices(answer.notices);
     } catch {
       setError("The question could not be sent: the server did not answer.");
     } finally {
@@ -149,6 +153,7 @@ export function Assistant({ projectId, projectName }: { projectId: string; proje
     saveTurns(projectId, []);
     setError(null);
     setLastCost(null);
+    setNotices([]);
   }
 
   function submit(event: FormEvent) {
@@ -228,6 +233,13 @@ export function Assistant({ projectId, projectName }: { projectId: string; proje
                 </p>
               ))
             )}
+            {notices.length > 0 && !waiting ? (
+              <ul className="mr-4 grid gap-1 text-xs font-medium text-attention">
+                {notices.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            ) : null}
             {waiting ? <p className="text-muted-foreground">Reading the project…</p> : null}
             {error ? (
               <div role="alert" className="grid gap-1.5 rounded-md border border-danger-border bg-danger-surface px-2.5 py-1.5 text-danger">

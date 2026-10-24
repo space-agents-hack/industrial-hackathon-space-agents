@@ -2,6 +2,8 @@ import "server-only";
 
 import { after } from "next/server";
 
+import { type IndexSlice, parseIndexStream } from "@/lib/regulation-index";
+
 // `status` is the agent's HTTP status, or null when no response arrived at all.
 const AGENT_ANSWER_TIMEOUT_MS = 30_000;
 
@@ -35,6 +37,43 @@ export async function advanceRegulationImport(importId: string): Promise<void> {
     `/regulations/imports/${encodeURIComponent(importId)}/advance`,
     `advanceRegulationImport(${importId})`,
   );
+}
+
+// One slice of indexing an organisation's library for search: vectors, then scope summaries
+// (agent domain/regulation_search.py). Unlike a run, the answer is the result: the slice keeps no
+// row of its own, so the web waits for the agent's last line and the page decides whether to send
+// the next slice. The agent stops a slice after index_slice_s (150 s); the route allows 300 s.
+const INDEX_SLICE_TIMEOUT_MS = 280_000;
+
+export async function advanceIndex(organizationId: string): Promise<IndexSlice> {
+  const baseUrl = process.env.AGENT_URL;
+  const secret = process.env.AGENT_SHARED_SECRET;
+  if (!baseUrl || !secret) throw new AgentConfigError();
+  const url = `${baseUrl.replace(/\/+$/, "")}/regulations/index/${encodeURIComponent(organizationId)}/advance`;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${secret}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(INDEX_SLICE_TIMEOUT_MS),
+    });
+  } catch (cause) {
+    throw new AgentError("The agent could not be reached.", null, { cause });
+  }
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => {});
+    throw new AgentError(`The agent answered ${response.status}.`, response.status);
+  }
+  let text: string;
+  try {
+    text = await response.text();
+  } catch (cause) {
+    throw new AgentError("The connection to the agent dropped before the slice ended.", null, { cause });
+  }
+  const slice = parseIndexStream(text);
+  if (!slice) throw new AgentError("The agent ended the slice without saying what it did.", null);
+  return slice;
 }
 
 // Parses a case's pending files once (agent_service/domain/case_ingest.py). Like a run, the agent
@@ -91,7 +130,7 @@ async function startOnAgent(path: string, label: string): Promise<void> {
 }
 
 // What to tell the person at the keyboard. Never includes the URL or the secret.
-export function describeAgentFailure(error: unknown, subject: "run" | "import" | "case" = "run"): string {
+export function describeAgentFailure(error: unknown, subject: "run" | "import" | "case" | "library" = "run"): string {
   if (error instanceof AgentConfigError) {
     return "The agent is not configured on the web server (AGENT_URL / AGENT_SHARED_SECRET).";
   }

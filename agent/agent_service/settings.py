@@ -72,11 +72,18 @@ class Settings(BaseSettings):
     # Regulation search (domain/regulation_search.py). "openai:<model>" or "openrouter:<model>";
     # changing it starts the vectors from nothing, because vectors of two models are never compared.
     embedding_model: str = "openai:text-embedding-3-small"
-    # Writes the scope summary of each regulation version. None uses AGENT_MODEL. A cheap model is
-    # enough: it reads the first pages of 92 PDFs once.
-    summary_model: str | None = None
+    # Writes the scope summary of each regulation version, where the organisation chose no model
+    # (Admin, Models). A cheap model is enough: it reads the first pages of each PDF once. It used
+    # to fall back to AGENT_MODEL, which in production is Opus: about $3.50 for 92 summaries
+    # instead of about $0.44 (estimate, #37). "scripted" writes none.
+    summary_model: str = "anthropic:claude-haiku-5-5"
     # Same budget as an import slice, for the same reason: it fits Vercel Hobby and Pro alike.
     index_slice_s: float = 150
+
+    # The assistant's model (domain/assistant.py), where the organisation chose none (Admin,
+    # Models, process "chat"). Not the run's model: an answer reads the project's rows and a few
+    # paragraphs, which a small model does well, and a person asks many questions (#37).
+    chat_model: str = "anthropic:claude-haiku-5-5"
 
     # One answer of the assistant (domain/assistant.py). A person is waiting at the keyboard;
     # the web stops waiting at 120 s, so the agent gives up first and says why.

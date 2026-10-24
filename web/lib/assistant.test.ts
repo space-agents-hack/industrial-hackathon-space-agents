@@ -65,13 +65,17 @@ test("a path that is not a path is read as the home page", () => {
 test("the agent's answer is read with its cost when it has one", () => {
   assert.deepEqual(
     parseChatAnswer({ answer: "R-001 cites 5.4.2.", model: "scripted", usage: { cost_usd: 0.012 } }),
-    { answer: "R-001 cites 5.4.2.", model: "scripted", costUsd: 0.012 },
+    { answer: "R-001 cites 5.4.2.", model: "scripted", costUsd: 0.012, notices: [] },
   );
   assert.deepEqual(parseChatAnswer({ answer: "ok", model: "m", usage: { cost_usd: null } }), {
     answer: "ok",
     model: "m",
     costUsd: null,
+    notices: [],
   });
+  assert.deepEqual(parseChatAnswer({ answer: "ok", model: "m", notices: ["Search matched words only", 3] })?.notices, [
+    "Search matched words only",
+  ]);
   assert.equal(parseChatAnswer({ answer: 1 }), null);
   assert.equal(parseChatAnswer("ok"), null);
 });

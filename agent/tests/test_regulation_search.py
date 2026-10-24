@@ -10,6 +10,7 @@ from uuid import uuid4
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
 
 from agent_service.api import app, get_download_client, get_search_store
@@ -349,7 +350,7 @@ async def test_text_search_needs_no_provider(
     provider = Provider()
     async with provider.client as http:
         await search(store, http, settings, ORG, "rear lamp", mode="text")
-        with pytest.raises(EmbeddingError, match="mode='text'"):
+        with pytest.raises(EmbeddingError, match="no openai key is connected"):
             await search(store, http, settings, ORG, "rear lamp")
     assert provider.requests == []
     assert store.matches[0]["embedding"] is None
@@ -390,3 +391,45 @@ def test_indexing_over_http_streams_what_it_did(client: tuple[TestClient, Any]) 
     assert done["event"] == "done" and done["finished"] is True
     assert done["embedded"] == 2
     assert store.closed
+
+
+def test_a_page_of_results_without_a_vector_rank_was_found_by_words_only() -> None:
+    def hit(vector_rank: int | None) -> regulation_search.Hit:
+        return regulation_search.Hit(
+            paragraph_id=uuid4(),
+            version_id=uuid4(),
+            regulation_code="UN R1",
+            version_label="00",
+            kind="paragraph",
+            text="x",
+            page_start=1,
+            page_end=1,
+            score=0.1,
+            text_rank=1,
+            vector_rank=vector_rank,
+        )
+
+    assert regulation_search.words_only([hit(None), hit(None)])
+    assert not regulation_search.words_only([hit(None), hit(3)])
+
+
+async def test_a_summary_model_that_refuses_stops_the_summaries_with_a_note(
+    index_settings: Settings,
+) -> None:
+    # A missing Anthropic key, say: every version would fail the same way, so the slice says it
+    # once and the vectors it wrote still count (#37).
+    def refuse(_messages: Any, _info: Any) -> Any:
+        raise RuntimeError("invalid x-api-key")
+
+    store = InMemorySearchStore(keys={"openai": KEY}, inputs=["a"])
+    store.add_version("UN R7", "1.0.0", text_pdf("x"))
+    store.add_version("UN R10", "1.0.0", text_pdf("y"))
+    with regulation_search.summary_agent.override(model=FunctionModel(refuse)):
+        async with Provider().client as http:
+            progress = await index_library(store, http, index_settings, ORG)
+
+    assert progress.embedded == 1
+    assert not progress.done
+    [note] = [n for n in progress.notes if "Summaries stopped" in n]
+    assert "invalid x-api-key" in note
+    assert store.summaries == {}

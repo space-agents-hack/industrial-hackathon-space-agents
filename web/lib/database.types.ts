@@ -1557,6 +1557,16 @@ export type Database = {
         }
         Returns: string
       }
+      regulation_index_status: {
+        Args: { org: string }
+        Returns: {
+          keyed: number
+          last_embedded_at: string
+          paragraphs: number
+          vectors: Json
+          version_id: string
+        }[]
+      }
       regulation_texts_to_embed: {
         Args: { p_limit?: number; p_model: string; p_organization_id: string }
         Returns: {

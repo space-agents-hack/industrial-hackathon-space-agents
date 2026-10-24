@@ -240,21 +240,33 @@ minutes. And the planner needs statistics on freshly written tables: the indexer
 With the extraction's 68 MB for the paragraphs, a library takes about 170 MB of the free plan's
 500 MB. A second organisation with the same library takes another 170 MB.
 
-How to run it: `make regulations-index` embeds what has no vector and writes the scope summaries,
-slice after slice, against the database in `agent/.env`. The agent endpoint
-`POST /regulations/index/{organization_id}/advance` does one slice and is what the web would call
-after an import. `make regulations-search Q="..." MODE=text|vector|hybrid` shows what a query
-finds. That is also how to compare full text, vectors and both on the dev case.
+How to run it: the Regulations page starts the indexer by itself once an import has added
+paragraphs the indexer has not seen, and an admin can start it with **Index library** (#37). Like an
+import, it runs one slice per request (`POST /regulations/index/{organization_id}/advance`, through
+the web's `POST /api/regulations/index`) only while the page is open, and stops when a slice writes
+nothing: a missing key or summary model would otherwise loop forever. The page shows, per version,
+how many paragraphs have a vector of the model searches use (`regulation_index_status`, migration
+`20261024320000_index_status.sql`) and the scope summary with the model that wrote it.
+`make regulations-index` does the same from a terminal against the database in `agent/.env`.
+`make regulations-search Q="..." MODE=text|vector|hybrid` shows what a query finds. That is also
+how to compare full text, vectors and both on the dev case.
 
-Scope summaries read the first 8 pages of each PDF (title, contents, scope) with the model in
-`SUMMARY_MODEL`, or `AGENT_MODEL` when that is unset. `summary_sha256` records which PDF a summary
+Why the trigger exists: until #37 nothing called the endpoint, and production ran with 48,487
+paragraphs, no vector and no summary (2026-10-24, 19:21 UTC). Every search matched words only and
+every regulation reached the agent with `scope: null`, and nothing said so. A search that matches
+words only now says it, in the run's trace and under the assistant's answer.
+
+Scope summaries read the first 8 pages of each PDF (title, contents, scope) with the
+organisation's summary model (Admin, Models), else `SUMMARY_MODEL`, which defaults to Haiku. It
+used to fall back to `AGENT_MODEL`, Opus in production: about $3.50 for 92 summaries instead of
+about $0.44 (an estimate from 0.7M input tokens, not measured). A model that refuses (no key)
+stops the summaries with one note instead of failing the slice. `summary_sha256` records which PDF a summary
 came from, so a new PDF under the same label gets a new summary. The keywords are for the agent to
 read. They are not in the full-text index, because that index belongs to the paragraphs table and
 the keywords belong to a version.
 
-Not built yet: the agent tools (`list_regulations`, `search_paragraphs`, `get_paragraph`), which
-belong to the pipeline in #4; the web calling the index endpoint after an import; recall measured on
-the dev case.
+Not built yet: recall measured on the dev case; indexing without a browser open (there is no
+queue, the same limit as imports).
 
 **The sub-goal gets most of its work from the same table:** base and latest paragraphs line up by
 `(regulation, label)`, and a different `content_hash` marks a modified paragraph, a missing label a

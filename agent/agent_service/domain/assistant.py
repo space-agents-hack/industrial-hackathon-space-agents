@@ -8,9 +8,10 @@ case's page, that run's requirements and trace or that case's text. Read-only to
 rest: the library search limited to the project's regulations, a paragraph's full text, another
 run's details, another case's text. Everything read is checked to belong to the project.
 
-The model is the organisation's (Admin, Models), the same on every page, so a conversation does
-not change model when the person changes page; the panel shows its name. An organisation on its
-own Ollama server (SYS-30) therefore keeps its data there.
+The model is the organisation's chat model (Admin, Models), else CHAT_MODEL (Haiku), the same on
+every page, so a conversation does not change model when the person changes page; the panel shows
+its name. An organisation that runs on its own Ollama server (SYS-30) and chose no chat model
+gets its run model instead, so its data stays there.
 
 Stateless: the browser keeps the conversation and sends it with every question. Nothing is
 written but the answer's usage: one `model_usage` row per answer, as process `chat` (its search
@@ -144,6 +145,8 @@ class ChatDeps:
     searches: list[str] = field(default_factory=list[str])
     # The answer's usage; the query vectors of its searches go here too.
     meter: Meter | None = None
+    # Shown under the answer, word for word, whatever the model writes (#37).
+    notices: list[str] = field(default_factory=list[str])
 
 
 @dataclass(frozen=True)
@@ -151,6 +154,8 @@ class Answer:
     text: str
     model: str
     usage: dict[str, Any]
+    # What the person must know about how the answer was found: a search that matched words only.
+    notices: list[str] = field(default_factory=list[str])
 
 
 def in_scope(versions: list[LibraryVersion], scope: ProjectScope) -> list[LibraryVersion]:
@@ -198,16 +203,24 @@ async def search_regulations(
     k = max(1, min(limit, 20))
     store = deps.store.search_store()
     org = deps.project.organization_id
+    reason: str | None = None
     async with httpx.AsyncClient(timeout=30) as http:
         try:
             hits = await regulation_search.search(
                 store, http, deps.settings, org, query, version_ids=base, k=k, meter=deps.meter
             )
-        except (regulation_search.EmbeddingError, ValueError):
+            if regulation_search.words_only(hits):
+                reason = regulation_search.NOT_INDEXED
+        except (regulation_search.EmbeddingError, ValueError) as exc:
             # No embedding key or model: words alone, as the orchestrator does.
+            reason = str(exc).rstrip(".")
             hits = await regulation_search.search(
                 store, http, deps.settings, org, query, version_ids=base, k=k, mode="text"
             )
+    if reason is not None:
+        notice = regulation_search.WORDS_ONLY.format(reason=reason)
+        if notice not in deps.notices:
+            deps.notices.append(notice)
     return [
         {
             "regulation": h.regulation_code,
@@ -511,8 +524,16 @@ async def _over_cap(store: RunStore, settings: Settings, org: UUID) -> str | Non
 
 
 async def model_name(store: RunStore, settings: Settings, org: UUID) -> str:
-    """The organisation's model (Admin, Models), or the deployment's."""
-    return effective(settings, await store.organization_settings(org)).model
+    """The organisation's chat model (Admin, Models, process "chat"), or CHAT_MODEL. Not the
+    run's model: that one is chosen for writing requirements, and costs accordingly (#37). An
+    organisation whose runs stay on its own Ollama server keeps its questions there too: a cloud
+    default would send the project's cases to a provider it chose not to use (SYS-30)."""
+    if chosen := await store.organization_model(org, "chat"):
+        return chosen.strip()
+    run_model = effective(settings, await store.organization_settings(org)).model
+    if run_model.startswith("ollama:"):
+        return run_model
+    return settings.chat_model.strip()
 
 
 async def answer(
@@ -606,4 +627,5 @@ async def answer(
             "requests": usage.requests,
             "cost_usd": float(usage.cost) if usage.cost is not None else None,
         },
+        notices=deps.notices,
     )

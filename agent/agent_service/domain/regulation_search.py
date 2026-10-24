@@ -363,7 +363,7 @@ async def _index_vectors(
     api_key, credential = await _embedding_key(store, org, model)
     if not api_key:
         progress.notes.append(
-            f"No {model.provider} key: connect one in Settings or set "
+            f"No {model.provider} key: connect one in Admin, Providers, or set "
             f"{_KEY_ENV[model.provider]}. Paragraphs are found by full text only until then."
         )
         return False
@@ -411,14 +411,11 @@ async def _summarize(
     progress: Progress,
     meter: Meter,
 ) -> bool:
-    name = (
-        await store.organization_model(org, "summary")
-        or settings.summary_model
-        or settings.agent_model
-    )
-    if name == "scripted":
+    name = (await store.organization_model(org, "summary") or settings.summary_model).strip()
+    if name in ("", "scripted"):
         progress.notes.append(
-            "No summaries: the model is 'scripted'. Set SUMMARY_MODEL or AGENT_MODEL to a real one."
+            "No summaries: the summary model is 'scripted'. Choose one in Admin, Models, or set "
+            "SUMMARY_MODEL."
         )
         return False
     provider = providers.provider_of(name)
@@ -448,7 +445,15 @@ async def _summarize(
         heading = f"{version.code}, version {version.version_label}"
         if version.title:
             heading += f": {version.title}"
-        result = await summary_agent.run(f"{heading}\n\n{text}", model=model)
+        try:
+            result = await summary_agent.run(f"{heading}\n\n{text}", model=model)
+        except Exception as exc:
+            # A missing or refused key fails every version the same way: say it once and stop,
+            # so the vectors written in this slice still count and the page shows why (#37).
+            log.exception("Summary of %s %s failed", version.code, version.version_label)
+            reason = providers.scrub(f"{type(exc).__name__}: {exc}", api_key)[:300]
+            progress.notes.append(f"Summaries stopped at {version.code} with {name}: {reason}")
+            return False
         summary = result.output
         summary.summary = summary.summary[:_SUMMARY_MAX_CHARS]
         summary.keywords = [k[:100] for k in summary.keywords[:_MAX_KEYWORDS]]
@@ -462,6 +467,21 @@ async def _summarize(
 # ------------------------------------------------------------------------------------------
 
 SearchMode = Literal["hybrid", "text", "vector"]
+
+# What a person reads when a search could not use vectors (#37). In production every search
+# matched words only for hours and nothing said so: the library had never been indexed.
+WORDS_ONLY = (
+    "Search matched words only ({reason}): a paragraph worded differently from the query is not "
+    "found. An admin indexes the library on the Regulations page."
+)
+NOT_INDEXED = "the regulations searched have no vectors yet"
+
+
+def words_only(hits: list[Hit]) -> bool:
+    """True when the vector half of a hybrid search contributed nothing. With any vector in the
+    searched versions it always returns its nearest paragraphs, which fusion ranks next to the best
+    word matches, so a page of results without one means those versions have no vectors."""
+    return all(h.vector_rank is None for h in hits)
 
 
 def within_scope(requested: list[UUID] | None, scope: ProjectScope | None) -> list[UUID] | None:
@@ -506,9 +526,9 @@ async def search(
     if mode != "text":
         api_key, credential = await _embedding_key(store, org, model)
         if not api_key:
-            raise EmbeddingError(
-                f"No {model.provider} key to embed the query; use mode='text' or connect one."
-            )
+            # Read by a person under a word-only search (WORDS_ONLY); a caller that wants words
+            # only passes mode="text".
+            raise EmbeddingError(f"no {model.provider} key is connected to embed the query")
         own = meter or Meter(org)
         # Same truncation as the stored inputs (regulation_embedding_input): a longer query would
         # be refused by the provider.

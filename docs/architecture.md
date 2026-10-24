@@ -149,9 +149,12 @@ row to `audit_events`.
 - **Questions to the assistant are not stored; only their cost is.** The bubble on every page
   of a project (SYS-39) sends the conversation the tab holds, with the page's path, to
   `POST /api/chat`, which checks that the person can read the project's organisation (viewers
-  included) and calls the agent's `POST /chat`. The agent answers with the organisation's model
+  included) and calls the agent's `POST /chat`. The agent answers with the organisation's chat model
   and key, from the project's regulations, cases and runs, the run or case on the page, and
   read-only tools (library search within the project's regulations, a paragraph, a run, a case).
+  The model is the organisation's chat model (Admin, Models), else `CHAT_MODEL` (Haiku), not the
+  run's model; an organisation on its own Ollama server keeps the run's model there. A search that
+  matched words only is said under the answer (#37).
   It refuses when the organisation is over its monthly cap, and records what each answer cost in
   `model_usage` as process `chat`, through the same model wrapper as everything else (SYS-40,
   IF-7). The conversation lasts as long as the tab: it is not shared between tabs, devices or
