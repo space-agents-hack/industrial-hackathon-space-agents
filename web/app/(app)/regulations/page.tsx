@@ -32,6 +32,9 @@ type Version = {
   status: string | null;
   sizeBytes: number;
   pdfPath: string;
+  // Null until the import splits the file (agent domain/paragraphs.py).
+  paragraphCount: number | null;
+  extractionError: string | null;
 };
 
 async function Regulations() {
@@ -44,7 +47,9 @@ async function Regulations() {
   // is what keeps this page to the organisation chosen in the header.
   const { data, error } = await supabase
     .from("regulations")
-    .select("id, code, kind, title, regulation_versions(id, version_label, role, status, size_bytes, pdf_path)")
+    .select(
+      "id, code, kind, title, regulation_versions(id, version_label, role, status, size_bytes, pdf_path, paragraph_count, extraction_error)",
+    )
     .eq("organization_id", current.id);
   if (error) {
     console.error("Regulations: read failed", error);
@@ -94,6 +99,8 @@ async function Regulations() {
                     status: v.status,
                     sizeBytes: v.size_bytes,
                     pdfPath: v.pdf_path,
+                    paragraphCount: v.paragraph_count,
+                    extractionError: v.extraction_error,
                   }))
                   .sort((a, b) => a.versionLabel.localeCompare(b.versionLabel, "en", { numeric: true }));
                 return (
@@ -120,7 +127,24 @@ async function Regulations() {
 
 function VersionLink({ version, href }: { version: Version; href: string | undefined }) {
   const label = `${version.versionLabel}${version.role ? ` ${version.role}` : ""}`;
-  const detail = [version.status, formatBytes(version.sizeBytes)].filter(Boolean).join(", ");
+  const detail = [version.status, formatBytes(version.sizeBytes), describeParagraphs(version)]
+    .filter(Boolean)
+    .join(", ");
+  if (version.extractionError) {
+    // Still citable by page, but the agent cannot search it: say so where the file is listed.
+    return (
+      <span className="text-danger" title={detail}>
+        {href ? (
+          <a href={href} target="_blank" rel="noreferrer" className="underline-offset-4 hover:underline">
+            {label}
+          </a>
+        ) : (
+          label
+        )}{" "}
+        (not split)
+      </span>
+    );
+  }
   if (!href) {
     return (
       <span className="text-muted-foreground" title={detail}>
@@ -133,6 +157,12 @@ function VersionLink({ version, href }: { version: Version; href: string | undef
       {label}
     </a>
   );
+}
+
+function describeParagraphs(version: Version): string {
+  if (version.extractionError) return `not split into paragraphs: ${version.extractionError}`;
+  if (version.paragraphCount === null) return "not split into paragraphs yet";
+  return `${version.paragraphCount} paragraphs`;
 }
 
 // Admins of the organisation (and platform admins): the import form, the latest import's progress

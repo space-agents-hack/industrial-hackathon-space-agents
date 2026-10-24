@@ -1,7 +1,8 @@
 # Regulations store: proposal
 
-Status: the import is built (bucket, catalogue tables, import from the app; see "Importing from
-the app" below). Text extraction, search and embeddings are still a proposal. How the UN Regulation
+Status: the import and the split into paragraphs with pages and full-text search are built (see
+"Importing from the app" and "Extraction" below). Embeddings, scope summaries and the hybrid search
+function are still a proposal (another thread is building them on top of `regulation_paragraphs`). How the UN Regulation
 PDFs get into Supabase so the agent can match a component description to the paragraphs that apply,
 and cite them the way the challenge scores them.
 
@@ -48,8 +49,9 @@ regulations/
     UN_R10/
       7.2.0/
         UN_R10_7.2.0.pdf
-        UN_R10_7.2.0.md       extracted text, with <!-- page n --> markers (not built yet)
-        UN_R10_7.2.0.json     extraction output with page and position of each block (not built yet)
+        UN_R10_7.2.0.md       extracted text, with <!-- page n --> markers (not built; the
+                              paragraphs are in the database instead, see "Extraction")
+        UN_R10_7.2.0.json     (not built, same reason)
         images/
           p0012_01.png        page 12, first picture (not built yet)
       7.3.0/
@@ -69,7 +71,9 @@ image once. With 214 MB of PDFs, the bucket stays around 300 MB of the free plan
 
 ## Tables
 
-Logical schema, not yet a migration. Column names are proposals.
+`regulations` and `regulation_versions` are built (`20261024180000_regulations.sql`), and so is
+`regulation_paragraphs` (`20261024200000_regulation_paragraphs.sql`, below). The rest of this block
+is still the proposal.
 
 ```
 regulations            one row per regulation (56)
@@ -82,13 +86,14 @@ regulation_versions    one row per PDF (92)
   extracted_at, pipeline_version
   unique (regulation_id, version_label)
 
-paragraphs             one row per numbered paragraph, table or definition (~50,000)
-  id, version_id, parent_id,
+regulation_paragraphs  one row per paragraph (48,487 for the challenge's 92 PDFs)       BUILT
+  id, version_id, organization_id, position,
   label 'Annex 3 Part 2 1.2'                              -- what the submission cites
-  annex, part, number, heading, kind 'paragraph' | 'table' | 'definition' | 'caption',
-  text, page_start, page_end, content_hash,
-  context,                                                -- AI, see below
-  fts tsvector generated from heading + context + text
+  annex, appendix, part, number, heading, kind 'paragraph' | 'text',
+  text, page_start, page_end, content_hash (sha256 of text),
+  context,                                                -- AI, see below; nothing writes it yet
+  fts tsvector generated from label (A) + heading and context (B) + text (C), English, GIN
+regulation_versions gets extracted_with, extraction_error, paragraph_count            BUILT
 
 paragraph_images       one row per kept picture
   id, version_id, paragraph_id null, page, path, caption, sha256
@@ -215,13 +220,38 @@ regulations the dev case expects. Minutes of work, and a yes or no answer.
 
 ## Extraction
 
-Text first, per page, with PyMuPDF or `pdftotext`, then split on the numbering pattern, tracking the
-current annex and part. That keeps page numbers exact and runs in minutes on CPU. Tables are the weak
-point of plain text extraction. Docling handles tables better but is heavy on CPU, so try it on the
-pages that contain tables, compared on two or three documents first.
+Built in `agent/agent_service/domain/paragraphs.py`, run by the import (`regulations.py`) once its
+files are stored, for every version of the library the current extractor (`EXTRACTOR`) has not split
+yet. So importing the same index again splits a library imported before this existed, and changing
+the splitter (and its `EXTRACTOR` value) re-splits the library on the next import. A version gets its
+paragraphs replaced in one transaction (`replace_regulation_paragraphs`), and a different file under
+the same version drops them (`record_regulation_version`).
 
-Checks before loading: every page of every PDF produced text, paragraph numbers increase within each
-annex, every paragraph has a page range inside the document.
+How it works: pypdfium2 (already a dependency) gives the text of each page and the font size and
+weight of each line. The PDFs were rendered from HTML by headless Chrome, so headings are bigger
+than body text (17.3 against 14 pt) and part headings are bold. A paragraph starts at a line that
+begins with a number that can follow the previous one: its parent is on the current path and the
+jump from its sibling is at most 5. That rule is what keeps wrapped references ("paragraph\n8.",
+"UN Regulation No.\n149.") from starting paragraphs; without it one of them swallowed 50 pages of
+R48. Numbering restarts at every annex, appendix and part, which the label carries. The page is the
+PDF page index, and the footer `version X | page n of N` is checked against it on every page.
+
+Measured on 2026-10-24 on the challenge's 92 PDFs and the sub-goal's two (not committed; the tests
+use a made-up PDF in `agent/tests/fixtures/regulation/`):
+
+- 17 s for all 5,532 pages on one CPU core; 38 s for a whole import into a local stack, in one
+  slice. 48,487 rows, 47,750 of them numbered paragraphs; 68 MB in the table with its indexes,
+  per organisation.
+- Every citation in the package is found with its page inside the paragraph's range: 119 of 121
+  distinct citations of the dev case and 117 of 117 of the sub-goal. The two misses cite a table
+  ("5.1.4.4.1. Table 3"): the paragraph is found, but its label has no table name.
+- 6 versions report repeated labels: forms printed more than once (R164 Annex 3, R107 Annex 8),
+  R101's Annex 7, whose first appendix heading is missing from the text layer, and a footnote
+  marker before a heading in R40 1.1.0. The rows are kept; the label is just not unique there.
+
+What it does not do: split tables out of their paragraph (a table's text stays in the paragraph it
+follows), keep pictures, read text inside figures, or read scanned PDFs (refused with a message).
+Docling was not needed for the citations above; it may still help table text.
 
 ## How we know it works
 
@@ -245,7 +275,7 @@ the per-paragraph context line is worth its cost.
 ## Build order
 
 1. Bucket, tables and extraction to paragraphs with pages; full-text search only. Gives a baseline.
-   The bucket, the catalogue tables and the import are done; extraction is next.
+   Done.
 2. Scope summaries per version.
 3. Embeddings and the hybrid function; measure recall against step 1.
 4. Context line per paragraph, only if step 3 leaves misses that headings would explain.

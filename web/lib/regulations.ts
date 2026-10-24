@@ -15,7 +15,7 @@ export const ACTIVE_IMPORT: readonly ImportStatus[] = ["queued", "running", "pau
 
 export const IMPORT_STATUS_LABELS: Record<ImportStatus, string> = {
   queued: "Waiting for the agent",
-  running: "Downloading",
+  running: "Downloading and splitting into paragraphs",
   paused: "Paused between two slices",
   succeeded: "Done",
   failed: "Finished with errors",

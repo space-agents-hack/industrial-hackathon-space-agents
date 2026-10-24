@@ -30,7 +30,7 @@ Methods: **T** automated test in `make check`, **S** score, **D** demonstration,
 | V-20 | SYS-20 | I: upload log on #7, last upload = best file, before 13:00 | none yet |
 | V-21 | SYS-21 | I: confirmation from the organisers' platform | none yet |
 | V-22 | SYS-22 | I: pitch slide numbers match the recorded scores | none yet |
-| V-23 | SYS-23 | T: a small index ingests end to end, embeddings included; I: rows per regulation match the index | none yet |
+| V-23 | SYS-23 | T: a small index ingests end to end, embeddings included; I: rows per regulation match the index | without embeddings: `agent/tests/test_library_integration.py` (import, split, full-text search on a local stack), `supabase/tests/regulation_paragraphs_test.sql`; citation check in the log below |
 | V-24 | SYS-24 | T (pgTAP): two members of one organisation both read and write its projects and cases; a member of another organisation reads none of its projects, cases, files or requirements; I: `git ls-files` has no case data | none yet |
 | V-27 | SYS-27 | T: a fixture the parser cannot read goes to the (fake) model, and both paths store blocks of the same schema with file and page | none yet |
 | V-25 | SYS-25 | T: every stored requirement points to exactly one existing catalogue paragraph whose regulation, version and page match its citation; S: requirement-level score | none yet |
@@ -44,4 +44,5 @@ and recall, who ran it. Platform scores for the held-out case also go on issue #
 
 | When | Case | Commit | Model | Scores | By |
 |---|---|---|---|---|---|
+| 2026-10-24 16:30 | dev-rear-lamp, subgoal-dev | this commit (#3) | none (`paragraphs.py`, rules only) | paragraph split: every cited (regulation, version, paragraph) found with its page in range, 119/121 dev (2 misses cite a table name), 117/117 sub-goal | Claude for Ramón |
 | 2026-10-24 16:20 | subgoal-dev | 3fb3f40 | none (`regdiff`, rules only) | local sub-goal scorer in `regdiff.score`: flagged 7/7, extra 0, change type 7/7; added 16/17, extra 0 | Claude for Ramón |

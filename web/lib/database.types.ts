@@ -116,6 +116,196 @@ export type Database = {
           },
         ]
       }
+      case_file_blocks: {
+        Row: {
+          created_at: string
+          file_id: string
+          id: number
+          image_path: string | null
+          kind: string
+          label: string
+          media_type: string | null
+          organization_id: string
+          page: number | null
+          parser: string
+          seq: number
+          text: string | null
+        }
+        Insert: {
+          created_at?: string
+          file_id: string
+          id?: never
+          image_path?: string | null
+          kind: string
+          label?: string
+          media_type?: string | null
+          organization_id: string
+          page?: number | null
+          parser: string
+          seq: number
+          text?: string | null
+        }
+        Update: {
+          created_at?: string
+          file_id?: string
+          id?: never
+          image_path?: string | null
+          kind?: string
+          label?: string
+          media_type?: string | null
+          organization_id?: string
+          page?: number | null
+          parser?: string
+          seq?: number
+          text?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_file_blocks_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "case_files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_file_blocks_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      case_files: {
+        Row: {
+          bytes: number
+          case_id: string
+          created_at: string
+          created_by: string | null
+          error: string | null
+          filename: string
+          format: string
+          id: string
+          media_type: string | null
+          notes: Json
+          organization_id: string
+          pages: number | null
+          parsed_at: string | null
+          position: number
+          sha256: string | null
+          status: string
+          storage_path: string
+          updated_at: string
+        }
+        Insert: {
+          bytes: number
+          case_id: string
+          created_at?: string
+          created_by?: string | null
+          error?: string | null
+          filename: string
+          format: string
+          id?: string
+          media_type?: string | null
+          notes?: Json
+          organization_id: string
+          pages?: number | null
+          parsed_at?: string | null
+          position?: number
+          sha256?: string | null
+          status?: string
+          storage_path: string
+          updated_at?: string
+        }
+        Update: {
+          bytes?: number
+          case_id?: string
+          created_at?: string
+          created_by?: string | null
+          error?: string | null
+          filename?: string
+          format?: string
+          id?: string
+          media_type?: string | null
+          notes?: Json
+          organization_id?: string
+          pages?: number | null
+          parsed_at?: string | null
+          position?: number
+          sha256?: string | null
+          status?: string
+          storage_path?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_files_case_id_organization_id_fkey"
+            columns: ["case_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      cases: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          organization_id: string
+          project_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          organization_id: string
+          project_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          organization_id?: string
+          project_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cases_project_id_organization_id_fkey"
+            columns: ["project_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      certivity_reference: {
+        Row: {
+          case_id: string
+          certivity_commit: string
+          content: Json
+          kind: string
+          loaded_at: string
+        }
+        Insert: {
+          case_id?: string
+          certivity_commit: string
+          content: Json
+          kind: string
+          loaded_at?: string
+        }
+        Update: {
+          case_id?: string
+          certivity_commit?: string
+          content?: Json
+          kind?: string
+          loaded_at?: string
+        }
+        Relationships: []
+      }
       memberships: {
         Row: {
           created_at: string
@@ -203,6 +393,38 @@ export type Database = {
           name?: string
         }
         Relationships: []
+      }
+      projects: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          organization_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          organization_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "projects_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       provider_connections: {
         Row: {
@@ -354,16 +576,97 @@ export type Database = {
           },
         ]
       }
+      regulation_paragraphs: {
+        Row: {
+          annex: string | null
+          appendix: string | null
+          content_hash: string
+          context: string | null
+          created_at: string
+          fts: unknown
+          heading: string
+          id: string
+          kind: string
+          label: string | null
+          number: string | null
+          organization_id: string
+          page_end: number
+          page_start: number
+          part: string | null
+          position: number
+          text: string
+          version_id: string
+        }
+        Insert: {
+          annex?: string | null
+          appendix?: string | null
+          content_hash: string
+          context?: string | null
+          created_at?: string
+          fts?: unknown
+          heading?: string
+          id?: string
+          kind: string
+          label?: string | null
+          number?: string | null
+          organization_id: string
+          page_end: number
+          page_start: number
+          part?: string | null
+          position: number
+          text: string
+          version_id: string
+        }
+        Update: {
+          annex?: string | null
+          appendix?: string | null
+          content_hash?: string
+          context?: string | null
+          created_at?: string
+          fts?: unknown
+          heading?: string
+          id?: string
+          kind?: string
+          label?: string | null
+          number?: string | null
+          organization_id?: string
+          page_end?: number
+          page_start?: number
+          part?: string | null
+          position?: number
+          text?: string
+          version_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "regulation_paragraphs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "regulation_paragraphs_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "regulation_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       regulation_versions: {
         Row: {
           created_at: string
           extracted_at: string | null
+          extracted_with: string | null
+          extraction_error: string | null
           file_name: string
           id: string
           last_import_id: string | null
           md_path: string | null
           organization_id: string
           page_count: number | null
+          paragraph_count: number | null
           pdf_path: string
           regulation_id: string
           role: string | null
@@ -377,12 +680,15 @@ export type Database = {
         Insert: {
           created_at?: string
           extracted_at?: string | null
+          extracted_with?: string | null
+          extraction_error?: string | null
           file_name: string
           id?: string
           last_import_id?: string | null
           md_path?: string | null
           organization_id: string
           page_count?: number | null
+          paragraph_count?: number | null
           pdf_path: string
           regulation_id: string
           role?: string | null
@@ -396,12 +702,15 @@ export type Database = {
         Update: {
           created_at?: string
           extracted_at?: string | null
+          extracted_with?: string | null
+          extraction_error?: string | null
           file_name?: string
           id?: string
           last_import_id?: string | null
           md_path?: string | null
           organization_id?: string
           page_count?: number | null
+          paragraph_count?: number | null
           pdf_path?: string
           regulation_id?: string
           role?: string | null
@@ -594,6 +903,7 @@ export type Database = {
       }
       runs: {
         Row: {
+          case_id: string | null
           created_at: string
           created_by: string
           error: string | null
@@ -607,6 +917,7 @@ export type Database = {
           usage: Json
         }
         Insert: {
+          case_id?: string | null
           created_at?: string
           created_by?: string
           error?: string | null
@@ -620,6 +931,7 @@ export type Database = {
           usage?: Json
         }
         Update: {
+          case_id?: string | null
           created_at?: string
           created_by?: string
           error?: string | null
@@ -633,6 +945,13 @@ export type Database = {
           usage?: Json
         }
         Relationships: [
+          {
+            foreignKeyName: "runs_case_fkey"
+            columns: ["case_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id", "organization_id"]
+          },
           {
             foreignKeyName: "runs_organization_id_fkey"
             columns: ["organization_id"]
@@ -694,6 +1013,15 @@ export type Database = {
         Args: { change: string; detail: Json }
         Returns: undefined
       }
+      record_regulation_extraction_failure: {
+        Args: {
+          p_error: string
+          p_extracted_with: string
+          p_sha256: string
+          p_version_id: string
+        }
+        Returns: undefined
+      }
       record_regulation_version: {
         Args: {
           p_code: string
@@ -713,6 +1041,16 @@ export type Database = {
           p_version_title: string
         }
         Returns: string
+      }
+      replace_regulation_paragraphs: {
+        Args: {
+          p_extracted_with: string
+          p_page_count: number
+          p_paragraphs: Json
+          p_sha256: string
+          p_version_id: string
+        }
+        Returns: number
       }
       set_member: {
         Args: {

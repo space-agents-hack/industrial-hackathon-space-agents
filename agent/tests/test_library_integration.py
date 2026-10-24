@@ -1,6 +1,7 @@
-"""The regulation import against a real local stack: the import tables, record_regulation_version
-and the `regulations` bucket, through the API gateway with the agent's secret key. Downloads still
-go to httpx.MockTransport; what is real here is everything on the Supabase side.
+"""The regulation import against a real local stack: the import tables, record_regulation_version,
+the `regulations` bucket and the paragraphs with their full-text search, through the API gateway
+with the agent's secret key. Downloads still go to httpx.MockTransport; what is real here is
+everything on the Supabase side.
 
 Each test uses its own made-up regulation code and removes what it created.
 """
@@ -8,6 +9,7 @@ Each test uses its own made-up regulation code and removes what it created.
 import hashlib
 import os
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -17,7 +19,14 @@ from supabase import AsyncClient, acreate_client
 
 from agent_service.domain import regulations
 from agent_service.domain.library_store import SupabaseLibraryStore
-from agent_service.domain.regulations import BUCKET, slug_of
+from agent_service.domain.paragraphs import (
+    EXTRACTOR,
+    Extraction,
+    ExtractionProblem,
+    Paragraph,
+    extract,
+)
+from agent_service.domain.regulations import BUCKET, Splitter, slug_of
 from agent_service.settings import Settings
 
 URL = os.environ.get("SUPABASE_URL", "")
@@ -88,8 +97,22 @@ def index(code: str, *versions: tuple[str, str, bytes]) -> list[dict[str, Any]]:
     ]
 
 
+SAMPLE = (Path(__file__).parent / "fixtures" / "regulation" / "sample.pdf").read_bytes()
+
+
+def split_fake(data: bytes) -> Extraction:
+    """The made-up bytes of the tests below are not PDFs: one paragraph holding them instead."""
+    text = data.decode()
+    paragraph = Paragraph(0, "1", None, None, None, "1", "", "paragraph", text, 1, 1)
+    return Extraction(page_count=1, version_label=None, paragraphs=[paragraph])
+
+
 async def run_import(
-    db: AsyncClient, org: UUID, raw: list[dict[str, Any]], bodies: dict[str, bytes]
+    db: AsyncClient,
+    org: UUID,
+    raw: list[dict[str, Any]],
+    bodies: dict[str, bytes],
+    split: Splitter = split_fake,
 ) -> UUID:
     res = (
         await db.table("regulation_imports")
@@ -109,7 +132,7 @@ async def run_import(
     try:
         job = await regulations.prepare(store, settings, import_id)
         async with httpx.AsyncClient(transport=httpx.MockTransport(serve)) as http:
-            await regulations.execute(store, http, settings, job, resolve=public)
+            await regulations.execute(store, http, settings, job, resolve=public, split=split)
     finally:
         await store.aclose()
     return import_id
@@ -187,3 +210,89 @@ async def test_a_second_import_moves_the_role_and_skips_unchanged_files(
         ("1.1.0", None),
         ("1.2.0", "latest"),
     ]
+
+
+async def test_an_import_splits_its_pdfs_into_searchable_paragraphs(
+    db: AsyncClient, code: str, org: UUID
+) -> None:
+    import_id = await run_import(
+        db, org, index(code, ("2.1.0", "base", SAMPLE)), {"/2.1.0.pdf": SAMPLE}, split=extract
+    )
+
+    job = rows(
+        await db.table("regulation_imports")
+        .select("status, error")
+        .eq("id", str(import_id))
+        .execute()
+    )
+    assert job == [{"status": "succeeded", "error": None}]
+    [version] = rows(
+        await db.table("regulation_versions")
+        .select(
+            "id, page_count, paragraph_count, extracted_with, extraction_error,"
+            " regulations!inner(code)"
+        )
+        .eq("regulations.code", code)
+        .execute()
+    )
+    assert (version["page_count"], version["paragraph_count"]) == (3, 25)
+    assert (version["extracted_with"], version["extraction_error"]) == (EXTRACTOR, None)
+
+    found = rows(
+        await db.table("regulation_paragraphs")
+        .select("label, page_start, page_end, organization_id")
+        .eq("version_id", version["id"])
+        .text_search("fts", "'heat' & 'kept'")
+        .execute()
+    )
+    assert found == [
+        {"label": "Annex 2 Part 1 1.1", "page_start": 2, "page_end": 2, "organization_id": str(org)}
+    ]
+    spanning = rows(
+        await db.table("regulation_paragraphs")
+        .select("page_start, page_end")
+        .eq("version_id", version["id"])
+        .eq("label", "5.1.2")
+        .execute()
+    )
+    assert spanning == [{"page_start": 1, "page_end": 2}]
+
+
+async def test_a_new_file_under_the_same_version_drops_the_old_paragraphs(
+    db: AsyncClient, code: str, org: UUID
+) -> None:
+    first, second = b"%PDF-1.7 first", b"%PDF-1.7 second"
+    await run_import(db, org, index(code, ("1.0.0", "base", first)), {"/1.0.0.pdf": first})
+
+    def refuse(_data: bytes) -> Extraction:
+        raise ExtractionProblem("Not a PDF this time.")
+
+    import_id = await run_import(
+        db, org, index(code, ("1.0.0", "base", second)), {"/1.0.0.pdf": second}, split=refuse
+    )
+
+    [version] = rows(
+        await db.table("regulation_versions")
+        .select("id, paragraph_count, extraction_error, regulations!inner(code)")
+        .eq("regulations.code", code)
+        .execute()
+    )
+    assert (version["paragraph_count"], version["extraction_error"]) == (
+        None,
+        "Not a PDF this time.",
+    )
+    left = rows(
+        await db.table("regulation_paragraphs")
+        .select("text")
+        .eq("version_id", version["id"])
+        .execute()
+    )
+    assert left == []
+    job = rows(
+        await db.table("regulation_imports")
+        .select("status, error")
+        .eq("id", str(import_id))
+        .execute()
+    )
+    assert job[0]["status"] == "succeeded"
+    assert "could not be split" in job[0]["error"]

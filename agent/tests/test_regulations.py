@@ -1,10 +1,13 @@
-"""The regulation import: reading an index, downloading safely, and working through an import in
-slices. Downloads go to httpx.MockTransport and host lookups to a fake resolver, so nothing here
-touches the network. The PDFs are a few made-up bytes, not challenge material."""
+"""The regulation import: reading an index, downloading safely, working through an import in
+slices, and splitting the stored PDFs into paragraphs. Downloads go to httpx.MockTransport and host
+lookups to a fake resolver, so nothing here touches the network. The PDFs are a few made-up bytes,
+not challenge material; the splitter is replaced by `split_fake` except where a test says so, and
+there it reads the made-up regulation in tests/fixtures/regulation."""
 
 import hashlib
 import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -14,6 +17,13 @@ from fastapi.testclient import TestClient
 
 from agent_service.api import app, get_download_client, get_library
 from agent_service.domain import regulations
+from agent_service.domain.paragraphs import (
+    EXTRACTOR,
+    Extraction,
+    ExtractionProblem,
+    Paragraph,
+    extract,
+)
 from agent_service.domain.regulations import (
     CannotAdvance,
     FileProblem,
@@ -107,12 +117,23 @@ def library() -> InMemoryLibraryStore:
     return InMemoryLibraryStore()
 
 
+def split_fake(data: bytes) -> Extraction:
+    """One paragraph per PDF, holding its bytes, so a test can tell which file was split."""
+    text = data.decode(errors="replace")
+    paragraph = Paragraph(0, "1", None, None, None, "1", "", "paragraph", text, 1, 1)
+    return Extraction(page_count=1, version_label=None, paragraphs=[paragraph])
+
+
 async def run(
-    library: InMemoryLibraryStore, settings: Settings, import_id: Any, server: Server
+    library: InMemoryLibraryStore,
+    settings: Settings,
+    import_id: Any,
+    server: Server,
+    split: regulations.Splitter = split_fake,
 ) -> str:
     job = await regulations.prepare(library, settings, import_id)
     async with server.client() as http:
-        return await regulations.execute(library, http, settings, job, resolve=public)
+        return await regulations.execute(library, http, settings, job, resolve=public, split=split)
 
 
 # ---------------------------------------------------------------------------------- the index
@@ -365,6 +386,168 @@ async def test_a_running_import_without_a_heartbeat_is_taken_over(
 
 
 # ---------------------------------------------------------------------------------- HTTP
+
+
+# ---------------------------------------------------------------------------------- paragraphs
+
+SAMPLE = (Path(__file__).parent / "fixtures" / "regulation" / "sample.pdf").read_bytes()
+
+
+async def test_an_import_splits_every_stored_version_into_paragraphs(
+    library: InMemoryLibraryStore, settings: Settings
+) -> None:
+    index = [entry("UN R999", ("2.1.0", "base", SAMPLE))]
+    server = Server({"/UN_R999/2.1.0.pdf": SAMPLE})
+
+    # The real splitter, on the made-up regulation.
+    assert await run(library, settings, library.add_import(index), server, split=extract) == (
+        "succeeded"
+    )
+
+    version = library.version("UN R999", "2.1.0")
+    assert version.extracted_with == EXTRACTOR
+    assert version.page_count == 3
+    labels = [p.label for p in version.paragraphs]
+    assert "Annex 2 Part 1 1.1" in labels
+    assert len(labels) == 25
+
+
+async def test_versions_imported_before_the_splitter_get_paragraphs_on_the_next_import(
+    library: InMemoryLibraryStore, settings: Settings
+) -> None:
+    await run(library, settings, library.add_import(INDEX), Server())
+    for version in library.versions:
+        version.extracted_with, version.paragraphs = None, []
+    server = Server()
+
+    assert await run(library, settings, library.add_import(INDEX), server) == "succeeded"
+
+    assert server.requests == []  # nothing downloaded again
+    assert library.version("UN R10", "7.3.0").paragraphs[0].text == R10_LATEST.decode()
+    assert all(v.extracted_with == EXTRACTOR for v in library.versions)
+
+
+async def test_a_version_already_split_by_this_extractor_is_not_split_again(
+    library: InMemoryLibraryStore, settings: Settings
+) -> None:
+    await run(library, settings, library.add_import(INDEX), Server())
+    calls: list[bytes] = []
+
+    def counting(data: bytes) -> Extraction:
+        calls.append(data)
+        return split_fake(data)
+
+    await run(library, settings, library.add_import(INDEX), Server(), split=counting)
+
+    assert calls == []
+
+
+async def test_a_new_file_under_the_same_version_is_split_again(
+    library: InMemoryLibraryStore, settings: Settings
+) -> None:
+    await run(library, settings, library.add_import(INDEX), Server())
+    replaced = pdf("R10 latest, corrected")
+    index = [entry("UN R10", ("7.3.0", "latest", replaced))]
+
+    await run(library, settings, library.add_import(index), Server({"/UN_R10/7.3.0.pdf": replaced}))
+
+    assert library.version("UN R10", "7.3.0").paragraphs[0].text == replaced.decode()
+
+
+async def test_a_pdf_that_cannot_be_split_is_named_and_the_import_still_succeeds(
+    library: InMemoryLibraryStore, settings: Settings
+) -> None:
+    def refuse_r10(data: bytes) -> Extraction:
+        if b"R10" in data:
+            raise ExtractionProblem("No text layer.")
+        return split_fake(data)
+
+    import_id = library.add_import(INDEX)
+
+    assert await run(library, settings, import_id, Server(), split=refuse_r10) == "succeeded"
+
+    assert library.version("UN R10", "7.2.0").extraction_error == "No text layer."
+    assert library.version("UN R10", "7.2.0").paragraphs == []
+    assert library.version("UN GTR 9", "2.0.0").paragraphs != []
+    assert library.errors[import_id] == (
+        "2 version(s) could not be split into paragraphs: UN R10 7.2.0: No text layer.; "
+        "UN R10 7.3.0: No text layer.."
+    )
+
+
+async def test_a_splitter_crash_is_recorded_so_the_next_import_does_not_trip_on_it(
+    library: InMemoryLibraryStore, settings: Settings
+) -> None:
+    def crash(_data: bytes) -> Extraction:
+        raise IndexError("list index out of range")
+
+    await run(library, settings, library.add_import(INDEX), Server(), split=crash)
+    calls: list[bytes] = []
+
+    def counting(data: bytes) -> Extraction:
+        calls.append(data)
+        return split_fake(data)
+
+    await run(library, settings, library.add_import(INDEX), Server(), split=counting)
+
+    assert calls == []
+    assert "IndexError" in (library.version("UN R10", "7.2.0").extraction_error or "")
+
+
+async def test_a_bucket_that_does_not_answer_leaves_the_version_for_the_next_import(
+    library: InMemoryLibraryStore, settings: Settings
+) -> None:
+    await run(library, settings, library.add_import(INDEX), Server())
+    gtr = library.version("UN GTR 9", "2.0.0")
+    gtr.extracted_with, gtr.paragraphs = None, []
+    library.unreachable.add(gtr.path)
+    import_id = library.add_import(INDEX)
+
+    assert await run(library, settings, import_id, Server()) == "succeeded"
+
+    assert gtr.extracted_with is None
+    assert "UN GTR 9 2.0.0" in (library.errors[import_id] or "")
+    assert "import the index again" in (library.errors[import_id] or "")
+
+    library.unreachable.clear()
+    await run(library, settings, library.add_import(INDEX), Server())
+    assert gtr.extracted_with == EXTRACTOR
+
+
+async def test_a_stored_pdf_that_does_not_match_its_checksum_is_not_split(
+    library: InMemoryLibraryStore, settings: Settings
+) -> None:
+    await run(library, settings, library.add_import(INDEX), Server())
+    gtr = library.version("UN GTR 9", "2.0.0")
+    gtr.extracted_with, gtr.paragraphs = None, []
+    library.objects[gtr.path] = pdf("something else")
+
+    await run(library, settings, library.add_import(INDEX), Server())
+
+    assert "sha256" in (gtr.extraction_error or "")
+    assert gtr.paragraphs == []
+
+
+async def test_splitting_pauses_when_the_slice_ends_and_resumes_where_it_stopped(
+    library: InMemoryLibraryStore, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await run(library, settings, library.add_import(INDEX), Server())
+    for version in library.versions:
+        version.extracted_with, version.paragraphs = None, []
+    clock = [0.0]
+    monkeypatch.setattr(regulations.time, "monotonic", lambda: clock[0])
+
+    def slow(data: bytes) -> Extraction:
+        clock[0] += settings.import_slice_s  # the first version uses up the whole slice
+        return split_fake(data)
+
+    import_id = library.add_import(INDEX)
+
+    assert await run(library, settings, import_id, Server(), split=slow) == "paused"
+    assert [v.extracted_with for v in library.versions] == [EXTRACTOR, None, None]
+
+    assert await run(library, settings, import_id, Server()) == "succeeded"
+    assert all(v.extracted_with == EXTRACTOR for v in library.versions)
 
 
 @pytest.fixture

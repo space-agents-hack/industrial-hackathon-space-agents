@@ -78,6 +78,7 @@ row to `audit_events`.
 | The loop, limits, what gets logged | `agent/agent_service/runner.py`, `settings.py` |
 | Tables, who can read and write | `supabase/migrations/` and `supabase/tests/` |
 | The regulation library and its import | `agent/agent_service/domain/regulations.py`, `web/app/(app)/regulations/`, `docs/regulations-store.md` |
+| Regulation PDFs split into paragraphs with pages | `agent/agent_service/domain/paragraphs.py`, table `regulation_paragraphs` |
 | Pages and the trace | `web/app/`, `web/lib/trace.ts` |
 | What runs on a push | `.github/workflows/deploy.yml`, `Makefile` |
 

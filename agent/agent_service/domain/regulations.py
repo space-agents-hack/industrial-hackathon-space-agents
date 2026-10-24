@@ -14,13 +14,20 @@ Like runner.py, two halves so the HTTP layer can refuse with a status code befor
 One request handles one slice (`import_slice_s`), because a whole library does not fit in one
 serverless call. An import that runs out of time is left `paused`; the web page sends it back.
 
+Once every file is stored, the same import splits into paragraphs (domain/paragraphs.py) every
+version of the organisation's library that the current extractor has not split yet: the ones this
+import stored, and older ones, so importing an index again fills in a library imported before the
+splitter existed, or re-splits it after the splitter changes (`EXTRACTOR`).
+
 Resuming is safe here, unlike a run: a file already stored with the same sha256 is skipped, and
 storing one twice writes the same bytes to the same path. So a running import whose heartbeat has
 gone stale is simply taken over, not failed.
 
 What this does NOT do:
   - delete anything. An import adds and updates; a version missing from a new index stays.
-  - extract text, pictures or embeddings. Those are later steps on the stored PDFs.
+  - extract pictures or embeddings. Those are later steps on the stored PDFs.
+  - split a library without an import. Importing the same index again is how to ask for it; it
+    downloads nothing.
   - follow redirects or fetch from private addresses. The links come from a file a person
     uploaded, so a link to the deployment's own network must not be fetched (see `fetch_pdf`).
 """
@@ -41,6 +48,7 @@ from uuid import UUID
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from agent_service.domain.paragraphs import EXTRACTOR, Extraction, ExtractionProblem, extract
 from agent_service.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -316,6 +324,24 @@ async def _download(http: httpx.AsyncClient, url: str, sha256: str, max_bytes: i
 # ------------------------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class VersionToSplit:
+    """A stored version whose paragraphs are missing or were cut by an older extractor."""
+
+    id: UUID
+    regulation_code: str
+    version_label: str
+    sha256: str
+    pdf_path: str
+
+    @property
+    def name(self) -> str:
+        return f"{self.regulation_code} {self.version_label}"
+
+
+Splitter = Callable[[bytes], Extraction]
+
+
 class ImportRow(BaseModel):
     id: UUID
     # Whose library this import fills.
@@ -369,6 +395,29 @@ class LibraryStore(Protocol):
 
     async def record_version(self, job: ImportRow, file: PlannedFile, size_bytes: int) -> None: ...
 
+    async def versions_to_split(
+        self, organization_id: UUID, extractor: str
+    ) -> list[VersionToSplit]:
+        """Versions of the library not split by `extractor` yet, failures included."""
+        ...
+
+    async def download_pdf(self, path: str) -> bytes: ...
+
+    async def save_paragraphs(
+        self, version: VersionToSplit, extractor: str, extraction: Extraction
+    ) -> bool:
+        """Replaces the version's paragraphs at once. False if the version's file changed since
+        it was listed, in which case nothing is written."""
+        ...
+
+    async def splitting_failed(self, version: VersionToSplit, extractor: str, error: str) -> None:
+        """The version's file cannot be split by `extractor`: record why, drop its paragraphs."""
+        ...
+
+    async def splitting_errors(self, organization_id: UUID, extractor: str) -> list[str]:
+        """ "UN R10 7.2.0: reason" for every version `extractor` could not split."""
+        ...
+
     async def aclose(self) -> None: ...
 
 
@@ -408,10 +457,11 @@ async def execute(
     job: ImportRow,
     *,
     resolve: Resolver = resolve_host,
+    split: Splitter = extract,
 ) -> ImportStatus:
     """Never raises: an unexpected error ends the import as failed, with the reason."""
     try:
-        return await _execute(store, http, settings, job, resolve)
+        return await _execute(store, http, settings, job, resolve, split)
     except Exception as exc:
         log.exception("Import %s failed", job.id)
         message = f"The import stopped on an unexpected error ({type(exc).__name__}). Resume it."
@@ -425,6 +475,7 @@ async def _execute(
     settings: Settings,
     job: ImportRow,
     resolve: Resolver,
+    split: Splitter,
 ) -> ImportStatus:
     deadline = time.monotonic() + settings.import_slice_s
 
@@ -445,13 +496,75 @@ async def _execute(
         status, error = await _store_one(store, http, settings, job, file, resolve)
         await store.set_file(job.id, file.position, status, error)
 
+    # Paragraphs, for the whole library and not only this import's files (module docstring).
+    # A version that fails for a reason that may pass (the bucket did not answer) is skipped for
+    # the rest of this slice and not recorded, so the next import tries it again.
+    skipped: list[str] = []
+    for version in await store.versions_to_split(job.organization_id, EXTRACTOR):
+        if time.monotonic() >= deadline:
+            await store.end_import(job.id, "paused")
+            return "paused"
+        if not await store.touch_import(job.id):
+            return "cancelled"
+        if not await _split_one(store, version, split):
+            skipped.append(version.name)
+
+    problems: list[str] = []
     failed = await store.failed_count(job.id)
     if failed:
-        message = f"{failed} file(s) could not be stored; see the list."
-        await store.end_import(job.id, "failed", message)
-        return "failed"
-    await store.end_import(job.id, "succeeded")
-    return "succeeded"
+        problems.append(f"{failed} file(s) could not be stored; see the list.")
+    unsplit = await store.splitting_errors(job.organization_id, EXTRACTOR)
+    if unsplit:
+        shown = "; ".join(unsplit[:3]) + ("; and more" if len(unsplit) > 3 else "")
+        problems.append(f"{len(unsplit)} version(s) could not be split into paragraphs: {shown}.")
+    if skipped:
+        problems.append(
+            f"{len(skipped)} version(s) were not split this time ({', '.join(skipped[:3])}); "
+            "import the index again to retry."
+        )
+    # Only a file that could not be stored fails the import: a version without paragraphs is
+    # still in the library, can be opened and cited by page, and is named in the message.
+    outcome: ImportStatus = "failed" if failed else "succeeded"
+    await store.end_import(job.id, outcome, " ".join(problems) or None)
+    return outcome
+
+
+async def _split_one(store: LibraryStore, version: VersionToSplit, split: Splitter) -> bool:
+    """False if it failed for a reason that may pass; a PDF that cannot be split is recorded."""
+    try:
+        data = await store.download_pdf(version.pdf_path)
+    except Exception:
+        log.exception("Paragraphs of %s: download from the bucket failed", version.name)
+        return False
+    try:
+        if hashlib.sha256(data).hexdigest() != version.sha256:
+            raise ExtractionProblem("The stored PDF does not match its sha256; import it again.")
+        # Splitting is CPU work (about 0.2 s per 100 pages); in a thread, the request keeps
+        # streaming its heartbeat meanwhile.
+        extraction = await asyncio.to_thread(split, data)
+    except ExtractionProblem as exc:
+        await store.splitting_failed(version, EXTRACTOR, str(exc))
+        return True
+    except Exception as exc:
+        # A PDF that breaks the splitter breaks it again on the next import: recorded, so the
+        # import does not trip over it every time with the same extractor.
+        log.exception("Paragraphs of %s: the splitter failed", version.name)
+        await store.splitting_failed(
+            version, EXTRACTOR, f"The splitter failed on this PDF ({type(exc).__name__})."
+        )
+        return True
+    if extraction.version_label not in (None, version.version_label):
+        # Not fatal: the paragraphs and pages are right either way, and a submission cites the
+        # index's label (SYS-5). But someone should know the file and the index disagree.
+        log.warning("%s: the PDF's footers say version %s", version.name, extraction.version_label)
+    for warning in extraction.warnings:
+        log.info("Paragraphs of %s: %s", version.name, warning)
+    try:
+        await store.save_paragraphs(version, EXTRACTOR, extraction)
+    except Exception:
+        log.exception("Paragraphs of %s: saving failed", version.name)
+        return False
+    return True
 
 
 async def _store_one(

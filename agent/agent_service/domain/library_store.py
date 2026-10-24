@@ -1,4 +1,5 @@
-"""The regulation library in Supabase: the import tables, the catalogue function and the bucket.
+"""The regulation library in Supabase: the import tables, the catalogue and paragraph functions,
+and the bucket.
 The in-memory twin for unit tests is tests/library_fakes.py; this one is tested against a local
 stack in tests/test_library_integration.py."""
 
@@ -8,12 +9,14 @@ from uuid import UUID
 
 from supabase import AsyncClient, acreate_client
 
+from agent_service.domain.paragraphs import Extraction
 from agent_service.domain.regulations import (
     BUCKET,
     FileStatus,
     ImportRow,
     ImportStatus,
     PlannedFile,
+    VersionToSplit,
 )
 
 # PostgREST's page size (supabase/config.toml `max_rows`, and the hosted default).
@@ -218,6 +221,101 @@ class SupabaseLibraryStore:
                 "p_pdf_path": file.path(job.organization_id),
             },
         ).execute()
+
+    async def versions_to_split(
+        self, organization_id: UUID, extractor: str
+    ) -> list[VersionToSplit]:
+        found: list[VersionToSplit] = []
+        start = 0
+        while True:
+            res = (
+                await self._db.table("regulation_versions")
+                .select("id, version_label, sha256, pdf_path, regulations!inner(code)")
+                .eq("organization_id", str(organization_id))
+                .or_(f"extracted_with.is.null,extracted_with.neq.{extractor}")
+                .order("created_at")
+                .order("id")
+                .range(start, start + _PAGE - 1)
+                .execute()
+            )
+            page = _rows(res)
+            found += [
+                VersionToSplit(
+                    id=UUID(r["id"]),
+                    regulation_code=r["regulations"]["code"],
+                    version_label=r["version_label"],
+                    sha256=r["sha256"],
+                    pdf_path=r["pdf_path"],
+                )
+                for r in page
+            ]
+            if len(page) < _PAGE:
+                return found
+            start += _PAGE
+
+    async def download_pdf(self, path: str) -> bytes:
+        return await self._db.storage.from_(BUCKET).download(path)
+
+    async def save_paragraphs(
+        self, version: VersionToSplit, extractor: str, extraction: Extraction
+    ) -> bool:
+        # One call, one transaction (replace_regulation_paragraphs): about 500 paragraphs and
+        # 150 KB of text for an average version, a few MB for the largest (R49).
+        rows = [
+            {
+                "position": p.position,
+                "label": p.label,
+                "annex": p.annex,
+                "appendix": p.appendix,
+                "part": p.part,
+                "number": p.number,
+                "heading": p.heading,
+                "kind": p.kind,
+                "text": p.text,
+                "page_start": p.page_start,
+                "page_end": p.page_end,
+                "content_hash": p.content_hash,
+            }
+            for p in extraction.paragraphs
+        ]
+        res = await self._db.rpc(
+            "replace_regulation_paragraphs",
+            {
+                "p_version_id": str(version.id),
+                "p_sha256": version.sha256,
+                "p_extracted_with": extractor,
+                "p_page_count": extraction.page_count,
+                "p_paragraphs": rows,
+            },
+        ).execute()
+        return res.data is not None
+
+    async def splitting_failed(self, version: VersionToSplit, extractor: str, error: str) -> None:
+        await self._db.rpc(
+            "record_regulation_extraction_failure",
+            {
+                "p_version_id": str(version.id),
+                "p_sha256": version.sha256,
+                "p_extracted_with": extractor,
+                "p_error": error,
+            },
+        ).execute()
+
+    async def splitting_errors(self, organization_id: UUID, extractor: str) -> list[str]:
+        res = (
+            await self._db.table("regulation_versions")
+            .select("version_label, extraction_error, regulations!inner(code)")
+            .eq("organization_id", str(organization_id))
+            .eq("extracted_with", extractor)
+            .not_.is_("extraction_error", "null")
+            .order("created_at")
+            .limit(_PAGE)
+            .execute()
+        )
+        return [
+            f"{r['regulations']['code']} {r['version_label']}: {r['extraction_error']}"
+            for r in _rows(res)
+        ]
 
     async def aclose(self) -> None:
         await self._db.postgrest.aclose()

@@ -1,13 +1,21 @@
 """An in-memory LibraryStore with the same rules as the Supabase one: the conditional claim, the
-heartbeat that fails once the import is cancelled, and a role that moves to the newest version.
-tests/test_library_integration.py checks the real one against a local stack."""
+heartbeat that fails once the import is cancelled, a role that moves to the newest version, and
+paragraphs that go when a version's file changes. tests/test_library_integration.py checks the
+real one against a local stack."""
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-from agent_service.domain.regulations import FileStatus, ImportRow, ImportStatus, PlannedFile
+from agent_service.domain.paragraphs import Extraction, Paragraph
+from agent_service.domain.regulations import (
+    FileStatus,
+    ImportRow,
+    ImportStatus,
+    PlannedFile,
+    VersionToSplit,
+)
 
 ORG = UUID("00000000-0000-4000-8000-000000000001")
 OTHER_ORG = UUID("00000000-0000-4000-8000-000000000002")
@@ -23,6 +31,11 @@ class StoredVersion:
     size_bytes: int
     path: str
     title: str | None
+    id: UUID = field(default_factory=uuid4)
+    extracted_with: str | None = None
+    extraction_error: str | None = None
+    page_count: int | None = None
+    paragraphs: list[Paragraph] = field(default_factory=list)
 
 
 @dataclass
@@ -35,6 +48,8 @@ class InMemoryLibraryStore:
     objects: dict[str, bytes] = field(default_factory=dict)
     # Set to make the next touch fail, as if someone pressed Cancel during the import.
     cancel_on_touch: bool = False
+    # Paths whose download from the bucket fails, as if the storage API did not answer.
+    unreachable: set[str] = field(default_factory=set)
     closed: bool = False
 
     # Helpers the tests use to play the web's part.
@@ -58,12 +73,15 @@ class InMemoryLibraryStore:
     def file_errors(self, import_id: UUID) -> list[str | None]:
         return [self.file_status[(import_id, f.position)][1] for f in self.files[import_id]]
 
-    def role_of(self, code: str, version_label: str, org: UUID = ORG) -> str | None:
+    def version(self, code: str, version_label: str, org: UUID = ORG) -> StoredVersion:
         return next(
-            v.role
+            v
             for v in self.versions
             if v.organization_id == org and v.code == code and v.version_label == version_label
         )
+
+    def role_of(self, code: str, version_label: str, org: UUID = ORG) -> str | None:
+        return self.version(code, version_label, org).role
 
     # The LibraryStore interface.
 
@@ -148,22 +166,79 @@ class InMemoryLibraryStore:
             for v in self.versions:
                 if same_regulation(v) and v.role == file.role:
                     v.role = None
-        self.versions = [
-            v
-            for v in self.versions
-            if not (same_regulation(v) and v.version_label == file.version_label)
-        ]
-        self.versions.append(
-            StoredVersion(
-                organization_id=org,
-                code=file.regulation_code,
-                version_label=file.version_label,
-                role=file.role,
-                sha256=file.sha256,
-                size_bytes=size_bytes,
-                path=file.path(org),
-                title=file.version_title,
+        existing = next(
+            (
+                v
+                for v in self.versions
+                if same_regulation(v) and v.version_label == file.version_label
+            ),
+            None,
+        )
+        if existing is None:
+            self.versions.append(
+                StoredVersion(
+                    organization_id=org,
+                    code=file.regulation_code,
+                    version_label=file.version_label,
+                    role=file.role,
+                    sha256=file.sha256,
+                    size_bytes=size_bytes,
+                    path=file.path(org),
+                    title=file.version_title,
+                )
             )
+            return
+        if existing.sha256 != file.sha256:
+            # A different file: what was split from the old one is stale (as in the migration).
+            existing.extracted_with = existing.extraction_error = existing.page_count = None
+            existing.paragraphs = []
+        existing.role, existing.sha256, existing.size_bytes = file.role, file.sha256, size_bytes
+        existing.title = file.version_title
+
+    async def versions_to_split(
+        self, organization_id: UUID, extractor: str
+    ) -> list[VersionToSplit]:
+        return [
+            VersionToSplit(v.id, v.code, v.version_label, v.sha256, v.path)
+            for v in self.versions
+            if v.organization_id == organization_id and v.extracted_with != extractor
+        ]
+
+    async def download_pdf(self, path: str) -> bytes:
+        if path in self.unreachable:
+            raise ConnectionError(path)
+        return self.objects[path]
+
+    async def save_paragraphs(
+        self, version: VersionToSplit, extractor: str, extraction: Extraction
+    ) -> bool:
+        stored = self._version(version)
+        if stored is None:
+            return False
+        stored.paragraphs = list(extraction.paragraphs)
+        stored.page_count = extraction.page_count
+        stored.extracted_with, stored.extraction_error = extractor, None
+        return True
+
+    async def splitting_failed(self, version: VersionToSplit, extractor: str, error: str) -> None:
+        stored = self._version(version)
+        if stored is not None:
+            stored.extracted_with, stored.extraction_error = extractor, error
+            stored.paragraphs = []
+
+    async def splitting_errors(self, organization_id: UUID, extractor: str) -> list[str]:
+        return [
+            f"{v.code} {v.version_label}: {v.extraction_error}"
+            for v in self.versions
+            if v.organization_id == organization_id
+            and v.extracted_with == extractor
+            and v.extraction_error is not None
+        ]
+
+    def _version(self, version: VersionToSplit) -> StoredVersion | None:
+        # Only while the file is the one that was listed, like the database function.
+        return next(
+            (v for v in self.versions if v.id == version.id and v.sha256 == version.sha256), None
         )
 
     async def aclose(self) -> None:
