@@ -14,6 +14,7 @@ is needed), or rerank results with a second model (the agent's model reads the r
 import io
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
@@ -148,6 +149,40 @@ def _prompt_tokens(response: httpx.Response) -> int:
         return int(usage.get("prompt_tokens") or usage.get("total_tokens") or 0)
     except (ValueError, TypeError, AttributeError):
         return 0
+
+
+# OpenAI's answer when one input is over the model's 8,192 tokens: "Invalid 'input[122]': maximum
+# input length is 8192 tokens." The database cuts inputs at 24,000 characters, about 6,000 tokens of
+# prose, but a dense table of numbers and symbols tokenises at closer to 2 characters a token: in
+# production one such paragraph stopped the whole library's indexing (#37).
+_TOO_LONG = re.compile(r"input\[(\d+)\]'?: maximum input length")
+# Each retry halves the input it names; past this a paragraph is not worth more requests.
+_MIN_INPUT_CHARS = 1000
+
+
+async def embed_fitting(
+    http: httpx.AsyncClient,
+    model: EmbeddingModel,
+    api_key: str,
+    texts: list[str],
+    *,
+    meter: Meter | None = None,
+    credential: Credential | None = None,
+) -> list[list[float]]:
+    """`embed`, shortening an input the provider says is too long and asking again. The vector is
+    then of the input's first part; its key is still the full input's, so the paragraph is not
+    embedded again on every slice. A refused request is not billed."""
+    texts = list(texts)
+    while True:
+        try:
+            return await embed(http, model, api_key, texts, meter=meter, credential=credential)
+        except EmbeddingError as exc:
+            match = _TOO_LONG.search(str(exc))
+            i = int(match.group(1)) if match else -1
+            if not 0 <= i < len(texts) or len(texts[i]) < _MIN_INPUT_CHARS:
+                raise
+            log.warning("Embedding input %d of %d chars is too long; halving it", i, len(texts[i]))
+            texts[i] = texts[i][: len(texts[i]) // 2]
 
 
 def _batches(rows: list[tuple[str, str]]) -> list[list[tuple[str, str]]]:
@@ -381,7 +416,7 @@ async def _index_vectors(
         if not rows:
             break
         for batch in _batches(rows):
-            vectors = await embed(
+            vectors = await embed_fitting(
                 http,
                 model,
                 api_key,

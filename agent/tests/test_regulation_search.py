@@ -433,3 +433,37 @@ async def test_a_summary_model_that_refuses_stops_the_summaries_with_a_note(
     [note] = [n for n in progress.notes if "Summaries stopped" in n]
     assert "invalid x-api-key" in note
     assert store.summaries == {}
+
+
+async def test_an_input_over_the_token_limit_is_shortened_and_the_slice_goes_on(
+    index_settings: Settings, summary_model: TestModel
+) -> None:
+    # A dense table tokenises at about 2 characters a token, so the database's 24,000-character
+    # cut can still be over OpenAI's 8,192 tokens; in production that stopped the library (#37).
+    limit = 3000
+    sent: list[list[str]] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        texts = json.loads(request.content)["input"]
+        sent.append(texts)
+        for i, t in enumerate(texts):
+            if len(t) > limit:
+                message = f"Invalid 'input[{i}]': maximum input length is 8192 tokens."
+                return httpx.Response(400, json={"error": {"message": message}})
+        data = [{"index": i, "embedding": [0.0] * DIMENSIONS} for i in range(len(texts))]
+        return httpx.Response(200, json={"data": data})
+
+    store = InMemorySearchStore(keys={"openai": KEY}, inputs=["short", "x" * 10_000])
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        progress = await index_library(store, http, index_settings, ORG)
+
+    assert progress.embedded == 2
+    assert len(store.vectors) == 2, "both keep their full input's key"
+    assert max(len(t) for t in sent[-1]) <= limit
+
+
+async def test_any_other_refusal_still_stops_the_slice(index_settings: Settings) -> None:
+    store = InMemorySearchStore(keys={"openai": KEY}, inputs=["a"])
+    async with Provider(status=400).client as http:
+        with pytest.raises(EmbeddingError):
+            await index_library(store, http, index_settings, ORG)
