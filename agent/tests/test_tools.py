@@ -3,6 +3,7 @@ window hands back for a retry, and which versions a search reads (#36, #39, #40)
 (tests/fakes.py); the models are pydantic-ai's FunctionModel, so no provider is reached."""
 
 import asyncio
+import re
 from types import SimpleNamespace
 from typing import Any
 
@@ -210,3 +211,20 @@ async def test_a_translator_may_look_up_several_paragraphs_before_it_answers(
 
     assert result["failed_windows"] == []
     assert result["written"]["UN R148"]["requirements"] == 2
+
+
+async def test_a_paragraph_set_aside_clause_by_clause_is_remembered_for_the_check(
+    store, settings
+) -> None:
+    # Otherwise the check lists it as uncovered and the orchestrator writes it out of context.
+    d = deps(store, settings)
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        clauses = re.findall(r"\{(c\d+\.\d+)\}", str(messages[0]))
+        aside = [{"clause": c, "reason": "test_method"} for c in clauses]
+        args = {"obligations": [], "set_aside": aside}
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, args)])
+
+    await tools.write_requirements(ctx(d, FunctionModel(model)), ["UN R148"])
+
+    assert d.set_aside and set(d.set_aside.values()) == {"test_method"}

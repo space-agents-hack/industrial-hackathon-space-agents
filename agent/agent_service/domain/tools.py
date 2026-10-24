@@ -98,6 +98,10 @@ class Deps:
     # check calls are cut to finish before it, less their reserve (_call_timeout). None, in tests,
     # means only subagent_timeout_s applies.
     deadline: float | None = None
+    # Paragraphs whose every clause a writer set aside, by the first clause's reason: not
+    # "uncovered" in the check, or the orchestrator writes them again out of context and the
+    # set-aside volume comes back. Lost on a pause, like `read`; the check then lists them again.
+    set_aside: dict[UUID, str] = field(default_factory=dict[UUID, str])
 
 
 class OutOfTime(Exception):
@@ -626,7 +630,9 @@ async def check_requirements(ctx: RunContext[Deps]) -> dict[str, Any]:
     missed: list[dict[str, Any]] = []
     for vid in sorted(version_ids, key=str):
         if vid in versions:
-            missed += writer.uncovered(await _paragraphs(deps, vid), rows, versions[vid])
+            missed += writer.uncovered(
+                await _paragraphs(deps, vid), rows, versions[vid], deps.set_aside
+            )
 
     checked = certivity.check(
         json.dumps(await _submission(deps)), await _reference(deps), with_score=False
@@ -641,6 +647,13 @@ async def check_requirements(ctx: RunContext[Deps]) -> dict[str, Any]:
         "check_errors": check_errors,
         "uncovered_obligations": missed[:_MAX_LISTED],
         "uncovered_total": len(missed),
+        # Obligation paragraphs left uncited because the writers set every clause aside: counted
+        # by reason so none is silent, and not to be written again.
+        "set_aside_paragraphs": dict(
+            Counter(
+                r for pid, r in deps.set_aside.items() if pid not in {x.paragraph_id for x in rows}
+            )
+        ),
         "submission_valid": checked["valid"],
         "submission_problems": checked["problems"][:20],
     }
@@ -833,6 +846,11 @@ async def _write_windows(
                 writer.covered_entry(window, k.covers) for k in kept
             )
         answered = {c for k in kept for c in k.clauses}
+        reasons = {a.clause: a.reason for a in set_aside}
+        for p in window.paragraphs:
+            ids = [cid for cid, _ in window.clauses.get(p.position, [])]
+            if ids and all(c in reasons and c not in answered for c in ids):
+                deps.set_aside[p.id] = reasons[ids[0]]
         if tally is not None:
             tally.update(a.reason for a in set_aside)
             answered = answered | {a.clause for a in set_aside}

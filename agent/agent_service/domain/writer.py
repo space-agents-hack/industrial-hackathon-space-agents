@@ -24,7 +24,7 @@ judge whether the requirement set is complete beyond listing obligation paragrap
 
 import re
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
@@ -756,14 +756,24 @@ def code_findings(rows: Sequence[Requirement], cited: dict[UUID, Paragraph]) -> 
 
 
 def uncovered(
-    paragraphs: Sequence[Paragraph], rows: Sequence[Requirement], version: LibraryVersion
+    paragraphs: Sequence[Paragraph],
+    rows: Sequence[Requirement],
+    version: LibraryVersion,
+    set_aside: Mapping[UUID, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Obligation paragraphs ("shall", "must") of a read version that no requirement cites."""
+    """Obligation paragraphs ("shall", "must") of a read version that no requirement cites, less
+    those a writer set aside clause by clause (`set_aside`): a writer that judged a paragraph a
+    test method or a restatement in its window decided it, and the check does not undo that."""
     cited = {r.paragraph_id for r in rows}
+    skip = set_aside or {}
     return [
         {"regulation": version.regulation, "paragraph": p.label, "page": p.page_start}
         for p in paragraphs
-        if p.kind == "paragraph" and p.label and p.id not in cited and OBLIGATION.search(p.text)
+        if p.kind == "paragraph"
+        and p.label
+        and p.id not in cited
+        and p.id not in skip
+        and OBLIGATION.search(p.text)
     ]
 
 

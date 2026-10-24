@@ -151,6 +151,8 @@ def test_uncovered_lists_obligations_nobody_cites() -> None:
     out = writer.uncovered([cited, missed, plain], [row(cited, "R-001")], v)
 
     assert out == [{"regulation": "UN R148", "paragraph": "5.1", "page": 5}]
+    # One a writer set aside clause by clause is its decision, not a gap to write again.
+    assert writer.uncovered([cited, missed], [row(cited, "R-001")], v, {missed.id: "x"}) == []
 
 
 async def test_a_writer_citing_a_paragraph_outside_its_window_is_asked_again() -> None:
