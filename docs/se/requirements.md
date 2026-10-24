@@ -32,7 +32,7 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-13 | require one person's approval ("approve all") before export or submission | N-9 | regs, web | T | — | #6 |
 | SYS-14 | go from upload to a validated JSON with no manual step | N-8 | all | D | 1–5 | #4 |
 | SYS-15 | finish a run within `RUN_TIMEOUT_S` = 770 s (Vercel Pro cap 800 s) | N-8 | regs, ingest, ops | T | 3 | — |
-| SYS-16 | never commit case files or Certivity data, and purge them, Storage included | N-9 | db, ops | I, T | 1, 5 | — |
+| SYS-16 | never commit case files; commit only the Certivity reference files the checks need (`agent/certivity/`); purge both after the event, Storage included | N-9 | db, ops | I, T | 1, 5 | #16 |
 | SYS-17 | record every model message, tool call, check and approval in `run_events` | N-9, N-12 | regs, db | T | — | — |
 | SYS-18 | (may) export to Polarion or Jama (ReqIF or CSV) | N-10 | web | D | — | — |
 | **Sub-goal** | | | | | | |
@@ -62,7 +62,7 @@ renumbered.
 | SYS-11 | Only `dev-rear-lamp` has an answer file. On the held-out case the web shows validation (SYS-10) and says no local score exists; the score comes only from the platform. `index.json` plays no part in this check |
 | SYS-13 | One click for the whole list. Per-requirement accept/reject is future work for client engineers |
 | SYS-15 | Vercel Pro (Clemente, 2026-10-24): `maxDuration` 800 in `agent/vercel.json` and the three web routes that hold the connection; 30 s margin so a slow run ends as `failed`, not killed. Regulation ingestion (SYS-23) never runs inside a run. Not measured. Fallback beyond 800 s: the `agent/Dockerfile` container on the Raspberry Pi or Ramón's VPS |
-| SYS-16 | AGENTS.md, LICENSE-DATA.md. The purge script deletes rows only today, not bucket objects |
+| SYS-16 | Clemente's decision (2026-10-24): `index.json`, `expected.json` and `requirements_old.json` are committed in `agent/certivity/` (see AGENTS.md Limits), so purging them means deleting or archiving the repository after the event. Case files stay out of git; the purge script must also empty the `case-files` bucket (#16) |
 | SYS-20 | The **last** valid upload counts, not the best. Procedure in `docs/hackathon.md` |
 
 ## Traceability: needs to requirements
