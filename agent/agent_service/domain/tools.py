@@ -14,6 +14,7 @@ working output, like its trace; nobody else's record changes until a person says
 
 import asyncio
 import json
+import re
 from copy import copy
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -48,6 +49,9 @@ class Deps:
     case_name: str
     # The case as every writer reads it: the engineer's note, then the parsed case files.
     case_parts: list[ingest.Part]
+    # What a submission names as `team_id` ("team-09"): the organisation's name, the way case_id is
+    # the case's (Clemente, 2026-10-24: the team renames its organisation to its team id).
+    team_id: str
     settings: Settings
     reference: certivity.Reference = field(default_factory=lambda: certivity.EMPTY)
     concurrency: int = 6
@@ -381,6 +385,13 @@ async def submit(ctx: RunContext[Deps], summary: str) -> str:
     if not checked["valid"]:
         problems = "; ".join(f"{p['path']}: {p['message']}" for p in checked["problems"][:5])
         lines.append(f"validate.py finds {checked['problem_count']} problem(s): {problems}")
+    # team_id is the organisation's name. Only a warning: the platform's ids look like team-07, but
+    # nothing here knows the list.
+    if not re.fullmatch(r"team-\d+", deps.team_id):
+        lines.append(
+            f"team_id {deps.team_id!r} is the organisation's name and does not look like a "
+            "platform team id (team-07): rename the organisation and run again before uploading."
+        )
     # case_id is the case's name in the app. Clemente's first dev-case run was named otherwise and
     # the platform would have scored it against nothing; the run is where he looks, not /checks.
     # Only a warning: the held-out case has no answer key and is still named correctly.
@@ -506,7 +517,7 @@ def _code_action(problem: str) -> str:
 
 async def _submission(deps: Deps) -> dict[str, Any]:
     rows = await deps.store.run_requirements(deps.run.id)
-    return writer.submission(writer.TEAM_ID, deps.case_name, rows)
+    return writer.submission(deps.team_id, deps.case_name, rows)
 
 
 async def _reference(deps: Deps) -> certivity.Reference:

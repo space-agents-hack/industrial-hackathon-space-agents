@@ -61,6 +61,7 @@ class InMemoryRunStore:
         self.cases: dict[UUID, list[CaseFile]] = {}
         self.blocks: dict[UUID, list[CaseFileBlock]] = {}
         self.case_names: dict[UUID, str] = {}
+        self.organization_names: dict[UUID, str] = {}
         # Per case, the regulations its project chose; a case not here reads all of them.
         self.case_choice: dict[UUID, set[str]] = {}
         # The library as the writer reads it (regulation_versions); `library` above is the same
@@ -304,6 +305,9 @@ class InMemoryRunStore:
 
     async def case_name(self, case_id: UUID) -> str | None:
         return self.case_names.get(case_id)
+
+    async def organization_name(self, org: UUID) -> str | None:
+        return self.organization_names.get(org)
 
     async def library_versions(self, org: UUID) -> list[LibraryVersion]:
         return sorted(self.versions.get(org, []), key=lambda v: (v.regulation, v.version_label))

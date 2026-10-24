@@ -52,6 +52,9 @@ async def prepare_deps(store: RunStore, run: Run, settings: Settings) -> Deps:
 
         check_secret, endpoint = await providers.credentials(store, run.organization_id, name)
         check_model = providers.build_model(name, check_secret, endpoint)
+    # Never empty either: the organisation's name, else its id, which the summary flags.
+    team_id = (await store.organization_name(run.organization_id) or "").strip()
+    team_id = team_id or str(run.organization_id)
     case_name, parts, chosen = "no-case", [], None
     if run.case_id is not None:
         # Never empty: a file without case_id is scored against nothing (Clemente, 18:22).
@@ -65,6 +68,7 @@ async def prepare_deps(store: RunStore, run: Run, settings: Settings) -> Deps:
         store=store,
         run=run,
         case_name=case_name,
+        team_id=team_id,
         case_parts=parts,
         settings=settings,
         check_model=check_model,

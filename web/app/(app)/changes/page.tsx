@@ -76,5 +76,5 @@ async function Changes() {
       </p>
     );
   }
-  return <ChangesForm org={current.id} regulations={regulations} cases={cases} />;
+  return <ChangesForm org={current.id} teamName={current.name} regulations={regulations} cases={cases} />;
 }

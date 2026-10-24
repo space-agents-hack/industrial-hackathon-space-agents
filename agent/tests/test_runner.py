@@ -64,6 +64,7 @@ async def test_an_approved_export_approves_the_drafts_and_the_file_is_valid(
     store, settings
 ) -> None:
     run_id = case_run(store)
+    store.organization_names[ORG] = "team-09"
     await advance(store, settings, run_id)
     store.decide(run_id, "approved")
 
@@ -113,6 +114,9 @@ async def test_a_case_named_other_than_certivitys_id_is_named_in_the_run(store, 
 
     said = " ".join(p["text"] for p in store.payloads(run_id, "text"))
     assert "case_id 'Rear lamp RPL-2' has no answer key (those with one: dev-rear-lamp)" in said
+    # No organisation name in the fake: the file still has a team_id, and the run says to fix it.
+    assert submitted(store, run_id)["team_id"] == str(ORG)
+    assert "does not look like a platform team id" in said
 
 
 async def test_a_regulation_that_does_not_speak_about_the_product_is_not_read(

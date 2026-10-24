@@ -298,12 +298,6 @@ def uncovered(
 # ------------------------------------------------------------------------------------------
 
 
-# Our team on Certivity's platform (Clemente, 2026-10-24: "we are team-09 ... hardcoded"). A
-# setting would be one more place for it to be wrong or empty; the platform files an upload under
-# whatever team_id it carries.
-TEAM_ID = "team-09"
-
-
 def submission(team_id: str, case_id: str, rows: Sequence[Requirement]) -> dict[str, Any]:
     """Certivity's main-goal file, built from the stored rows and nothing else."""
     if not team_id or not case_id:

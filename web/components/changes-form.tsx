@@ -28,10 +28,12 @@ type State = { phase: "idle" } | { phase: "running" } | { phase: "failed"; error
 
 export function ChangesForm({
   org,
+  teamName,
   regulations,
   cases,
 }: {
   org: string;
+  teamName: string;
   regulations: RegulationOption[];
   cases: SubgoalCase[] | null;
 }) {
@@ -40,8 +42,8 @@ export function ChangesForm({
   const [uploaded, setUploaded] = useState<Uploaded | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [caseId, setCaseId] = useState(loaded[0]?.caseId ?? "subgoal-heldout");
-  // Our team on the platform (Clemente, 2026-10-24); still editable for another team's run.
-  const [teamId, setTeamId] = useState("team-09");
+  // The organisation's name, as the writer's team_id (Clemente, 2026-10-24); still editable.
+  const [teamId, setTeamId] = useState(teamName);
   const [state, setState] = useState<State>({ phase: "idle" });
 
     const [regulationId, setRegulationId] = useState(

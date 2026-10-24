@@ -113,6 +113,8 @@ class RunStore(Protocol):
 
     async def case_name(self, case_id: UUID) -> str | None: ...
 
+    async def organization_name(self, org: UUID) -> str | None: ...
+
     async def library_versions(self, org: UUID) -> list[LibraryVersion]:
         """Every version in the organisation's regulation library, by regulation and label."""
         ...
@@ -411,6 +413,17 @@ class SupabaseRunStore:
 
     async def case_name(self, case_id: UUID) -> str | None:
         res = await self._db.table("cases").select("name").eq("id", str(case_id)).limit(1).execute()
+        rows = cast(list[dict[str, Any]], res.data)
+        return rows[0]["name"] if rows else None
+
+    async def organization_name(self, org: UUID) -> str | None:
+        res = (
+            await self._db.table("organizations")
+            .select("name")
+            .eq("id", str(org))
+            .limit(1)
+            .execute()
+        )
         rows = cast(list[dict[str, Any]], res.data)
         return rows[0]["name"] if rows else None
 
