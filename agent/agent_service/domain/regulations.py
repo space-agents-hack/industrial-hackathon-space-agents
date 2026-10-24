@@ -490,14 +490,19 @@ async def _execute(
 
     # Several at once (#43; settings.import_concurrency). The import's heartbeat goes with each
     # file started, as it did one at a time, so a cancellation stops new files within one file.
+    # Downloads and uploads overlap; recording a version does not. record_regulation_version
+    # creates the regulation row on its first version and moves roles between versions, and two
+    # versions of one regulation recorded at once both tried to create the row (CI, 10abe05:
+    # duplicate key on regulations_organization_id_slug_key).
     cancelled = False
+    recording = asyncio.Lock()
 
     async def store_file(file: PlannedFile) -> bool:
         nonlocal cancelled
         if not await store.touch_import(job.id):
             cancelled = True
             return False
-        status, error = await _store_one(store, http, settings, job, file, resolve)
+        status, error = await _store_one(store, http, settings, job, file, resolve, recording)
         await store.set_file(job.id, file.position, status, error)
         return True
 
@@ -605,6 +610,7 @@ async def _store_one(
     job: ImportRow,
     file: PlannedFile,
     resolve: Resolver,
+    recording: asyncio.Lock,
 ) -> tuple[FileStatus, str | None]:
     path = file.path(job.organization_id)
     limit = settings.import_max_file_bytes
@@ -617,7 +623,8 @@ async def _store_one(
             job.organization_id, file.regulation_code, file.version_label
         )
         if stored is not None and stored[0] == file.sha256 and await store.object_exists(path):
-            await store.record_version(job, file, stored[1])
+            async with recording:
+                await store.record_version(job, file, stored[1])
             return "unchanged", None
         data = await fetch_pdf(
             http,
@@ -628,7 +635,8 @@ async def _store_one(
             resolve=resolve,
         )
         await store.upload_pdf(path, data)
-        await store.record_version(job, file, len(data))
+        async with recording:
+            await store.record_version(job, file, len(data))
         return "stored", None
     except FileProblem as exc:
         return "failed", str(exc)
