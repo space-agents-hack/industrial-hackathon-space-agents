@@ -33,6 +33,8 @@ Call = tuple[str, dict[str, Any]]
 
 # A window line as writer.Window.render() writes it: "[#12] 5.4.2 (page 12)".
 _PARAGRAPH = re.compile(r"^\[#(\d+)\] (.+) \(page (\d+)\)$")
+# A clause the writer must answer for, as Window.render() lists it: "  {c12.3} The ...".
+_CLAUSE = re.compile(r"^  \{(c\d+\.\d+)\} ")
 # The check's scripted judgement: a requirement copied from a paragraph that calls itself
 # obsolete is rejected. Only so tests can follow the reject path; a real check reads the text.
 _OBSOLETE = re.compile(r"\bobsolete\b", re.IGNORECASE)
@@ -138,23 +140,30 @@ def _orchestrate(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
 
 
 def _write(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
+    # One requirement per paragraph with a "shall", answering for all of its listed clauses: the
+    # loop and the coverage check are what this exercises, not the splitting.
     drafts: list[dict[str, Any]] = []
     current: tuple[int, str] | None = None
     for line in _prompt_text(messages).splitlines():
         if match := _PARAGRAPH.match(line):
             current = (int(match.group(1)), match.group(2))
             continue
+        if clause := _CLAUSE.match(line):
+            if drafts and drafts[-1]["ref"] == int(clause.group(1)[1:].split(".")[0]):
+                drafts[-1]["clauses"].append(clause.group(1))
+            continue
         if current and re.search(r"\b(shall|must)\b", line, re.IGNORECASE):
             ref, label = current
             drafts.append(
                 {
                     "ref": ref,
+                    "clauses": [],
                     "text": f"The product shall meet {label}: {line.strip()[:300]}",
                     "test_case": f"Inspect or test the product against {label}.",
                 }
             )
             current = None
-    return "", [("record_requirements", {"response": drafts})]
+    return "", [("record_requirements", {"requirements": drafts, "set_aside": []})]
 
 
 # A regulation as screen.Candidate.render() heads it: "## UN R1: Title (version 00)".

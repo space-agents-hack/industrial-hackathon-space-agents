@@ -53,7 +53,11 @@ def stalls_on(marker: str) -> FunctionModel:
             parts=[
                 ToolCallPart(
                     "record_requirements",
-                    {"response": [{"ref": ref, "text": "The lamp shall.", "test_case": "Look."}]},
+                    {
+                        "requirements": [
+                            {"ref": ref, "text": "The lamp shall.", "test_case": "Look."}
+                        ]
+                    },
                 )
             ]
         )

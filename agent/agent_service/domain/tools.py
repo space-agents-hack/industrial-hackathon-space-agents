@@ -15,6 +15,7 @@ working output, like its trace; nobody else's record changes until a person says
 import asyncio
 import json
 import re
+from collections import Counter
 from copy import copy
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -331,7 +332,8 @@ async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> d
         f"Reading {len(jobs)} windows of {len(set(w.version.id for w in jobs))} "
         "regulation(s) in parallel.",
     )
-    results = await _write_windows(ctx, jobs)
+    tally: Counter[str] = Counter()
+    results = await _write_windows(ctx, jobs, tally)
 
     written: dict[str, dict[str, Any]] = {}
     failed: list[dict[str, Any]] = []
@@ -355,7 +357,12 @@ async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> d
             if unlabelled := len(window.paragraphs) - len(labels):
                 report["unnumbered_paragraphs"] = unlabelled
             failed.append(report)
-    return {"written": written, "failed_windows": failed, "refused": refused}
+    return {
+        "written": written,
+        "clauses_set_aside": dict(tally),
+        "failed_windows": failed,
+        "refused": refused,
+    }
 
 
 @toolset.tool
@@ -635,8 +642,12 @@ async def _require_profile(deps: Deps) -> writer.ProductProfile:
     return deps.profile
 
 
-async def _write_windows(ctx: RunContext[Deps], jobs: list[Window]) -> list[tuple[int, str | None]]:
-    """Every window through a writer, `concurrency` at a time; (stored, error) per window."""
+async def _write_windows(
+    ctx: RunContext[Deps], jobs: list[Window], tally: Counter[str] | None = None
+) -> list[tuple[int, str | None]]:
+    """Every window through a writer, `concurrency` at a time; (stored, error) per window.
+    `tally` counts the clauses set aside, by reason, and those left without an answer: what the
+    trace shows of the obligations the writers decided not to write (#48)."""
     deps = ctx.deps
     semaphore = asyncio.Semaphore(deps.concurrency)
     case = _case(deps)
@@ -656,7 +667,12 @@ async def _write_windows(ctx: RunContext[Deps], jobs: list[Window]) -> list[tupl
             except Exception as exc:
                 return 0, _failure(deps, exc)[:300]
             _add_tokens(ctx.usage, result.usage)
-            drafts = result.output
+            drafts = result.output.requirements
+            if tally is not None:
+                tally.update(a.reason for a in result.output.set_aside)
+                answered = {c for d in drafts for c in d.clauses}
+                answered |= {a.clause for a in result.output.set_aside}
+                tally["no answer"] += len(window.clause_ids - answered)
         if not drafts:
             return 0, None
         async with deps.lock:

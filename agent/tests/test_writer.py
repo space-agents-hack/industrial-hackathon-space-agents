@@ -167,14 +167,23 @@ async def test_a_writer_citing_a_paragraph_outside_its_window_is_asked_again() -
             parts=[
                 ToolCallPart(
                     "record_requirements",
-                    {"response": [{"ref": ref, "text": "The lamp shall.", "test_case": "Look."}]},
+                    {
+                        "requirements": [
+                            {
+                                "ref": ref,
+                                "clauses": ["c3.1"],
+                                "text": "The lamp shall.",
+                                "test_case": "Look.",
+                            }
+                        ]
+                    },
                 )
             ]
         )
 
     result = await writer.writer_agent.run(window.render(), model=FunctionModel(model), deps=window)
 
-    assert [d.ref for d in result.output] == [3]
+    assert [d.ref for d in result.output.requirements] == [3]
     assert len(calls) == 2
 
 
@@ -183,3 +192,59 @@ def test_a_submission_without_team_or_case_is_refused(team_id: str, case_id: str
     # validate.py accepts such a file; the platform would score it as nobody's.
     with pytest.raises(ValueError, match="team_id and case_id"):
         writer.submission(team_id, case_id, [])
+
+
+def test_a_paragraph_is_cut_into_one_clause_per_obligation() -> None:
+    text = (
+        "4.1. Every device of class A, when tested according to the test procedure, shall meet:\n"
+        "(a) The dimension requirements; and\n"
+        "(b) The strength requirements.\n"
+    )
+    assert writer.clauses(text) == ["The dimension requirements; and", "The strength requirements."]
+    two = "4.2. The housing shall be sealed. It shall not be opened without a tool. See Annex 2."
+    assert writer.clauses(two) == [
+        "The housing shall be sealed.",
+        "It shall not be opened without a tool.",
+    ]
+    assert writer.clauses("2.1. 'Housing' means the outer shell.") == []
+
+
+def answering(*answers: dict[str, object]) -> tuple[FunctionModel, list[int]]:
+    """A writer that gives these answers in turn, the last one again if asked more often."""
+    calls: list[int] = []
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        calls.append(1)
+        args = answers[min(len(calls), len(answers)) - 1]
+        return ModelResponse(parts=[ToolCallPart("record_requirements", args)])
+
+    return FunctionModel(model), calls
+
+
+RED = "5.3. It shall be red. It shall not flash."
+ONE = {"ref": 3, "clauses": ["c3.1"], "text": "It shall be red.", "test_case": "Look."}
+
+
+async def test_a_writer_that_leaves_a_clause_unanswered_is_asked_for_it() -> None:
+    window = writer.Window(version(), [paragraph(3, 4, RED)])
+    assert window.clause_ids == {"c3.1", "c3.2"}
+    model, calls = answering(
+        {"requirements": [ONE]},
+        {"requirements": [ONE], "set_aside": [{"clause": "c3.2", "reason": "not_this_product"}]},
+    )
+
+    result = await writer.writer_agent.run(window.render(), model=model, deps=window)
+
+    assert len(calls) == 2
+    assert [a.clause for a in result.output.set_aside] == ["c3.2"]
+
+
+async def test_the_last_try_is_kept_even_with_clauses_unanswered() -> None:
+    # A failed window loses every requirement in it; an unanswered clause only itself.
+    window = writer.Window(version(), [paragraph(3, 4, RED)])
+    model, calls = answering({"requirements": [ONE]})
+
+    result = await writer.writer_agent.run(window.render(), model=model, deps=window)
+
+    assert len(calls) == 2  # asked once, then kept
+    assert [d.text for d in result.output.requirements] == ["It shall be red."]

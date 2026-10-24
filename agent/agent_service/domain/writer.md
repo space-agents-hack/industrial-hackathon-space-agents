@@ -13,6 +13,15 @@ obligation that an engineer can design to and a test engineer can check, without
 regulation. Read every paragraph of the window. For each obligation that applies to this product,
 write one requirement and record it with `record_requirements`, citing the `[#n]` it comes from.
 
+Under each numbered paragraph, code lists its clauses: every sentence with "shall", "must" or a
+prohibition, and every item of a list under such a lead-in, each with an id like `{c12.3}` and its
+first words. Answer for every clause: either write the requirement(s) it gives and put its id in
+that requirement's `clauses`, or put it in `set_aside` with the reason. A clause that holds two
+obligations gives two requirements, both listing it. The list is mechanical: it misses obligations
+written without those words (a heading with a value, a table) and may cut one obligation in two.
+Write the missed ones too, with empty `clauses`, and answer for both halves of a cut one with the
+same requirement.
+
 What counts:
 
 - An obligation is something the product, its installation, its marking or its testing must meet:
@@ -68,5 +77,5 @@ How to write each one:
   set-up the regulation prescribes if it gives one, the pass criterion, and which part of this
   product it concerns.
 
-If nothing in the window applies, record an empty list. Do not write anything that is not in the
+If nothing in the window applies, record no requirements and set every clause aside. Do not write anything that is not in the
 window: another writer reads the other windows.

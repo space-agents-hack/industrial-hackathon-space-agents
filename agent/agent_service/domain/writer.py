@@ -23,6 +23,7 @@ judge whether the requirement set is complete beyond listing obligation paragrap
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
@@ -43,6 +44,34 @@ WINDOW_CHARS = 60_000
 # second half), never to decide what the writer reads: the writer reads everything.
 OBLIGATION = re.compile(r"\b(shall|must)\b", re.IGNORECASE)
 
+# The clauses a writer must answer for, one by one (#48). Why code lists them: a writer reading a
+# window freely wrote one requirement per paragraph 94% of the time, and the platform matches one
+# to one, so the second and third obligation of a paragraph were lost. A clause is one sentence
+# with "shall", "must" or a prohibition, or one item of a list under such a lead-in; that is how
+# UN regulations write obligations, not a rule fitted to a case. Counted on the four regulations
+# of the dev answer key (counting only, never which ones): this split gives every expected
+# paragraph as many clauses as it has expected requirements for 137 of 190, where the free writer
+# reached 109. What it misses (a heading with a bare value, a table) the writer adds itself.
+_CLAUSE_WORDS = re.compile(r"\b(?:shall|must)\b|\bnot (?:be )?permitted\b|\bprohibited\b", re.I)
+_LIST_ITEM = re.compile(r"(?:^|\n)\s*(?:\([a-z]{1,3}\)|[a-z]\)|[-\u2013\u2022])\s+")
+_SENTENCE_END = re.compile(r"(?<=[.;])\s+(?=[A-Z(])")
+_LEADING_NUMBER = re.compile(r"^\s*\S+\s+")
+# Words of each clause shown to the writer: enough to tell clauses apart, the full text is above.
+_CLAUSE_PREVIEW_WORDS = 14
+
+
+def clauses(text: str) -> list[str]:
+    """The obligation clauses of a paragraph's text, in order."""
+    body = _LEADING_NUMBER.sub("", text, count=1)
+    lead, *items = _LIST_ITEM.split(body)
+    items = [" ".join(i.split()) for i in items if i.strip()]
+    sentences = [s for s in _SENTENCE_END.split(" ".join(lead.split())) if _CLAUSE_WORDS.search(s)]
+    if items and _CLAUSE_WORDS.search(lead):
+        # "shall meet: (a) ...; (b) ..." is one obligation per item; the lead-in is not one more.
+        return [s for s in sentences if not s.endswith(":")] + items
+    return sentences + [i for i in items if _CLAUSE_WORDS.search(i)]
+
+
 _HERE = Path(__file__).parent
 
 
@@ -52,6 +81,7 @@ class UnknownRegulation(Exception):
 
 @dataclass(frozen=True)
 class Window:
+    # Not slots: cached_property needs the instance dict.
     version: LibraryVersion
     paragraphs: Sequence[Paragraph]
 
@@ -75,8 +105,31 @@ class Window:
                 lines += [f"## {p.heading}", ""]
                 heading = p.heading
             label = p.label or "(unnumbered text)"
-            lines += [f"[#{p.position}] {label} (page {p.page_start})", p.text, ""]
+            lines += [f"[#{p.position}] {label} (page {p.page_start})", p.text]
+            found = self.clauses.get(p.position, [])
+            if found:
+                lines.append("Clauses to account for:")
+                for clause_id, clause in found:
+                    words = clause.split()
+                    more = " ..." if len(words) > _CLAUSE_PREVIEW_WORDS else ""
+                    lines.append(
+                        f"  {{{clause_id}}} {' '.join(words[:_CLAUSE_PREVIEW_WORDS])}{more}"
+                    )
+            lines.append("")
         return "\n".join(lines)
+
+    @cached_property
+    def clauses(self) -> dict[int, list[tuple[str, str]]]:
+        """(clause id, clause) per paragraph position, for numbered paragraphs."""
+        return {
+            p.position: [(f"c{p.position}.{k}", c) for k, c in enumerate(clauses(p.text), 1)]
+            for p in self.paragraphs
+            if p.kind == "paragraph" and p.label
+        }
+
+    @property
+    def clause_ids(self) -> set[str]:
+        return {cid for found in self.clauses.values() for cid, _ in found}
 
 
 def windows(
@@ -183,6 +236,12 @@ class ProductProfile(BaseModel):
 
 class Draft(BaseModel):
     ref: int = Field(description="The [#n] number of the paragraph this requirement comes from.")
+    clauses: list[str] = Field(
+        default_factory=list[str],
+        description="The {c...} clause ids this requirement writes, from the paragraph it cites. "
+        "Empty for an obligation the clause list does not show (a heading with a value, a "
+        "table row).",
+    )
     text: str = Field(
         max_length=2000,
         description="The requirement, self-contained: subject, 'shall', values, units, conditions.",
@@ -193,25 +252,74 @@ class Draft(BaseModel):
     )
 
 
+class SetAside(BaseModel):
+    clause: str = Field(description="A {c...} clause id of this window that gets no requirement.")
+    reason: Literal[
+        "definition_or_scope",
+        "authority_procedure",
+        "not_this_product",
+        "not_an_obligation",
+        "same_as_another_clause",
+    ] = Field(
+        description="definition_or_scope: defines a term or the scope. authority_procedure: what "
+        "the approval authority or the application file does. not_this_product: by the product "
+        "profile (a function it lacks, another vehicle category, a device it neither is nor "
+        "contains). not_an_obligation: imposes nothing (a permission, a reference only). "
+        "same_as_another_clause: repeats a clause written in this answer."
+    )
+    note: str = Field(default="", max_length=300, description="Why, in a few words.")
+
+
+class WindowAnswer(BaseModel):
+    requirements: list[Draft] = Field(default_factory=list[Draft])
+    set_aside: list[SetAside] = Field(default_factory=list[SetAside])
+
+
 writer_agent = Agent(
     name="requirement-writer",
     deps_type=Window,
-    output_type=ToolOutput(list[Draft], name="record_requirements"),
+    output_type=ToolOutput(WindowAnswer, name="record_requirements"),
     instructions=(_HERE / "writer.md").read_text(),
     retries=2,
 )
 
 
 @writer_agent.output_validator
-def _cites_this_window(ctx: RunContext[Window], drafts: list[Draft]) -> list[Draft]:
+def _cites_this_window(ctx: RunContext[Window], answer: WindowAnswer) -> WindowAnswer:
     known = {p.position for p in ctx.deps.paragraphs}
-    wrong = sorted({d.ref for d in drafts if d.ref not in known})
+    wrong = sorted({d.ref for d in answer.requirements if d.ref not in known})
     if wrong:
         raise ModelRetry(
             f"[#{', #'.join(map(str, wrong))}] are not paragraphs of this window. Cite only the "
             "[#n] numbers shown above, or leave the requirement out."
         )
-    return [d for d in drafts if d.text.strip()]
+    ids = ctx.deps.clause_ids
+    answered = {c for d in answer.requirements for c in d.clauses} | {
+        a.clause for a in answer.set_aside
+    }
+    unknown = sorted(answered - ids)
+    missing = sorted(ids - answered, key=_clause_order)
+    # Coverage is asked for once, not forced: a window that fails costs every requirement in it,
+    # a few unanswered clauses cost only themselves, and each retry is another full answer in a
+    # run that has 770 s for everything. The second answer is kept as it is.
+    if (unknown or missing) and ctx.retry == 0:
+        parts: list[str] = []
+        if missing:
+            shown = ", ".join(missing[:40]) + (" ..." if len(missing) > 40 else "")
+            parts.append(
+                f"{len(missing)} clause(s) have no answer: {shown}. Write a requirement for each "
+                "that applies, citing it in `clauses`, or put it in `set_aside` with its reason."
+            )
+        if unknown:
+            parts.append(f"Not clause ids of this window: {', '.join(unknown[:20])}.")
+        raise ModelRetry(" ".join(parts) + " Answer again with the whole list.")
+    requirements = [d for d in answer.requirements if d.text.strip()]
+    return WindowAnswer(requirements=requirements, set_aside=answer.set_aside)
+
+
+def _clause_order(clause_id: str) -> tuple[int, int]:
+    position, k = clause_id[1:].split(".")
+    return int(position), int(k)
 
 
 def cite(
