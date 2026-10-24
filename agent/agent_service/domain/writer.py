@@ -23,6 +23,7 @@ judge whether the requirement set is complete beyond listing obligation paragrap
 """
 
 import re
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
@@ -30,7 +31,7 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_ai import Agent, ModelRetry, RunContext, ToolOutput
 
 from agent_service.records import LibraryVersion, NewRequirement, Paragraph, Requirement
@@ -189,28 +190,101 @@ def citable_version(versions: Sequence[LibraryVersion], regulation: str) -> Libr
 # ------------------------------------------------------------------------------------------
 
 
+Build = Literal["integral", "replaceable", "separately_approved", "stated_type", "not_stated"]
+
+# How each build reads in the profile. Scopes set conditions in these terms ("replaceable",
+# "approved as a component", "of a type listed in"), so the screen's "as built" test (screen.md)
+# and the writers can compare word for word.
+_BUILD_TEXT: dict[str, str] = {
+    "integral": "integral to the part, not replaceable on its own",
+    "replaceable": "a replaceable item",
+    "separately_approved": "a separately approved component",
+    "stated_type": "of a type the case names (a category, class or standard)",
+    "not_stated": "not stated by the case",
+}
+
+
+class Component(BaseModel):
+    name: str = Field(
+        min_length=1,
+        max_length=120,
+        description="Short, and unique in the profile: every later step copies it word for word.",
+    )
+    functions: list[str] = Field(
+        min_length=1,
+        description="The functions of the part it serves, copied from `functions`; for a "
+        "component that serves none of them (a housing, a bracket), what it does.",
+    )
+    technology: str = Field(
+        min_length=1,
+        max_length=200,
+        description="What kind of thing it is: electrical, electronic, light source, sensor, "
+        "actuator, software, wiring, glazing, a material, a moving part, a structure.",
+    )
+    build: Build = Field(
+        description="How the case shows it is built into the part: integral (not replaceable), "
+        "replaceable, separately_approved (a component approved on its own), stated_type (the "
+        "case names its category, class or standard), or not_stated."
+    )
+
+
 class ProductProfile(BaseModel):
     """What the part is, stated once by the orchestrator from the whole case.
 
     Why one statement: each of ~25 writers used to decide "does this apply to this product" from
     the raw case files on its own, and they decided differently; obligations for functions the
-    part does not have got in. `contains` is where a regulation that applies because of what the
+    part does not have got in. `components` is where a regulation that applies because of what the
     part is made of (and not what it does) becomes visible to the selection.
+
+    Why components are records and not free text (v2, Certivity's first tip): the screen's "as
+    built" test needs to know per component whether it is replaceable or separately approved,
+    code runs one search per function and per component (tools.screen_regulations), and writers
+    name the function or component an obligation covers. Each needs the same names, so a
+    component's `name` is its key and must be unique.
     """
 
     part: str = Field(max_length=500)
-    does: list[str] = Field(default_factory=list[str])
-    does_not: list[str] = Field(default_factory=list[str])
-    contains: list[str] = Field(default_factory=list[str])
+    functions: list[str] = Field(default_factory=list[str])
+    functions_absent: list[str] = Field(default_factory=list[str])
+    components: list[Component] = Field(default_factory=list[Component])
     mounted: list[str] = Field(default_factory=list[str])
     vehicles: list[str] = Field(default_factory=list[str])
     markets: list[str] = Field(default_factory=list[str])
     named_in_case: list[str] = Field(default_factory=list[str])
 
+    @model_validator(mode="after")
+    def _unique_component_names(self) -> "ProductProfile":
+        counts = Counter(_key(c.name) for c in self.components)
+        twice = sorted({c.name for c in self.components if counts[_key(c.name)] > 1})
+        if twice:
+            raise ValueError(
+                f"Component names must be unique, and these appear twice: {', '.join(twice)}. "
+                "Merge them or name them apart (left and right, upper and lower)."
+            )
+        return self
+
+    def search_entries(self) -> list[tuple[str, str]]:
+        """(entry as the profile writes it, query) for the searches code runs per entry. A
+        component is searched with its technology: a name alone ("the module") finds little."""
+        out = [(f, f) for f in self.functions]
+        out += [(c.name, f"{c.name}, {c.technology}") for c in self.components]
+        return list(dict.fromkeys(out))
+
     def render(self) -> str:
         def items(title: str, values: list[str]) -> list[str]:
             return [f"{title}:", *(f"- {v}" for v in values or ["(nothing stated)"]), ""]
 
+        components: list[str] = ["Its components:"]
+        for c in self.components:
+            # Alone on its line, so a writer can copy the name exactly (SYS-25 `covers`).
+            components += [
+                f"Component: {c.name}",
+                f"  Serves: {'; '.join(c.functions)}",
+                f"  Technology: {c.technology}",
+                f"  How it is built in: {_BUILD_TEXT[c.build]}",
+            ]
+        if not self.components:
+            components.append("- (nothing stated)")
         return "\n".join(
             [
                 "# The product profile",
@@ -220,9 +294,10 @@ class ProductProfile(BaseModel):
                 "",
                 f"The part: {self.part}",
                 "",
-                *items("What it does", self.does),
-                *items("Functions of its family it does NOT have", self.does_not),
-                *items("What it contains or is made of", self.contains),
+                *items("Its functions", self.functions),
+                *items("Functions of its family it does NOT have", self.functions_absent),
+                *components,
+                "",
                 *items("Where it is fitted, and what of the vehicle it affects", self.mounted),
                 *items("Vehicle categories", self.vehicles),
                 *items("Markets", self.markets),
@@ -232,6 +307,10 @@ class ProductProfile(BaseModel):
                 ),
             ]
         ).rstrip()
+
+
+def _key(name: str) -> str:
+    return " ".join(name.lower().split())
 
 
 # ------------------------------------------------------------------------------------------
@@ -343,12 +422,14 @@ WHOLE_PART = "the part"
 
 def coverable(profile: "ProductProfile | None") -> tuple[str, ...]:
     """What an obligation may name as `covers` (SYS-25; Certivity's tips, Clemente 2026-10-24
-    23:01): each function the profile says the part performs, each thing it contains, and the
+    23:01): each function the profile says the part performs, each of its components, and the
     part as a whole. Not the functions it does NOT have: an obligation for one of those is set
-    aside as not_this_product."""
+    aside as not_this_product. A component by its name, which the profile prints alone on its
+    line ("Component: <name>") so it can be copied exactly."""
     if profile is None:
         return ()
-    return (*profile.does, *profile.contains, WHOLE_PART)
+    names = (c.name for c in profile.components)
+    return tuple(dict.fromkeys((*profile.functions, *names, WHOLE_PART)))
 
 
 def _normal(text: str) -> str:

@@ -1,10 +1,11 @@
 You decide which regulations of a library may apply to one vehicle part, from what each
 regulation says it covers.
 
-You are given the product profile (what the part is, does, does not do, contains, and where it
-is fitted) and the engineer's note, then several regulations, each with its title, the start of
-its introduction if it has one, its scope section, an indexer's summary, and the start of its
-transitional provisions if it has any.
+You are given the product profile (what the part is, its functions, the functions it does not
+have, its components with how each is built in, and where it is fitted) and the engineer's note,
+then several regulations, each with its title, the start of its introduction if it has one, its
+scope section, an indexer's summary, the start of its transitional provisions if it has any, and
+where a search of the whole library for each function and component of the profile ranked it.
 
 For every regulation shown, give one verdict with `report_screen`:
 
@@ -21,8 +22,8 @@ contains or through where it is fitted:
 
 - Through what it contains: the scope must cover that component as the part contains it. If the
   scope sets a condition on the component (replaceable, separately approved, of a stated type)
-  and the profile says the part's component does not meet it, the verdict is `does_not`; if the
-  profile does not say, `possibly`, naming the condition. A regulation that governs a whole
+  and the component's "How it is built in" line does not meet it, the verdict is `does_not`; if
+  that line says "not stated", `possibly`, naming the condition. A regulation that governs a whole
   vehicle's system, or the manufacturer's processes for it, does not reach a part only because
   the part contains software or electronics: `does_not`, unless its scope names parts or
   components as what it approves or tests, or the case names that regulation.
@@ -33,11 +34,16 @@ contains or through where it is fitted:
 For each verdict:
 
 - quote the sentence of the scope that decides it;
-- list the profile entries it covers, copied word for word from the profile;
+- list the profile entries it covers, copied word for word from the profile: a function, a
+  component's name, or a line of where it is fitted;
 - if its own text says it combines, replaces or takes over the provisions of other regulations,
   is replaced by one, or that approvals to it are no longer granted or accepted, quote that in
   `replacement`, with the other regulations' numbers as the text gives them. Report only what the
   text shown says.
+
+The search ranks say where a regulation's paragraphs speak about the same things as the profile.
+Use them to look again at a scope you were about to dismiss, not as a verdict: a scope that covers
+the part decides, whatever the rank, and a high rank on words alone does not make a scope cover it.
 
 Judge from the text shown, not from what you remember about a regulation. When in doubt between
 `possibly` and `does_not`, say `possibly`: a regulation left out loses every requirement in it.

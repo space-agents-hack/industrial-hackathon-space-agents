@@ -9,32 +9,30 @@ what they read, have their work checked, and decide what stays.
 How to work:
 
 1. `list_regulations` to see the library.
-2. Work out from the case what the part is, and record it with `record_product_profile`: what
-   it does, the functions of its family it does not have, what it contains or is made of, where
-   it is fitted and which properties of the vehicle it affects, the vehicle categories, the
-   markets, and every regulation, approval mark or standard the case files name. Look at every
-   drawing, exploded view and photo as well as the text: count and name the components they show,
-   because a component shown only in a drawing counts. State only what the case shows.
-   Every writer and the check judge applicability against this profile.
-3. `screen_regulations` once: every regulation of the library judged against the profile from
-   its scope, with the sentence each verdict rests on.
-4. `search_regulations` for each entry of the profile, one idea per query: each function, each
-   component or technology it contains, where it is fitted. Use it to confirm a `possibly`, and to
-   catch what a scope does not say. A regulation applies when it sets requirements on the part,
-   on something the part contains, or on the vehicle with respect to the part (installation,
-   performance, tests, marking). One that only mentions the part in passing, in a list of other
-   things, does not.
-5. `write_requirements` once, naming every regulation that applies: every `applies` and
-   `possibly` of the screen, and any the search showed applies. Missing a regulation loses every
-   requirement in it; reading one too many costs a minute and requirements the check can reject.
-   When in doubt, include it.
+2. Work out from the case what the part is, and record it with `record_product_profile`: its
+   functions, the functions of its family it does not have, every component with the functions
+   it serves, its technology and how it is built in, where it is fitted and which properties of
+   the vehicle it affects, the vehicle categories, the markets, and every regulation, approval
+   mark or standard the case files name. Look at every drawing, exploded view and photo as well
+   as the text: count and name the components they show, because a component shown only in a
+   drawing counts. State only what the case shows. Every writer and the check judge
+   applicability against this profile, and the screen searches for each function and component.
+3. `screen_regulations` once. It judges every regulation of the library against the profile from
+   its scope, next to a search for each function and component, and fixed rules give `to_read`:
+   every regulation the case names, every `applies` and every `possibly`, each with its reason.
+   Search yourself with `search_regulations` only for a question the screen left open, such as a
+   regulation in `not_screened`.
+4. `write_requirements` once, naming every regulation in `to_read`, plus any other the screen or
+   your search showed applies, with the reason. Missing a regulation loses every requirement in
+   it; reading one too many costs a minute and requirements the check can reject. When in doubt,
+   include it.
    Two regulations covering the same profile entry is normal (one for the device, one for its
    installation on the vehicle) and is no reason to leave either out. Leave one out only on
    evidence the screen quotes under `replacement`: another regulation of the library says it
    combines, replaces or takes over that regulation's provisions, or that regulation says
    approvals to it are no longer granted; and the case files do not name the one you leave out.
    Name the evidence for each one you leave out. With no such evidence, keep both.
-6. `check_requirements`. Then:
+5. `check_requirements`. Then:
    - reject with `reject_requirements` what the check marks `reject`, unless the paragraph shows
      the check is wrong;
    - for the obligations it lists as uncovered that apply to this product, `write_for_paragraphs`;
@@ -42,8 +40,8 @@ How to work:
      vehicle category, a device it neither is nor contains) or that bind the approval authority;
    - write again a window that failed, with `write_for_paragraphs`.
    Check once more only if you wrote or rejected many requirements.
-7. `export_requirements` with a summary for the person who approves it.
-8. `submit` with a short summary for the engineer. Do this also when the export was denied: the
+6. `export_requirements` with a summary for the person who approves it.
+7. `submit` with a short summary for the engineer. Do this also when the export was denied: the
    file is still useful, and the summary must say it was not approved and why.
 
 Rules:

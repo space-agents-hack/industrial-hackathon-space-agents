@@ -22,6 +22,7 @@ from typing import Any, cast
 from uuid import UUID
 
 import httpx
+from pydantic import ValidationError
 from pydantic_ai import CachePoint, FunctionToolset, ModelRetry, RunContext, UsageLimits
 from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
@@ -47,6 +48,13 @@ _SUB_REQUESTS = 4
 _LOOKUP_REQUESTS = _SUB_REQUESTS + 4
 # More than this is not read by anyone; the count still says how many there are.
 _MAX_LISTED = 150
+# Paragraphs per search the screen runs for each profile entry. A regulation is ranked by its best
+# paragraph, so 40 paragraphs reach about the 10th to 20th regulation, past rule 3's line (TOP).
+_SCREEN_SEARCH_K = 40
+# Searches in flight at once. Each is one embedding call and one database query; the database
+# cancels a query after 8 s, and a vector search under load came close to that before (#44), so
+# not all 20 at once. 6 runs 20 entries in about 4 rounds (an estimate, not measured).
+_SCREEN_SEARCHES = 6
 
 
 @dataclass
@@ -153,28 +161,30 @@ async def list_regulations(ctx: RunContext[Deps]) -> list[dict[str, Any]]:
 async def record_product_profile(
     ctx: RunContext[Deps],
     part: str,
-    does: list[str],
-    does_not: list[str],
-    contains: list[str],
+    functions: list[str],
+    functions_absent: list[str],
+    components: list[writer.Component],
     mounted: list[str],
     vehicles: list[str],
     markets: list[str],
     named_in_case: list[str],
 ) -> dict[str, Any]:
     """Record what the part is, from the whole case: its text and every drawing, exploded view and
-    photo. Every writer and the check judge applicability against this one statement, so state
-    only what the case shows, and say where (file and page) when it is not obvious. Call it once,
-    before searching; call it again only to correct it.
+    photo. Every writer and the check judge applicability against this one statement, and the
+    screen searches the library once for each function and each component, so state only what
+    the case shows, and say where (file and page) when it is not obvious. Call it once, before
+    screening; call it again only to correct it.
 
     Args:
         part: One sentence: what the part is.
-        does: Each function it performs.
-        does_not: Functions of the same family of parts that the case shows it does not have.
-        contains: What it contains or is made of: electrical and electronic parts, light
-            sources, sensors, actuators, software, wiring, glazing, materials, moving parts.
-            Include what only a drawing shows. For each, say what the case shows about how it
-            is built in: integrated and not replaceable, a replaceable item, or a separately
-            approved component; "not stated" when the case does not say.
+        functions: Each function the part performs, in the general term regulations use for
+            that kind of device or property, one per entry.
+        functions_absent: Functions of the same family of parts that the case shows it does not
+            have.
+        components: Every component the case shows, including what only a drawing shows (count
+            them): electrical and electronic parts, light sources, sensors, actuators, software,
+            wiring, glazing, materials, moving parts, the housing and fixings. Each with a unique
+            name, the functions it serves, its technology, and how the case shows it is built in.
         mounted: Where it is fitted on the vehicle, and which properties of the vehicle it
             affects (outer shape, impact behaviour, field of view, signalling, ...).
         vehicles: Vehicle categories it is for, as the case gives them.
@@ -183,39 +193,74 @@ async def record_product_profile(
             file and page. Empty if none.
     """
     deps = ctx.deps
-    deps.profile = writer.ProductProfile(
-        part=part,
-        does=does,
-        does_not=does_not,
-        contains=contains,
-        mounted=mounted,
-        vehicles=vehicles,
-        markets=markets,
-        named_in_case=named_in_case,
-    )
-    return {"recorded": True, "read_by": "every writer and the check"}
+    try:
+        deps.profile = writer.ProductProfile(
+            part=part,
+            functions=functions,
+            functions_absent=functions_absent,
+            components=components,
+            mounted=mounted,
+            vehicles=vehicles,
+            markets=markets,
+            named_in_case=named_in_case,
+        )
+    except ValidationError as exc:
+        raise ModelRetry(str(exc)) from exc
+    return {"recorded": True, "read_by": "every writer, the screen and the check"}
 
 
 @toolset.tool
 async def screen_regulations(ctx: RunContext[Deps]) -> dict[str, Any]:
-    """Judge EVERY regulation of the library against the product profile, from its scope section
-    and its transitional provisions: `applies`, `possibly` or `does_not`, each with the sentence it
-    rests on. Unlike a search, it cannot miss a regulation because no query was written for it.
-    Also lists the profile entries that several applying regulations cover, and what their own
+    """Choose what to read: every regulation of the library judged against the product profile
+    from its scope section, introduction and transitional provisions, next to where a search for
+    each function and each component of the profile ranks it. Fixed rules then give `to_read`:
+    every regulation the case names, every `applies` and every `possibly`, each with the sentence
+    it rests on. Unlike a search, it cannot miss a regulation because no query was written for it.
+    Also lists the profile entries that several regulations to read cover, and what their own
     texts say about replacing one another. Call it once, after `record_product_profile`."""
     deps = ctx.deps
     profile = await _require_profile(deps)
     versions = _citable(await _library(deps))
     semaphore = asyncio.Semaphore(deps.concurrency)
+    entries = profile.search_entries()
+    searching = asyncio.Semaphore(_SCREEN_SEARCHES)
 
     async def read(version: LibraryVersion) -> screen.Candidate:
         async with semaphore:
             return screen.candidate(version, await _paragraphs(deps, version.id))
 
-    candidates = list(await asyncio.gather(*(read(v) for v in versions)))
+    async def entry_search(http: httpx.AsyncClient, query: str) -> list[regulation_search.Hit]:
+        # A failed search is no evidence, not a failed screen: the verdicts still come from the
+        # scope text, and rule 3 only logs.
+        try:
+            async with searching:
+                return await _search(deps, http, query, _SCREEN_SEARCH_K)
+        except Exception as exc:
+            await _progress(deps, f"Search for {query!r} failed: {type(exc).__name__}: {exc}"[:400])
+            return []
+
+    # The searches and the reads of the scopes side by side: one search per entry is 10 to 20
+    # round trips to the database and the embedding provider, which in sequence would add a
+    # minute to a run that is short of time.
+    async with httpx.AsyncClient(timeout=30) as http:
+        read_all = asyncio.gather(*(read(v) for v in versions))
+        search_all = asyncio.gather(*(entry_search(http, query) for _, query in entries))
+        candidates, searched = await asyncio.gather(read_all, search_all)
+    found = screen.evidence(
+        [
+            (entry, [h.regulation_code for h in hits])
+            for (entry, _), hits in zip(entries, searched, strict=True)
+        ]
+    )
+    candidates = [
+        replace(c, evidence=tuple(found.get(c.version.regulation, [])), searched=bool(entries))
+        for c in candidates
+    ]
     batches = screen.batches(candidates)
     await _progress(
-        deps, f"Screening the scope of {len(candidates)} regulations in {len(batches)} call(s)."
+        deps,
+        f"Screening the scope of {len(candidates)} regulations in {len(batches)} call(s), "
+        f"next to {len(entries)} search(es), one per function and component of the profile.",
     )
     head = ["# The case\n\nThe engineer's note:\n" + deps.run.task, profile.render()]
 
@@ -243,28 +288,60 @@ async def screen_regulations(ctx: RunContext[Deps]) -> dict[str, Any]:
         else:
             verdicts += outcome
     titles = {v.regulation: v.title for v in versions}
+    by_code = {v.regulation: v for v in verdicts}
+    decisions = screen.decide(
+        [v.regulation for v in versions], verdicts, found, profile.named_in_case
+    )
 
-    def row(v: screen.Verdict) -> dict[str, Any]:
+    def row(d: screen.Decision) -> dict[str, Any]:
         out: dict[str, Any] = {
-            "regulation": v.regulation,
-            "title": titles.get(v.regulation),
-            "reason": v.reason,
-            "scope_quote": v.scope_quote,
-            "profile_entries": v.profile_entries,
+            "regulation": d.regulation,
+            "title": titles.get(d.regulation),
+            "because": d.because,
+            "verdict": d.verdict,
+            "search": screen.describe(found.get(d.regulation, []), most=2),
         }
-        if v.replacement:
-            out["replacement"] = v.replacement
+        if v := by_code.get(d.regulation):
+            out |= {
+                "reason": v.reason,
+                "scope_quote": v.scope_quote,
+                "profile_entries": v.profile_entries,
+            }
+            if v.replacement:
+                out["replacement"] = v.replacement
         return out
 
+    to_read = [row(d) for d in decisions if d.read]
+    shadow = [
+        {"regulation": d.regulation, "search": screen.describe(found.get(d.regulation, []), 2)}
+        for d in decisions
+        if d.rule3
+    ]
+    if shadow:
+        # For the person reading the trace: what rule 3 would cut once live (SYS-44, #53).
+        await _progress(
+            deps,
+            f"Rule 3 ({'live' if screen.RULE3_LIVE else 'shadow, nothing left out'}): "
+            f"{len(shadow)} `possibly` regulation(s) no search ranks in the first {screen.TOP}: "
+            + ", ".join(r["regulation"] for r in shadow)
+            + ".",
+        )
+    read_codes = {d.regulation for d in decisions if d.read}
     return {
-        "applies": [row(v) for v in verdicts if v.verdict == "applies"],
-        "possibly": [row(v) for v in verdicts if v.verdict == "possibly"],
-        "does_not": [
-            {"regulation": v.regulation, "reason": v.reason}
-            for v in verdicts
-            if v.verdict == "does_not"
+        "to_read": to_read,
+        "not_read": [
+            {
+                "regulation": d.regulation,
+                "because": d.because,
+                "reason": by_code[d.regulation].reason,
+            }
+            for d in decisions
+            if not d.read and d.regulation in by_code
         ],
-        "shared_profile_entries": screen.shared_entries(verdicts),
+        "shared_profile_entries": screen.shared_entries(
+            [v for v in verdicts if v.regulation in read_codes]
+        ),
+        "rule3_shadow": shadow,
         # A batch that failed is not a verdict of does_not: search those regulations instead.
         "not_screened": errors,
     }
@@ -275,58 +352,16 @@ async def search_regulations(
     ctx: RunContext[Deps], query: str, limit: int = 20
 ) -> list[dict[str, Any]]:
     """Search every paragraph of the versions requirements cite, best match first: by meaning where
-    the library has embeddings, and by words. Use it to find which regulations speak about this
-    product: search for the product, its functions, its parts and its vehicle categories, one
-    idea per query.
+    the library has embeddings, and by words. The screen already searched once for each function
+    and component of the profile; use this for a question it left open, one idea per query.
 
     Args:
         query: What to find, in words: one function, component or property of the part.
         limit: How many paragraphs to return, at most 50.
     """
     deps = ctx.deps
-    # The versions the writer would cite, not only those marked base: a regulation whose only
-    # version has no role was writable but never found (#40).
-    base = [v.id for v in _citable(await _library(deps))]
-    if not base:
-        return []
-    k = max(1, min(limit, 50))
-    store = deps.store.search_store()
-    reason: str | None = None
     async with httpx.AsyncClient(timeout=30) as http:
-        try:
-            hits = await regulation_search.search(
-                store,
-                http,
-                deps.settings,
-                deps.run.organization_id,
-                query,
-                version_ids=base,
-                k=k,
-                case_id=deps.run.case_id,
-                meter=deps.meter,
-            )
-            if regulation_search.words_only(hits):
-                reason = regulation_search.NOT_INDEXED
-        except (regulation_search.EmbeddingError, ValueError) as exc:
-            reason = str(exc).rstrip(".")
-            # No embedding key, or no embedding model configured: words alone still find the
-            # regulations that name the product, which is what this step needs.
-            hits = await regulation_search.search(
-                store,
-                http,
-                deps.settings,
-                deps.run.organization_id,
-                query,
-                version_ids=base,
-                k=k,
-                mode="text",
-                case_id=deps.run.case_id,
-            )
-    if reason is not None and not deps.words_only_noted:
-        # For the person reading the trace, not for the model: its tool result is unchanged.
-        deps.words_only_noted = True
-        text = regulation_search.WORDS_ONLY.format(reason=reason)
-        await deps.store.add_event(deps.run.id, "text", {"text": text, "level": "warning"})
+        hits = await _search(deps, http, query, max(1, min(limit, 50)))
     return [
         {
             "regulation": h.regulation_code,
@@ -337,6 +372,55 @@ async def search_regulations(
         }
         for h in hits
     ]
+
+
+async def _search(
+    deps: Deps, http: httpx.AsyncClient, query: str, k: int
+) -> list[regulation_search.Hit]:
+    """The paragraphs of the citable versions that best match `query`: hybrid, and words alone
+    when the query cannot be embedded (the trace says so once per run)."""
+    # The versions the writer would cite, not only those marked base: a regulation whose only
+    # version has no role was writable but never found (#40).
+    base = [v.id for v in _citable(await _library(deps))]
+    if not base:
+        return []
+    store = deps.store.search_store()
+    reason: str | None = None
+    try:
+        hits = await regulation_search.search(
+            store,
+            http,
+            deps.settings,
+            deps.run.organization_id,
+            query,
+            version_ids=base,
+            k=k,
+            case_id=deps.run.case_id,
+            meter=deps.meter,
+        )
+        if regulation_search.words_only(hits):
+            reason = regulation_search.NOT_INDEXED
+    except (regulation_search.EmbeddingError, ValueError) as exc:
+        reason = str(exc).rstrip(".")
+        # No embedding key, or no embedding model configured: words alone still find the
+        # regulations that name the product, which is what this step needs.
+        hits = await regulation_search.search(
+            store,
+            http,
+            deps.settings,
+            deps.run.organization_id,
+            query,
+            version_ids=base,
+            k=k,
+            mode="text",
+            case_id=deps.run.case_id,
+        )
+    if reason is not None and not deps.words_only_noted:
+        # For the person reading the trace, not for the model: its tool result is unchanged.
+        deps.words_only_noted = True
+        text = regulation_search.WORDS_ONLY.format(reason=reason)
+        await deps.store.add_event(deps.run.id, "text", {"text": text, "level": "warning"})
+    return hits
 
 
 @toolset.tool

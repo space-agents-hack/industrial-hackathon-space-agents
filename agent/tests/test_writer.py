@@ -253,7 +253,7 @@ async def test_the_last_try_is_kept_even_with_clauses_unanswered() -> None:
 async def test_an_obligation_must_name_what_of_the_profile_it_covers() -> None:
     # Certivity's tips (Clemente, 23:01): an obligation that covers no function or component of
     # the part is noise. Code holds `covers` to the profile; case and end punctuation are forgiven.
-    profile = writer.ProductProfile(part="A made-up widget.", does=["Emits a made-up signal"])
+    profile = writer.ProductProfile(part="A made-up widget.", functions=["Emits a made-up signal"])
     window = writer.Window(version(), [paragraph(3, 4, RED)], covers_from=writer.coverable(profile))
     aside = [{"clause": "c3.2", "reason": "not_this_product"}]
     first = {"ref": 3, "covers": "a heating function", "clauses": ["c3.1"], "what": "Red."}

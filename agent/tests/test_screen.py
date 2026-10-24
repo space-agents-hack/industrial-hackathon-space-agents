@@ -1,15 +1,20 @@
 """The scope screen (SYS-44): what it reads of each regulation, that the model must judge every
 one shown, and that a run screens the whole library before it writes. Made-up regulations."""
 
+import re
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from pydantic_ai import ModelRetry
+from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart, UserPromptPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.usage import RunUsage
 
 from agent_service import runner
-from agent_service.domain import screen
+from agent_service.domain import screen, tools, writer
 from agent_service.records import LibraryVersion, Paragraph
-from tests.fakes import case_run
+from tests.fakes import TextSearch, case_run
 
 pytestmark = pytest.mark.anyio
 
@@ -136,3 +141,154 @@ def test_the_screen_reads_the_introduction_where_a_regulation_says_what_it_took_
     assert c.render().index("Introduction (start):") < c.render().index("Scope section:")
     # Without a section 1 the opening text is shown as the scope, not twice.
     assert screen.candidate(VERSION, [paragraph(1, None, "Opening.")]).introduction == ""
+
+
+# ------------------------------------------------------------------------------------------
+# Search evidence and the fixed rules (V-44, #53)
+# ------------------------------------------------------------------------------------------
+
+
+def test_a_regulation_is_ranked_by_its_best_paragraph_in_each_search() -> None:
+    found = screen.evidence(
+        [
+            ("a signal", ["UN R<b>", "UN R<a>", "UN R<b>", "UN R<c>"]),
+            ("an emitter", ["UN R<a>"]),
+        ]
+    )
+
+    assert found["UN R<a>"] == [
+        screen.Evidence("an emitter", rank=1, paragraphs=1, hit=1),
+        screen.Evidence("a signal", rank=2, paragraphs=1, hit=3),
+    ]
+    assert found["UN R<b>"] == [screen.Evidence("a signal", rank=1, paragraphs=2, hit=3)]
+    assert screen.reciprocal_rank(found["UN R<a>"]) == 1.5
+    assert "UN R<d>" not in found
+
+
+def test_a_regulation_the_case_names_is_found_by_code_or_number() -> None:
+    named = ["spec.pdf p.2: approval mark E4 901R-01", "spec.pdf p.3: ECE R902", "UN R<a> on p.1"]
+
+    assert screen.named_in_case("UN R901", named) == named[0]
+    assert screen.named_in_case("UN R902", named) == named[1]
+    assert screen.named_in_case("UN R<a>", named) == named[2]
+    # Not a number that only contains it, nor one that is part of another.
+    assert screen.named_in_case("UN R90", named) is None
+    assert screen.named_in_case("UN R01", named) is None
+
+
+def test_the_fixed_rules_read_named_applies_and_possibly_and_log_rule_3() -> None:
+    codes = ["UN R901", "UN R902", "UN R903", "UN R904", "UN R905", "UN R906"]
+    verdicts = [
+        verdict("UN R901"),
+        verdict("UN R902", "possibly"),
+        verdict("UN R903", "possibly"),
+        verdict("UN R904", "does_not"),
+        verdict("UN R905", "does_not"),
+    ]
+    found = screen.evidence(
+        [
+            ("a signal", ["UN R902", "UN R901"]),
+            ("a bracket", [f"UN R{n}" for n in range(1, 7)]),
+            ("a housing", ["UN R1", "UN R2", "UN R3", "UN R4", "UN R5", "UN R903"]),
+        ]
+    )
+    named = ["spec.pdf p.1: UN R905"]
+
+    decisions = screen.decide(codes, verdicts, found, named)
+
+    read = {d.regulation: d.read for d in decisions}
+    assert read == {
+        "UN R901": True,
+        "UN R902": True,
+        # Ranked 6th at best: marked by rule 3, and still read while it is in shadow.
+        "UN R903": True,
+        "UN R904": False,
+        "UN R905": True,  # does_not, but the case names it
+        "UN R906": False,  # its screen call failed: no verdict, the orchestrator decides
+    }
+    assert [d.regulation for d in decisions if d.rule3] == ["UN R903"]
+    assert decisions[4].because == "named in the case: spec.pdf p.1: UN R905"
+    # Same verdicts and hits, same answer; live, rule 3 leaves out what it marked and only that.
+    assert screen.decide(codes, verdicts, found, named) == decisions
+    live = screen.decide(codes, verdicts, found, named, live=True)
+    assert [d.regulation for d in live if d.read] == ["UN R901", "UN R902", "UN R905"]
+    assert not screen.RULE3_LIVE
+
+
+async def test_the_screen_searches_each_entry_and_returns_what_to_read(
+    store, settings, monkeypatch
+) -> None:
+    search = TextSearch(store)
+    monkeypatch.setattr(store, "search_store", lambda: search)
+    run_id = case_run(store)
+    store.versions.clear()  # the fake's own library: these four only
+    for n, scope in [
+        (901, "This applies to signal emitters."),
+        (902, "This applies to electronic emitters of a stated type."),
+        (903, "This applies to made-up doors."),
+        (904, "This applies to made-up seats."),
+    ]:
+        store.add_version(f"UN R{n}", "00", [("1", scope, 1), ("2", "Definitions.", 2)])
+    d = tools.Deps(
+        store=store,
+        run=store.runs[run_id],
+        case_name="a-case",
+        case_parts=[],
+        team_id="team-00",
+        settings=settings,
+        profile=writer.ProductProfile(
+            part="A made-up widget.",
+            functions=["emits signal"],
+            components=[
+                writer.Component(
+                    name="emitter",
+                    functions=["emits signal"],
+                    technology="electronic",
+                    build="not_stated",
+                )
+            ],
+            named_in_case=["spec.pdf p.4: UN R904"],
+        ),
+    )
+    shown: list[str] = []
+    answers = {"UN R901": "applies", "UN R902": "possibly", "UN R903": "possibly"}
+
+    def judge(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        text = "\n".join(
+            c
+            for m in messages
+            for p in m.parts
+            if isinstance(p, UserPromptPart)
+            for c in ([p.content] if isinstance(p.content, str) else p.content)
+            if isinstance(c, str)
+        )
+        shown.append(text)
+        codes = re.findall(r"^## (.+?): ", text, re.M)
+        out = [
+            {
+                "regulation": c,
+                "verdict": answers.get(c, "does_not"),
+                "reason": "r",
+                "scope_quote": "q",
+            }
+            for c in codes
+        ]
+        return ModelResponse(parts=[ToolCallPart("report_screen", {"response": out})])
+
+    ctx = SimpleNamespace(deps=d, model=FunctionModel(judge), usage=RunUsage())
+    result = await tools.screen_regulations(ctx)  # pyright: ignore[reportArgumentType]
+
+    assert {r["regulation"]: r["because"] for r in result["to_read"]} == {
+        "UN R901": "its scope applies",
+        "UN R902": "its scope possibly applies",
+        "UN R903": result["to_read"][2]["because"],
+        "UN R904": "named in the case: spec.pdf p.4: UN R904",
+    }
+    assert [r["regulation"] for r in result["rule3_shadow"]] == ["UN R903"]
+    assert result["not_read"] == []
+    # One search per function and per component, and the screen saw where each ranked.
+    assert sorted(q or "" for q in search.queries) == ["emits signal", "emitter, electronic"]
+    assert 'ranked 1 of 2 regulations for "emitter"' in "".join(shown)
+    assert "No search for a function or component of the profile found it." in "".join(shown)
+    rule3 = [e for e in store.payloads(d.run.id, "text") if "Rule 3" in e["text"]]
+    assert rule3 and "shadow" in rule3[0]["text"]

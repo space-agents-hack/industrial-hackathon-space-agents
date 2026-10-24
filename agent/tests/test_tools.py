@@ -19,9 +19,15 @@ pytestmark = pytest.mark.anyio
 
 PROFILE = writer.ProductProfile(
     part="A made-up rear lamp.",
-    does=["signals the vehicle's presence from the rear"],
-    does_not=[],
-    contains=["an LED"],
+    functions=["signals the vehicle's presence from the rear"],
+    components=[
+        writer.Component(
+            name="an LED",
+            functions=["signals the vehicle's presence from the rear"],
+            technology="light source",
+            build="integral",
+        )
+    ],
     mounted=["rear"],
     vehicles=["M1"],
 )

@@ -86,9 +86,9 @@ def _orchestrate(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
         lines = _prompt_text(messages).strip().splitlines()
         profile = {
             "part": (lines[0] if lines else "the part")[:500],
-            "does": [],
-            "does_not": [],
-            "contains": [],
+            "functions": [],
+            "functions_absent": [],
+            "components": [],
             "mounted": [],
             "vehicles": [],
             "markets": [],
@@ -108,7 +108,7 @@ def _orchestrate(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
         ]
     hits = returns["search_regulations"][0]
     screened = returns["screen_regulations"][0]
-    kept = {v["regulation"] for v in screened["applies"] + screened["possibly"]}
+    kept = {v["regulation"] for v in screened["to_read"]}
     codes = [c for c in codes if c in kept or any(h["regulation"] == c for h in hits)]
     if not codes:
         summary = "No regulation in the library speaks about this product."
@@ -221,6 +221,7 @@ def _screen(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
     blocks = _CANDIDATE.split(text)[1:]
     for code, block in zip(blocks[::2], blocks[1::2], strict=True):
         scope = block.split("Scope section:", 1)[-1].split("Transitional provisions", 1)[0]
+        scope = scope.split("Search by profile entry:", 1)[0]
         found = sorted(w for w in words if w in scope.lower())
         verdicts.append(
             {

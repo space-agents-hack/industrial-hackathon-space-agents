@@ -2,9 +2,11 @@
 before anything is written, and read back from the trace when a run resumes after a pause."""
 
 import io
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image
+from pydantic import ValidationError
 from pydantic_ai import BinaryContent, ConversationTypeAdapter, ModelRetry
 from pydantic_ai.messages import (
     ModelRequest,
@@ -23,9 +25,22 @@ pytestmark = pytest.mark.anyio
 
 PROFILE = writer.ProductProfile(
     part="A made-up body panel.",
-    does=["covers the front of the vehicle"],
-    does_not=["no lighting function"],
-    contains=["an ultrasonic sensor behind an opening", "a wiring harness"],
+    functions=["covers the front of the vehicle"],
+    functions_absent=["no lighting function"],
+    components=[
+        writer.Component(
+            name="an ultrasonic sensor behind an opening",
+            functions=["detects obstacles"],
+            technology="sensor",
+            build="separately_approved",
+        ),
+        writer.Component(
+            name="a wiring harness",
+            functions=["connects the sensor"],
+            technology="wiring",
+            build="not_stated",
+        ),
+    ],
     mounted=["front end, lowest edge 300 mm above ground"],
     vehicles=["M1"],
 )
@@ -50,6 +65,73 @@ def test_the_profile_lists_every_field_and_says_what_is_not_stated() -> None:
     assert "no lighting function" in text
     # Markets were not given: said so, not left out, so a writer does not read silence as "none".
     assert text.split("Markets:")[1].lstrip().startswith("- (nothing stated)")
+
+
+def test_each_component_has_functions_a_technology_and_a_build_from_the_fixed_list() -> None:
+    # V-43: the screen's "as built" test and the writers' `covers` read these per component.
+    with pytest.raises(ValidationError):
+        writer.Component(name="a cover", functions=[], technology="a material", build="integral")
+    with pytest.raises(ValidationError):
+        writer.Component(name="a cover", functions=["covers"], technology="", build="integral")
+    with pytest.raises(ValidationError):
+        writer.Component(
+            name="a cover",
+            functions=["covers"],
+            technology="a material",
+            build="glued",  # pyright: ignore[reportArgumentType]
+        )
+
+
+def test_component_names_are_unique_because_every_step_copies_them() -> None:
+    sensor = PROFILE.components[0]
+    with pytest.raises(ValidationError, match="unique"):
+        writer.ProductProfile(
+            part="p",
+            components=[
+                sensor,
+                sensor.model_copy(update={"name": "An  ULTRASONIC sensor behind an opening"}),
+            ],
+        )
+
+
+def test_each_component_name_stands_alone_on_its_line() -> None:
+    lines = PROFILE.render().splitlines()
+
+    assert "Component: an ultrasonic sensor behind an opening" in lines
+    assert "  How it is built in: a separately approved component" in lines
+    assert writer.coverable(PROFILE) == (
+        "covers the front of the vehicle",
+        "an ultrasonic sensor behind an opening",
+        "a wiring harness",
+        writer.WHOLE_PART,
+    )
+    # One search per function and per component, the component with its technology.
+    assert PROFILE.search_entries() == [
+        ("covers the front of the vehicle", "covers the front of the vehicle"),
+        (
+            "an ultrasonic sensor behind an opening",
+            "an ultrasonic sensor behind an opening, sensor",
+        ),
+        ("a wiring harness", "a wiring harness, wiring"),
+    ]
+
+
+async def test_a_profile_with_two_components_of_one_name_is_sent_back(store, settings) -> None:
+    sensor = PROFILE.components[0]
+    ctx = SimpleNamespace(deps=deps(store, settings))
+
+    with pytest.raises(ModelRetry, match="unique"):
+        await tools.record_product_profile(
+            ctx,  # pyright: ignore[reportArgumentType]
+            part="p",
+            functions=[],
+            functions_absent=[],
+            components=[sensor, sensor],
+            mounted=[],
+            vehicles=[],
+            markets=[],
+            named_in_case=[],
+        )
 
 
 async def test_writers_and_the_check_read_the_profile_after_the_case(store, settings) -> None:
@@ -84,13 +166,13 @@ async def test_after_a_pause_the_profile_is_read_back_from_the_trace(store, sett
     assert await tools._require_profile(d) == PROFILE  # pyright: ignore[reportPrivateUsage]
 
 
-async def test_a_run_records_the_profile_before_it_searches_or_writes(store, settings) -> None:
+async def test_a_run_records_the_profile_before_it_screens_or_writes(store, settings) -> None:
     run_id = case_run(store)
     plan = await runner.prepare(store, settings, run_id)
     await runner.execute(store, settings, plan)
 
     called = [p["tool_name"] for p in store.payloads(run_id, "tool_call")]
-    assert called.index("record_product_profile") < called.index("search_regulations")
+    assert called.index("record_product_profile") < called.index("screen_regulations")
     assert called.index("record_product_profile") < called.index("write_requirements")
 
 
