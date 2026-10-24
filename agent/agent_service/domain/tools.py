@@ -368,6 +368,18 @@ async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> d
     tally: Counter[str] = Counter()
     covers: dict[str, Counter[str]] = {}
     results = await _write_windows(ctx, jobs, tally, covers)
+    if covers:
+        # A line of its own: the tool result below is clipped in the trace when it is long.
+        await _progress(
+            deps,
+            "Obligations kept, and how many cover the part as a whole: "
+            + "; ".join(
+                f"{reg} {sum(c.values())} ({c[writer.WHOLE_PART]} the part, "
+                f"{c[writer.NOT_IN_PROFILE]} not in the profile)"
+                for reg, c in covers.items()
+            )
+            + ".",
+        )
 
     written: dict[str, dict[str, Any]] = {}
     failed: list[dict[str, Any]] = []
