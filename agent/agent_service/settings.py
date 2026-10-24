@@ -40,15 +40,30 @@ class Settings(BaseSettings):
     # A run marked running whose heartbeat is older than this is treated as dead.
     stale_after_s: float = 60
 
-    # The requirement writer (domain/writer.py). Writers and check calls in flight at once: the
-    # dev case is about 25 windows, so 6 reads it in about 5 rounds. Higher hits the provider's
-    # rate limit before it saves time on a Tier 2 Anthropic key (an estimate, not measured: #14).
-    writer_concurrency: int = 6
+    # The requirement writer (domain/writer.py). Per-window calls in flight at once (the
+    # one-stage writer, or the first stage of two). The dev case is about 25 windows: 10 reads it
+    # in 3 rounds. It was 6, and the first two-stage run on dev ran out of time (Clemente,
+    # 2026-10-25: "make it parallel"). Not measured against the provider's rate limit (#14); the
+    # sub-goal's reviewers already run 16 at once on the same keys.
+    writer_concurrency: int = 10
     # "two": per window, one agent decides clause by clause what applies, and translators write
     # each obligation, ten at a time (domain/writer.py, #48). "one": a single writer per window
     # does both, as before. Set WRITER_STAGES=one to go back without a code change if a run gets
     # too slow for run_timeout_s: two stages make about twice the calls.
     writer_stages: Literal["one", "two"] = "two"
+    # Translator calls in flight at once, in their own lane beside the writer_concurrency lane of
+    # the per-window calls. In one shared lane every window's first stage queued ahead of every
+    # translation, so the translations ran in rounds after all of them, and the first two-stage
+    # run on dev (2026-10-25 00:5x CEST) ran out of time. 12 is what the check uses on the same
+    # keys; not measured against the provider's rate limit.
+    translate_concurrency: int = 12
+    # Time kept back from run_timeout_s: writers start no call, and a call in flight is cut, once
+    # less than write_reserve_s is left, and check calls once less than check_reserve_s is left,
+    # so a slow run still checks what it wrote and submits a file instead of dying mid-write.
+    # 240 s holds about four rounds of check calls plus submit; 90 s holds the orchestrator's
+    # last turns and submit. Estimates: per-call times are not measured yet (#14).
+    write_reserve_s: float = 240
+    check_reserve_s: float = 90
     # Check-agent calls in flight at once (domain/tools.py check_requirements). Higher than the
     # writers': its calls are short, and 600 requirements are 40 of them. The sub-goal's reviewers
     # run 16 at once on the same keys.

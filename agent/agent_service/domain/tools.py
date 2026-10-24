@@ -3,7 +3,7 @@ model reads to decide when to call it.
 
 Coarse on purpose: "write the requirements of these regulations" is one call that fans out to
 parallel writers (domain/writer.py), not 25 calls the orchestrator would have to sequence inside
-its 30-request limit. Every requirement is stored the moment its window is written, so a run that
+its 30-request limit. Every requirement is stored the moment its writer call answers, so a run that
 runs out of time still leaves what it wrote in the database.
 
 `requires_approval=True` is the human-in-the-loop switch: the run stops before that tool executes
@@ -82,6 +82,30 @@ class Deps:
     profile: writer.ProductProfile | None = None
     # Said once per run in the trace, not after every search (#37).
     words_only_noted: bool = False
+    # When the runner stops this request (event-loop time: start + run_timeout_s). Writer and
+    # check calls are cut to finish before it, less their reserve (_call_timeout). None, in tests,
+    # means only subagent_timeout_s applies.
+    deadline: float | None = None
+
+
+class OutOfTime(Exception):
+    """A writer or check call not started because the run is too close to its time limit."""
+
+
+# A call that would get less than this is not started: a window's answer takes longer.
+_MIN_CALL_S = 30
+
+
+def _call_timeout(deps: Deps, reserve_s: float) -> float:
+    """How long the next writer or check call may take: subagent_timeout_s, cut so it ends
+    `reserve_s` before the run's deadline. Raises OutOfTime when that leaves under _MIN_CALL_S."""
+    limit = deps.settings.subagent_timeout_s
+    if deps.deadline is None:
+        return limit
+    left = deps.deadline - reserve_s - asyncio.get_running_loop().time()
+    if left < _MIN_CALL_S:
+        raise OutOfTime(f"not started: under {reserve_s + _MIN_CALL_S:.0f} s of the run were left")
+    return min(limit, left)
 
 
 toolset = FunctionToolset[Deps]()
@@ -446,7 +470,7 @@ async def check_requirements(ctx: RunContext[Deps]) -> dict[str, Any]:
     async def check(batch: list[Requirement]) -> list[writer.Finding] | str:
         async with semaphore:
             try:
-                async with asyncio.timeout(deps.settings.subagent_timeout_s):
+                async with asyncio.timeout(_call_timeout(deps, deps.settings.check_reserve_s)):
                     result = await writer.check_agent.run(
                         [*_case(deps), CachePoint(), writer.check_batch(batch, by_id)],
                         model=cast(Model, model),
@@ -654,15 +678,19 @@ async def _require_profile(deps: Deps) -> writer.ProductProfile:
 async def _write_windows(
     ctx: RunContext[Deps], jobs: list[Window], tally: Counter[str] | None = None
 ) -> list[tuple[int, str | None]]:
-    """Every window through the writer, `concurrency` calls at a time; (stored, error) per window.
-    `tally` counts the clauses set aside, by reason, and those left without an answer: what the
-    trace shows of the obligations the writers decided not to write (#48).
+    """Every window through the writer; (stored, error) per window. `tally` counts the clauses
+    set aside, by reason, and those left without an answer: what the trace shows of the
+    obligations the writers decided not to write (#48).
 
     Two stages (settings.writer_stages, the default): the disposition agent decides per clause
     what applies, then translators write the obligations ten at a time. One stage: a single writer
-    per window does both."""
+    per window does both. Per-window calls run `concurrency` at a time and translators
+    translate_concurrency at a time, in separate lanes, so a window's translations start as soon
+    as its first stage answers. Drafts are stored as each call answers, and no call runs past the
+    run's write reserve (_call_timeout), so a slow run keeps what it wrote and still checks it."""
     deps = ctx.deps
-    semaphore = asyncio.Semaphore(deps.concurrency)
+    window_lane = asyncio.Semaphore(deps.concurrency)
+    translate_lane = asyncio.Semaphore(deps.settings.translate_concurrency)
     case = _case(deps)
     model = cast(Model, ctx.model)
     two_stages = deps.settings.writer_stages == "two"
@@ -673,9 +701,9 @@ async def _write_windows(
             answered = answered | {a.clause for a in set_aside}
             tally["no answer"] += len(window.clause_ids - answered)
 
-    async def ask(agent: Any, prompt: str, job: Any) -> Any:
-        async with semaphore:
-            async with asyncio.timeout(deps.settings.subagent_timeout_s):
+    async def ask(lane: asyncio.Semaphore, agent: Any, prompt: str, job: Any) -> Any:
+        async with lane:
+            async with asyncio.timeout(_call_timeout(deps, deps.settings.write_reserve_s)):
                 result = await agent.run(
                     # The case comes first and is the same for every call: a provider that caches
                     # prompts (Anthropic) reads it once per run, not once per window.
@@ -687,40 +715,9 @@ async def _write_windows(
         _add_tokens(ctx.usage, result.usage)
         return result.output
 
-    async def drafts_of(window: Window) -> tuple[list[writer.Draft], str | None]:
-        if not two_stages:
-            answer: writer.WindowAnswer = await ask(writer.writer_agent, window.render(), window)
-            count(window, {c for d in answer.requirements for c in d.clauses}, answer.set_aside)
-            return answer.requirements, None
-        found: writer.Disposition = await ask(writer.disposition_agent, window.render(), window)
-        count(window, {c for o in found.obligations for c in o.clauses}, found.set_aside)
-        version_paragraphs = await _paragraphs(deps, window.version.id)
-        batches = writer.translation_jobs(window, found, version_paragraphs)
-
-        async def translate(job: writer.TranslationJob) -> list[writer.Draft] | str:
-            try:
-                return await ask(writer.translator_agent, job.render(), job)
-            except Exception as exc:
-                return _failure(deps, exc)[:300]
-
-        drafts: list[writer.Draft] = []
-        errors: list[str] = []
-        for outcome in await asyncio.gather(*(translate(b) for b in batches)):
-            if isinstance(outcome, str):
-                errors.append(outcome)
-            else:
-                drafts += outcome
-        # A failed batch loses its ten obligations, not the window: the rest is stored, and the
-        # window is reported so the orchestrator can write its paragraphs again.
-        return drafts, ("; ".join(errors)[:300] or None)
-
-    async def one(window: Window) -> tuple[int, str | None]:
-        try:
-            drafts, error = await drafts_of(window)
-        except Exception as exc:
-            return 0, _failure(deps, exc)[:300]
+    async def store(window: Window, drafts: list[writer.Draft]) -> int:
         if not drafts:
-            return 0, error
+            return 0
         async with deps.lock:
             if deps.next_number is None:
                 rows = await deps.store.run_requirements(deps.run.id)
@@ -740,7 +737,45 @@ async def _write_windows(
                     for i, d in enumerate(drafts)
                 ]
             )
-        return len(drafts), error
+        return len(drafts)
+
+    async def two_stage(window: Window) -> tuple[int, str | None]:
+        found: writer.Disposition = await ask(
+            window_lane, writer.disposition_agent, window.render(), window
+        )
+        count(window, {c for o in found.obligations for c in o.clauses}, found.set_aside)
+        version_paragraphs = await _paragraphs(deps, window.version.id)
+        batches = writer.translation_jobs(window, found, version_paragraphs)
+
+        async def translate(job: writer.TranslationJob) -> int | str:
+            try:
+                drafts = await ask(translate_lane, writer.translator_agent, job.render(), job)
+            except Exception as exc:
+                return _failure(deps, exc)[:300]
+            return await store(window, drafts)
+
+        stored = 0
+        errors: list[str] = []
+        for outcome in await asyncio.gather(*(translate(b) for b in batches)):
+            if isinstance(outcome, str):
+                errors.append(outcome)
+            else:
+                stored += outcome
+        # A failed batch loses its ten obligations, not the window: the rest is stored, and the
+        # window is reported so the orchestrator can write its paragraphs again.
+        return stored, ("; ".join(errors)[:300] or None)
+
+    async def one(window: Window) -> tuple[int, str | None]:
+        try:
+            if two_stages:
+                return await two_stage(window)
+            answer: writer.WindowAnswer = await ask(
+                window_lane, writer.writer_agent, window.render(), window
+            )
+            count(window, {c for d in answer.requirements for c in d.clauses}, answer.set_aside)
+            return await store(window, answer.requirements), None
+        except Exception as exc:
+            return 0, _failure(deps, exc)[:300]
 
     return list(await asyncio.gather(*(one(w) for w in jobs)))
 
@@ -771,7 +806,10 @@ def _add_tokens(usage: RunUsage, sub: RunUsage) -> None:
 def _failure(deps: Deps, exc: Exception) -> str:
     # asyncio.timeout raises a bare TimeoutError, whose message is empty: say what it means.
     if isinstance(exc, TimeoutError):
-        return f"TimeoutError: no answer within {deps.settings.subagent_timeout_s:g} s, stopped."
+        return (
+            f"TimeoutError: no answer within {deps.settings.subagent_timeout_s:g} s, or before "
+            "the run's time limit, stopped."
+        )
     return f"{type(exc).__name__}: {exc}"
 
 

@@ -7,6 +7,7 @@ check.md (the two sub-agents and the code around them), scripted.py (a model for
 with no provider).
 """
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,9 @@ async def prepare_deps(
 ) -> Deps:
     """What a run's tools need from the database, read once when the request starts. `meter` is
     the run's: the check model and the search vectors are billed to it."""
+    # Taken first: the runner's run_timeout_s started just before this request, so the reads
+    # below already count against it.
+    deadline = asyncio.get_running_loop().time() + settings.run_timeout_s
     try:
         reference = await certivity.load_reference(store, run.organization_id)
     except Exception:
@@ -91,6 +95,7 @@ async def prepare_deps(
         reference=reference,
         concurrency=settings.writer_concurrency,
         meter=meter,
+        deadline=deadline,
     )
 
 

@@ -121,3 +121,42 @@ async def test_the_one_stage_writer_still_stores_what_it_writes(store, settings)
 
     assert result["written"]["UN R148"] == {"version": "00", "windows": 2, "requirements": 1}
     assert len(result["failed_windows"]) == 1
+
+
+async def test_no_writer_call_starts_once_the_run_is_inside_its_write_reserve(
+    store, settings
+) -> None:
+    # The first two-stage run on dev ran out of time mid-write and never checked or submitted. A
+    # call that cannot finish before the reserve is not started, so the run moves on to check.
+    d = deps(store, settings)
+    d.deadline = asyncio.get_running_loop().time() + settings.write_reserve_s + 5
+
+    result = await tools.write_requirements(ctx(d, stalls_on("no marker")), ["UN R148"])
+
+    assert result["written"]["UN R148"]["requirements"] == 0
+    assert all(f["error"].startswith("OutOfTime: not started") for f in result["failed_windows"])
+    assert len(result["failed_windows"]) == 2
+
+
+async def test_a_windows_translations_start_while_other_windows_are_still_disposed(
+    store, settings
+) -> None:
+    # In one shared lane every window's first stage queued ahead of every translation (#48).
+    d = deps(store, settings.model_copy(update={"translate_concurrency": 1}))
+    d.concurrency = 1
+    order: list[str] = []
+    inner = stalls_on("no marker").function
+    assert inner is not None
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        tool = info.output_tools[0].name
+        order.append(f"start {tool}")
+        await asyncio.sleep(0.01)
+        response = await inner(messages, info)  # type: ignore[misc]
+        order.append(f"end {tool}")
+        return response
+
+    await tools.write_requirements(ctx(d, FunctionModel(model)), ["UN R148"])
+
+    last_disposition_ends = max(i for i, e in enumerate(order) if e == "end record_disposition")
+    assert order.index("start record_translations") < last_disposition_ends
