@@ -5,7 +5,7 @@
    title says "document" before anything is read; every control, label and table stays in the
    system face, which is drawn for small sizes (HIG, Typography). Self-hosted: no request to a font
    service from a client's browser. */
-@import "@fontsource/instrument-serif/latin-400.css";
+@import "@fontsource/instrument-serif/latin-400";
 
 /* Dark follows the system setting, with no switch in the app (HIG, Dark Mode: "Avoid offering an
    app-specific appearance setting"). The shadcn components' `dark:` classes use the same query. */
