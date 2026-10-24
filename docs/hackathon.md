@@ -68,9 +68,10 @@ Two deadlines, and the first one decides 40% of the grade:
 
 ### Held-out upload procedure
 
-One person holds the uploads for the whole morning (owner: `UNASSIGNED`, Clemente and Ramón to
-decide). Nobody else uploads to the held-out case. Every upload is logged on issue #7: time,
-file sha256, commit, model, and the platform's scores once they appear.
+Clemente and Ramón both upload (Clemente, 2026-10-24). Say so on #7 before each held-out
+upload, because the last valid one counts and two people uploading close together can replace a
+better file. Every upload is logged on issue #7: time, file sha256, commit, model, and the
+platform's scores once they appear.
 
 | When, Sunday | What |
 |---|---|

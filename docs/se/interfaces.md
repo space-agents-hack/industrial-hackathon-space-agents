@@ -1,6 +1,6 @@
 # Interface control
 
-All `proposed`. **Owners are `UNASSIGNED` until Clemente or Ramón assigns them.** Assigned 2026-10-24 by Clemente: case side Clemente, regulation side Ramón, output both. Nobody fills
+All `proposed`. **Owners are `UNASSIGNED` until Clemente or Ramón assigns them.** Assigned 2026-10-24 by Clemente: case side Clemente, regulation side Ramón, everything else both. Nobody fills
 them in on their behalf. A change needs both owners to agree on the issue before merge.
 
 ## Interface register
@@ -11,8 +11,8 @@ them in on their behalf. A change needs both owners to agree on the issue before
 | IF-2 | ingest → regs | Standardised content blocks stored per case (file, page), plus optional notes | Clemente / Clemente + Ramón | 2, 3, 8, 24, 25, 27, 28 | #4, #19 |
 | IF-3 | regs catalogue → requirement writer | Paragraphs with regulation, version, page, paragraph | Ramón / Clemente + Ramón | 5, 6, 15, 23, 25, 28, 29, 32 | #3, #18, #24 |
 | IF-4 | agent → db → web, checks | Run output: `submission_main` JSON | Clemente + Ramón / Clemente + Ramón | 4, 14, 25, 29 | #4 |
-| IF-5 | Certivity → checks | `validate.py`, `score_local.py`, schemas, `expected.json`, `requirements_old.json` (the regulation list reaches the checks through the library, IF-3) | `UNASSIGNED` | 10, 11, 16, 19 | — |
-| IF-6 | ops → Certivity platform | Uploads | `UNASSIGNED` (one person on Sunday) | 20 | #7 |
+| IF-5 | Certivity → checks | `validate.py`, `score_local.py`, schemas, `expected.json`, `requirements_old.json` (the regulation list reaches the checks through the library, IF-3) | Clemente + Ramón | 10, 11, 16, 19 | — |
+| IF-6 | ops → Certivity platform | Uploads | Clemente + Ramón | 20 | #7 |
 
 ## N² view (what each part hands to the next)
 
