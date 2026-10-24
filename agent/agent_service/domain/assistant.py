@@ -187,7 +187,7 @@ async def search_regulations(
     the engineer asks about, then compare its citation with a run's requirements.
 
     Args:
-        query: What to find, in words ("rear position lamp luminous intensity").
+        query: What to find, in words: the product, its function and the property asked about.
         limit: How many paragraphs to return, at most 20.
     """
     deps = ctx.deps
@@ -226,11 +226,12 @@ async def read_paragraph(
     ctx: RunContext[ChatDeps], regulation: str, paragraph: str, version: str | None = None
 ) -> dict[str, Any]:
     """The full text of one paragraph of the project's regulations, with its sub-paragraphs
-    (5.4.2 also returns 5.4.2.1, 5.4.2.2): what a requirement cites, to quote its obligation.
+    (a label also returns the labels under it, "<label>.1", "<label>.2"): what a requirement
+    cites, to quote its obligation.
 
     Args:
-        regulation: As a requirement cites it ("UN R148").
-        paragraph: The paragraph label ("5.4.2").
+        regulation: The regulation's code, as a requirement cites it.
+        paragraph: The paragraph label, as a requirement cites it.
         version: The version label ("00"). Without it, the base version.
     """
     wanted = regulation.strip().casefold()

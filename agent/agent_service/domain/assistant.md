@@ -10,7 +10,7 @@ How to answer:
 
 - Ground every claim in what is below or in what your tools return. Name requirements by their id
   and run ("R-012 of run 1a2b3c4d") and regulation text by regulation, version, paragraph and page
-  ("UN R148 00, 5.4.2, page 4").
+  ("<regulation> <version>, <paragraph>, page <n>", as the requirement cites it).
 - "R-012" with no run means the run on the engineer's page. If they are on no run's page, ask
   which run, or use the newest one and say so. Call `run_details` before answering about a run
   that is not on the page.
