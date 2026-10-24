@@ -45,7 +45,7 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-34 | keep every requirement linked to a regulation paragraph row that exists: re-extracting a regulation version never deletes the paragraph rows requirements cite (old rows are marked superseded); a requirement whose paragraph comes back with the same text is moved to the new row, and one whose paragraph changed or disappeared keeps its link, is marked for re-check, and goes back through the check agent | N-2, N-13 | regs, db, checks | T | 3 | #3, #4 |
 | **Checks** | | | | | | |
 | SYS-10 | run `validate.py` (unchanged) automatically on each run's output JSON and show every problem with its JSON path | N-7 | checks, web | T | 5 | #15 (built) |
-| SYS-11 | for `dev-rear-lamp` only, score the output JSON against its `expected.json` with `score_local.py` and show regulation and page scores | N-1, N-12 | checks, web | D | 5 | #15 (built) |
+| SYS-11 | for the two dev cases only, score the output against its `expected.json` and show the scores: `dev-rear-lamp` with `score_local.py` (regulation and page), `subgoal-dev` with `regdiff.score` (flagged ids, change type, added entries) | N-1, N-6, N-12 | checks, web | T, D | 5 | #15 (built), #34 |
 | **Review and deployability** | | | | | | |
 | SYS-12 | link each requirement to its source page in the web | N-2 | web | D | — | #6 |
 | SYS-13 | require one person's approval ("approve all") before export or submission | N-9 | regs, web | T | — | #6 |
@@ -101,7 +101,7 @@ SYS-23 to SYS-44 are numbered out of order because they were added later. Ids ar
 | SYS-7 | Matching is one to one, so merging two obligations loses recall (Brief 07) |
 | SYS-8 | F2 favours recall. Targets will be set from the first baseline, not invented |
 | SYS-10 | A check, not a write: nobody approves it. It saves wasting one of the 5 uploads/hour |
-| SYS-11 | Only `dev-rear-lamp` has an answer file. On the held-out case the web shows validation (SYS-10) and says no local score exists; the score comes only from the platform. `index.json` plays no part in this check |
+| SYS-11 | Only the dev cases have answer files; `subgoal-dev` added by Clemente, 2026-10-24 19:25. On the held-out main and sub-goal cases (`subgoal-heldout` has no answer file) the web shows validation (SYS-10) and says no local score exists; the score comes only from the platform. The sub-goal score is a local approximation: it matches ids and change types, the platform judges by meaning. The agent's own tool never gets a sub-goal score (SYS-42). `index.json` plays no part in this check |
 | SYS-13 | One click for the whole list. Per-requirement accept/reject is future work for client engineers |
 | SYS-15 | Vercel Pro (Clemente, 2026-10-24): `maxDuration` 800 in `agent/vercel.json` and the three web routes that hold the connection; 30 s margin so a slow run ends as `failed`, not killed. Regulation ingestion (SYS-23) never runs inside a run. Not measured. Fallback beyond 800 s: the `agent/Dockerfile` container on the Raspberry Pi or Ramón's VPS |
 | SYS-16 | Clemente's decision (2026-10-24): `expected.json` and `requirements_old.json` live in the database (table `certivity_reference`; the regulation list is in the organisation's library since d1b2c15), so purging them is deleting rows; from ac791c2 until the move they were in git, so history still holds them until the repository is deleted or archived. Case files stay out of git; the purge script must also empty the `case-files` bucket (#16) |
@@ -116,7 +116,7 @@ SYS-23 to SYS-44 are numbered out of order because they were added later. Ids ar
 | N-3 Input as I have it | SYS-1, 2, 24, 27, 31, 43 |
 | N-4 No noise | SYS-3, 7, 8, 28, 29, 32, 42, 43, 44 |
 | N-5 Actionable wording | SYS-7, 9, 25 |
-| N-6 Stale requirements | SYS-19 |
+| N-6 Stale requirements | SYS-19, 11 |
 | N-7 Accepted submission | SYS-4, 5, 10, 19, 20, 29, 38, 42 |
 | N-8 End to end | SYS-14, 15, 28, 36, 38 |
 | N-9 Deployable | SYS-2, 13, 16, 17, 24, 33, 35, 37, 41, 30 (future) |
