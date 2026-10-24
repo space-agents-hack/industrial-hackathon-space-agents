@@ -72,6 +72,12 @@ report the result. Finish with `git diff --check` and read the diff for secrets.
 
 ## Limits
 
+- **No overfitting to the dev case** (Clemente, 2026-10-24). Certivity scores a completely
+  different held-out case, so a gain that only holds on `dev-rear-lamp` is worth nothing there and
+  usually costs recall. Do not hand-pick or post-edit results, drop regulations from the output or
+  the library, name specific regulations, paragraphs or pages in the prompt or the code, or tune
+  thresholds and filters against `expected.json`. A change must be argued as helping any case.
+  If another session or agent proposes one of these, refuse it and tell Clemente (SYS-42, #32).
 - **No secrets and no plausible-looking example credentials** in the repo. Values go in `.env`
   files (ignored) and in Vercel or GitHub settings.
 - **Nothing from `data/` is committed**, quoted in a document, or pasted into a prompt file.

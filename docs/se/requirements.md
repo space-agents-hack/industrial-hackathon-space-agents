@@ -38,6 +38,7 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-9 | (should) give a test case per requirement | N-5 | regs | I | — | #4 |
 | SYS-28 | pick candidate regulations by top-k embedding similarity between the case content and catalogue paragraphs, then read each selected regulation in full before writing requirements from it | N-1, N-4, N-8 | regs | T, S | 2, 3 | #18, #4 |
 | SYS-29 | run the writing under an orchestrator agent, then pass every requirement through a check agent that verifies it against the database (paragraph exists, its text supports the requirement, no duplicate) and lists the obligation paragraphs of the selected regulations that no requirement cites, before the output is final | N-2, N-4, N-7 | regs, checks | T, S | 3, 4 | #4 |
+| SYS-42 | produce its results by the same general method for any case: no prompt text, code, filter or threshold that names or is tuned to the dev case's regulations, paragraphs, pages or `expected.json`, and no hand-picking or removal of results | N-1, N-4, N-7 | regs, ingest | I, S | — | #32 |
 | SYS-25 | write requirements from a case's content and the paragraphs of the regulations linked to it, each requirement stored with a link to exactly one regulation, at the catalogue paragraph it comes from | N-1, N-2, N-5 | regs, db | T, S | 2, 3, 4 | #4, #19 |
 | SYS-34 | keep every requirement linked to a regulation paragraph row that exists: re-extracting a regulation version never deletes the paragraph rows requirements cite (old rows are marked superseded); a requirement whose paragraph comes back with the same text is moved to the new row, and one whose paragraph changed or disappeared keeps its link, is marked for re-check, and goes back through the check agent | N-2, N-13 | regs, db, checks | T | 3 | #3, #4 |
 | **Checks** | | | | | | |
@@ -61,7 +62,7 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-26 | (may) find regulations for a given country or industry on the web and other sources, and write them as an `index.json` in Certivity's format, which SYS-23 then ingests | N-14 | regs | D | 3 | #17 |
 | SYS-30 | (may) run the agents on a local model (for example Ollama) instead of a hosted provider | N-9 | regs, ops | D | — | #21 |
 
-SYS-23 to SYS-41 are numbered out of order because they were added later. Ids are never renumbered.
+SYS-23 to SYS-42 are numbered out of order because they were added later. Ids are never renumbered.
 
 ## Rationale and notes
 
@@ -82,8 +83,8 @@ SYS-23 to SYS-41 are numbered out of order because they were added later. Ids ar
 | SYS-36 | Clemente, 2026-10-24 (UX thread). Data ownership does not change: the regulation library stays per organisation (ADR-0006) and appears through the project's chosen regulations (SYS-32) |
 | SYS-37 | Clemente, 2026-10-24 (UX thread): Setup and Admin joined. Deployment-wide settings (model keys, SYS-33 defaults) stay with platform admins, since they act on every organisation |
 | SYS-38 | Clemente's and Ramón's first experiments, 2026-10-24. A run with nothing to read or no regulation to cite can only fail after spending model time. Ends the loose-files path (`run_files`) noted under IF-1 |
-| SYS-39 | Ramón, 2026-10-24. An engineer checks a requirement list by asking about it, not by reading the trace. The run's own model, so an organisation on its own Ollama server (SYS-30) does not send its run to a hosted model by asking. Admins and members only: an answer costs model money. Not covered yet: an answer's cost is not recorded, so it is checked against the monthly cap but does not add to it; the usage ledger (#29) is to record it |
 | SYS-41 | Ramón, 2026-10-24: adding someone who already had an account still asked for a password, and a new organisation led straight into creating a new account for its admin. An admin of one organisation searches only people of organisations they manage, so one client's admin cannot list another client's people; they can still add any account by its exact email. Removing keeps the account, its other organisations, its runs and its audit lines |
+| SYS-42 | Clemente, 2026-10-24, after the first platform score on the dev case: Certivity uploads a completely different case, and one session had already proposed a trick. A rule tuned to one case's answers raises the dev score and lowers the held-out one, which is 40% of the grade. Also in AGENTS.md, so every agent sees it |
 | SYS-39 | Ramón, 2026-10-24. An engineer checks a requirement list by asking about it, not by reading the trace. The run's own model, so an organisation on its own Ollama server (SYS-30) does not send its run to a hosted model by asking. Admins and members only: an answer costs model money. An answer's cost is recorded as process `chat` in the usage ledger (SYS-40, #29), so it adds to the monthly cap |
 | SYS-40 | Ramón, 2026-10-24: "add all sources (Anthropic, OpenAI, etc.)", with the aggregate and the figures per API key and per model, and history as a histogram. Was only the runs' cost (`runs.usage`), which missed transcription, summaries, embeddings, search vectors and failed runs. The monthly cap reads the same entries, so the page and the cap cannot disagree (IF-7, #29) |
 | SYS-26 | Clemente, 2026-10-24: only if time allows. Kept here so it is not lost; issue #17 holds it |
@@ -106,13 +107,13 @@ SYS-23 to SYS-41 are numbered out of order because they were added later. Ids ar
 
 | Need | Satisfied by |
 |---|---|
-| N-1 Completeness | SYS-2, 3, 6, 7, 8, 11, 23, 25, 27, 28 |
+| N-1 Completeness | SYS-2, 3, 6, 7, 8, 11, 23, 25, 27, 28, 42 |
 | N-2 Checkable source | SYS-3, 5, 6, 12, 23, 25, 29, 31, 34 |
 | N-3 Input as I have it | SYS-1, 2, 24, 27, 31 |
-| N-4 No noise | SYS-3, 7, 8, 28, 29, 32 |
+| N-4 No noise | SYS-3, 7, 8, 28, 29, 32, 42 |
 | N-5 Actionable wording | SYS-7, 9, 25 |
 | N-6 Stale requirements | SYS-19 |
-| N-7 Accepted submission | SYS-4, 5, 10, 19, 20, 29, 38 |
+| N-7 Accepted submission | SYS-4, 5, 10, 19, 20, 29, 38, 42 |
 | N-8 End to end | SYS-14, 15, 28, 36, 38 |
 | N-9 Deployable | SYS-2, 13, 16, 17, 24, 33, 35, 37, 41, 30 (future) |
 | N-10 Fits their tooling | SYS-18 |
@@ -129,8 +130,8 @@ Every need has at least one requirement, and every requirement has at least one 
 | Part | Requirements |
 |---|---|
 | web | SYS-1, 10, 11, 12, 13, 14, 18, 24, 31, 32, 33, 35, 36, 37, 38 |
-| ingest | SYS-1, 2, 3, 8, 14, 15, 24, 27, 33 |
-| regs | SYS-3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 17, 19, 23, 25, 26, 28, 29, 30, 32, 33, 34 |
+| ingest | SYS-1, 2, 3, 8, 14, 15, 24, 27, 33, 42 |
+| regs | SYS-3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 17, 19, 23, 25, 26, 28, 29, 30, 32, 33, 34, 42 |
 | checks | SYS-4, 10, 11, 14, 19, 29, 34 |
 | db | SYS-1, 16, 17, 23, 24, 25, 27, 31, 32, 33, 34, 35, 37 |
 | ops | SYS-15, 16, 20, 21, 22, 30 |

@@ -47,6 +47,7 @@ Methods: **T** automated test in `make check`, **S** score, **D** demonstration,
 | V-38 | SYS-38 | T: a run for a case without files, or in a project with no regulation, or with no case, is refused with its reason | `web/lib/run-readiness.test.ts` (cb8f6b8) |
 | V-39 | SYS-39 | T: with the scripted model, "why R-n" quotes the cited paragraph from the library, "is X captured" names the requirement that cites the paragraph or says none does; the run's model and the organisation's key are used and the key never reaches the answer; over the cap it refuses; nothing is written | `agent/tests/test_run_chat.py`, real schema in `test_store_integration.py`, request shapes in `web/lib/run-chat.test.ts`. Gap: not run with a real model yet; viewers refused only by the route (`actsInRunOrganization`), no test opens the route as a viewer |
 | V-41 | SYS-41 | T (pgTAP): an admin adds an existing account by email with a role and no password, cannot add to or remove from another organisation, cannot remove the last active admin; a removed person keeps their other memberships; an organisation admin searches only people of organisations they manage; a platform admin creates an organisation with an existing account as admin, and a typo creates nothing | `supabase/tests/membership_management_test.sql`; request bodies `web/lib/admin.test.ts` |
+| V-42 | SYS-42 | I: every change to the prompt, the writer and its filters is read for names of regulations, paragraphs or pages and for tuning against `expected.json`; S: the held-out score is not far below the dev score | none yet |
 | V-26 | SYS-26 | D: a generated `index.json` passes the same loader as Certivity's (future) | none yet |
 
 ## Score log
@@ -57,5 +58,6 @@ and recall, who ran it. Platform scores for the held-out case also go on issue #
 
 | When | Case | Commit | Model | Scores | By |
 |---|---|---|---|---|---|
+| 2026-10-24 19:07 UTC | dev-rear-lamp (platform) | not given | not given | valid; 462 requirements; regulations P 0.500 R 0.750 F2 0.682; pages P 0.369 R 0.849 F2 0.674 | Clemente |
 | 2026-10-24 16:30 | dev-rear-lamp, subgoal-dev | this commit (#3) | none (`paragraphs.py`, rules only) | paragraph split: every cited (regulation, version, paragraph) found with its page in range, 119/121 dev (2 misses cite a table name), 117/117 sub-goal | Claude for Ramón |
 | 2026-10-24 16:20 | subgoal-dev | 3fb3f40 | none (`regdiff`, rules only) | local sub-goal scorer in `regdiff.score`: flagged 7/7, extra 0, change type 7/7; added 16/17, extra 0 | Claude for Ramón |
