@@ -9,6 +9,8 @@ off in both Vercel projects, so the only path is `.github/workflows/deploy.yml`.
 2. If all three are green, **release**, one at a time:
    1. Skip if `main` has already moved past this commit with a code change. Newer commits that
       touch only Markdown or `docs/` start no workflow, so they do not stop this release.
+      Markdown under `agent/` is code: the agent reads `domain/prompt.md` at run time, so a
+      prompt change runs the checks and is released like any other change.
    2. Apply new migrations to the hosted database.
    3. Deploy the agent **without** the production domain, smoke-test it, promote it.
    4. Build and deploy the web **without** the production domain, then smoke-test it, including

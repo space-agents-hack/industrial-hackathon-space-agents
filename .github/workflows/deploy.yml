@@ -15,7 +15,10 @@ name: Deploy
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md', 'docs/**']
+    # Markdown and docs/ start nothing, except under agent/: the agent reads
+    # agent_service/domain/prompt.md at run time, so a prompt change is a code change. A later
+    # positive pattern re-includes what an earlier `!` excluded.
+    paths: ['**', '!**.md', '!docs/**', 'agent/**']
   pull_request:
   # To release again without a new commit, for example after setting a missing variable.
   workflow_dispatch:
@@ -280,9 +283,11 @@ jobs:
             # A push that touches only paths-ignore files (Markdown, docs/) starts no workflow, so
             # skipping for it leaves this release undone with nothing coming after it. That kept
             # production on an old version on 2026-10-24. Release anyway when every newer commit
-            # is docs only: the code is the same as at the head.
+            # is docs only: the code is the same as at the head. "Docs only" is the push filter
+            # above: Markdown under agent/ (the prompt) is code.
             if ! git merge-base --is-ancestor "$EXPECTED_SHA" "$current_sha" \
-              || git diff --name-only "$EXPECTED_SHA" "$current_sha" | grep -qvE '(\.md$|^docs/)'; then
+              || git diff --name-only "$EXPECTED_SHA" "$current_sha" \
+                | awk '/^agent\// || !(/\.md$/ || /^docs\//) { code = 1 } END { exit !code }'; then
               echo "current=false" >> "$GITHUB_OUTPUT"
               echo "Release skipped: main is now at $current_sha." >> "$GITHUB_STEP_SUMMARY"
               exit 0
