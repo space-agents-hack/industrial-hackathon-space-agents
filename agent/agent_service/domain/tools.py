@@ -178,15 +178,16 @@ async def screen_regulations(ctx: RunContext[Deps]) -> dict[str, Any]:
     async def judge(batch: list[screen.Candidate]) -> list[screen.Verdict] | str:
         async with semaphore:
             try:
-                result = await screen.screen_agent.run(
-                    [*head, CachePoint(), "\n\n".join(c.render() for c in batch)],
-                    model=cast(Model, ctx.model),
-                    deps=batch,
-                    usage_limits=UsageLimits(request_limit=_SUB_REQUESTS),
-                )
+                async with asyncio.timeout(deps.settings.subagent_timeout_s):
+                    result = await screen.screen_agent.run(
+                        [*head, CachePoint(), "\n\n".join(c.render() for c in batch)],
+                        model=cast(Model, ctx.model),
+                        deps=batch,
+                        usage_limits=UsageLimits(request_limit=_SUB_REQUESTS),
+                    )
             except Exception as exc:
                 codes = ", ".join(c.version.regulation for c in batch)
-                return f"{codes}: {f'{type(exc).__name__}: {exc}'[:300]}"
+                return f"{codes}: {_failure(deps, exc)[:300]}"
             _add_tokens(ctx.usage, result.usage)
             return result.output
 
@@ -413,14 +414,15 @@ async def check_requirements(ctx: RunContext[Deps]) -> dict[str, Any]:
     async def check(batch: list[Requirement]) -> list[writer.Finding] | str:
         async with semaphore:
             try:
-                result = await writer.check_agent.run(
-                    [*_case(deps), CachePoint(), writer.check_batch(batch, by_id)],
-                    model=cast(Model, model),
-                    deps=writer.CheckDeps(by_label),
-                    usage_limits=UsageLimits(request_limit=_SUB_REQUESTS + 4),
-                )
+                async with asyncio.timeout(deps.settings.subagent_timeout_s):
+                    result = await writer.check_agent.run(
+                        [*_case(deps), CachePoint(), writer.check_batch(batch, by_id)],
+                        model=cast(Model, model),
+                        deps=writer.CheckDeps(by_label),
+                        usage_limits=UsageLimits(request_limit=_SUB_REQUESTS + 4),
+                    )
             except Exception as exc:
-                message = f"{type(exc).__name__}: {exc}"
+                message = _failure(deps, exc)
                 if deps.check_secret:
                     message = message.replace(deps.check_secret, "[redacted]")
                 return message[:300]
@@ -614,16 +616,17 @@ async def _write_windows(ctx: RunContext[Deps], jobs: list[Window]) -> list[tupl
     async def one(window: Window) -> tuple[int, str | None]:
         async with semaphore:
             try:
-                result = await writer.writer_agent.run(
-                    # The case comes first and is the same for every window: a provider that
-                    # caches prompts (Anthropic) reads it once per run instead of once per window.
-                    [*case, CachePoint(), window.render()],
-                    model=cast(Model, ctx.model),
-                    deps=window,
-                    usage_limits=UsageLimits(request_limit=_SUB_REQUESTS),
-                )
+                async with asyncio.timeout(deps.settings.subagent_timeout_s):
+                    result = await writer.writer_agent.run(
+                        # The case comes first and is the same for every window: a provider that
+                        # caches prompts (Anthropic) reads it once per run, not once per window.
+                        [*case, CachePoint(), window.render()],
+                        model=cast(Model, ctx.model),
+                        deps=window,
+                        usage_limits=UsageLimits(request_limit=_SUB_REQUESTS),
+                    )
             except Exception as exc:
-                return 0, f"{type(exc).__name__}: {exc}"[:300]
+                return 0, _failure(deps, exc)[:300]
             _add_tokens(ctx.usage, result.usage)
             drafts = result.output
         if not drafts:
@@ -673,6 +676,13 @@ def _add_tokens(usage: RunUsage, sub: RunUsage) -> None:
     tokens.tool_calls = 0
     tokens.details = {**sub.details, "subagent_requests": sub.requests}
     usage.incr(tokens)
+
+
+def _failure(deps: Deps, exc: Exception) -> str:
+    # asyncio.timeout raises a bare TimeoutError, whose message is empty: say what it means.
+    if isinstance(exc, TimeoutError):
+        return f"TimeoutError: no answer within {deps.settings.subagent_timeout_s:g} s, stopped."
+    return f"{type(exc).__name__}: {exc}"
 
 
 def _code_action(problem: str) -> str:

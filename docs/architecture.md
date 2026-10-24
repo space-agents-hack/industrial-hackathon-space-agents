@@ -106,6 +106,8 @@ row to `audit_events`.
 |---|---|---|
 | A tool raises, or the model loops | Run `failed`, with the error in the trace | A failure is a recorded state, not a crash |
 | The run exceeds `RUN_TIMEOUT_S` (770 s; 30 s under Vercel Pro's 800 s) | Run `failed`: "Ran out of time" | It ends before the platform kills the function |
+| One writer, check or screen call does not answer within `SUBAGENT_TIMEOUT_S` (240 s) | That window or batch is listed as failed; the run goes on | One stalled request no longer runs the whole run out of time before `submit` (#36) |
+| The run ends without `submit` | No output; the run page builds the file from the stored requirements | Every window is stored as it is written (#36) |
 | The function dies mid-run | Run stays `running`; after 60 s without a heartbeat the next "advance" marks it `failed` | Nothing is re-run automatically: an approved write could execute twice |
 | The agent is unreachable | Run stays `queued`; the page offers Send to agent | The run exists as a row whether or not the agent answered |
 | The model provider is down | Run `failed`; set `AGENT_MODEL=scripted` to keep the demo alive | The scripted model needs no network |

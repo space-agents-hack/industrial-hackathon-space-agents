@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     # dev case is about 25 windows, so 6 reads it in about 5 rounds. Higher hits the provider's
     # rate limit before it saves time on a Tier 2 Anthropic key (an estimate, not measured: #14).
     writer_concurrency: int = 6
+    # One writer, check or screen call that has not answered in this long is stopped and reported
+    # as failed (its window can be written again), so one stalled provider request no longer holds
+    # the whole run until RUN_TIMEOUT_S kills it before `submit` (#36). Under a third of the run's
+    # budget so a single stall leaves time to check and submit; above what a window takes when the
+    # provider is healthy (an estimate: per-window times are not measured yet, #14).
+    subagent_timeout_s: float = 240
 
     # Case ingestion (domain/case_ingest.py): the model that reads what the parsers cannot (a
     # scanned page, a drawing, a file a parser fails on). Small and cheap on purpose: it
