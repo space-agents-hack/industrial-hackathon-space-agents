@@ -10,7 +10,8 @@ Why the introduction and the transitional provisions too: two regulations of the
 cover the same function (a newer one that took over an older one's subject). Search ranks them
 side by side because their words are the same. Whether one replaces the other is written in
 their own text, so the screen reads it and reports it; the orchestrator decides with that
-evidence, and keeps both when there is none (SYS-44). Nothing here names a regulation or decides by one.
+evidence, and keeps both when there is none (SYS-44). Nothing here names a regulation or
+decides by one.
 
 What this does NOT do: decide. It returns verdicts with the sentence each rests on; the
 orchestrator chooses what to write, and search stays for what the scope does not say.
