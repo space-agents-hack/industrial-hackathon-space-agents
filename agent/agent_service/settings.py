@@ -41,11 +41,12 @@ class Settings(BaseSettings):
     stale_after_s: float = 60
 
     # The requirement writer (domain/writer.py). Per-window calls in flight at once (the
-    # one-stage writer, or the first stage of two). The dev case is about 25 windows: 10 reads it
-    # in 3 rounds. It was 6, and the first two-stage run on dev ran out of time (Clemente,
-    # 2026-10-25: "make it parallel"). Not measured against the provider's rate limit (#14); the
-    # sub-goal's reviewers already run 16 at once on the same keys.
-    writer_concurrency: int = 10
+    # one-stage writer, or the first stage of two). A dev run has 25 to 36 windows: 16 reads them
+    # in 2 or 3 rounds. It was 6, and the first two-stage run on dev ran out of time (Clemente,
+    # 2026-10-25: "make it parallel"). Not higher: the provider limits output tokens per minute,
+    # and past that limit more calls at once only buy 429s (retried, providers.py). Not measured
+    # against our key's limit (#14): set WRITER_CONCURRENCY to try more.
+    writer_concurrency: int = 16
     # "two": per window, one agent decides clause by clause what applies, and translators write
     # each obligation, ten at a time (domain/writer.py, #48). "one": a single writer per window
     # does both, as before. Set WRITER_STAGES=one to go back without a code change if a run gets
@@ -54,9 +55,9 @@ class Settings(BaseSettings):
     # Translator calls in flight at once, in their own lane beside the writer_concurrency lane of
     # the per-window calls. In one shared lane every window's first stage queued ahead of every
     # translation, so the translations ran in rounds after all of them, and the first two-stage
-    # run on dev (2026-10-25 00:5x CEST) ran out of time. 12 is what the check uses on the same
-    # keys; not measured against the provider's rate limit.
-    translate_concurrency: int = 12
+    # run on dev (2026-10-25 00:5x CEST) ran out of time. 24: about 840 drafts are 84 calls, so
+    # 3 to 4 rounds that overlap the first stage. Same rate-limit caveat as writer_concurrency.
+    translate_concurrency: int = 24
     # Time kept back from run_timeout_s: writers start no call, and a call in flight is cut, once
     # less than write_reserve_s is left, and check calls once less than check_reserve_s is left,
     # so a slow run still checks what it wrote and submits a file instead of dying mid-write.
@@ -64,10 +65,10 @@ class Settings(BaseSettings):
     # last turns and submit. Estimates: per-call times are not measured yet (#14).
     write_reserve_s: float = 240
     check_reserve_s: float = 90
-    # Check-agent calls in flight at once (domain/tools.py check_requirements). Higher than the
-    # writers': its calls are short, and 600 requirements are 40 of them. The sub-goal's reviewers
-    # run 16 at once on the same keys.
-    check_concurrency: int = 12
+    # Check-agent calls in flight at once (domain/tools.py check_requirements). As many as the
+    # writers': its calls are short, and 840 requirements are 56 of them, 4 rounds at 16. The
+    # sub-goal's reviewers run 16 at once on the same keys.
+    check_concurrency: int = 16
     # One writer, check or screen call that has not answered in this long is stopped and reported
     # as failed (its window can be written again), so one stalled provider request no longer holds
     # the whole run until RUN_TIMEOUT_S kills it before `submit` (#36). Under a third of the run's

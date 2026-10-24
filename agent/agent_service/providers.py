@@ -17,6 +17,7 @@ from typing import Any, Literal, Protocol, get_args
 from uuid import UUID
 
 import httpx
+from anthropic import AsyncAnthropic
 from genai_prices import Usage, calc_price
 from openai import AsyncOpenAI
 from pydantic_ai.models import Model
@@ -117,7 +118,11 @@ def build_model(name: str, api_key: str | None, endpoint: Endpoint | None = None
     # so a run behaves the same with the organisation's key as with the environment's.
     match provider:
         case "anthropic":
-            return AnthropicModel(model_name, provider=AnthropicProvider(api_key=api_key))
+            # Six retries, not the SDK's two: writers, translators and checks run dozens of calls
+            # at once on one key, and a 429 that is not retried loses its whole batch. The SDK
+            # waits as the provider's retry-after says; subagent_timeout_s still bounds a call.
+            client = AsyncAnthropic(api_key=api_key, max_retries=6)
+            return AnthropicModel(model_name, provider=AnthropicProvider(anthropic_client=client))
         case "openai":
             return OpenAIResponsesModel(model_name, provider=OpenAIProvider(api_key=api_key))
         case "openrouter":
