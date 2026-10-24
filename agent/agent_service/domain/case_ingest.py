@@ -28,12 +28,21 @@ from agent_service.store import RunStore
 
 log = logging.getLogger(__name__)
 
-# What the model is told. Transcribe, do not interpret: the requirements step does the thinking.
+# What the model is told. Describe, do not conclude: the requirements step decides what applies.
+# Why the drawing part: the first version asked only for labels, and an exploded view without
+# callouts came back nearly empty, so whatever only the drawing shows (a component inside, how
+# many of them) reached the requirements step as an image alone, which a model without vision or
+# a writer skimming 20 images does not read.
 _INSTRUCTIONS = """You transcribe engineering documents for a requirements engineer.
 Write down what the image or document shows, faithfully and completely: all text, numbers, units,
-part names, labels, callouts, table contents and title-block fields. For a drawing or exploded
-view, list every labelled part and what the labels say. Do not interpret, summarise away detail
-or add anything that is not shown. If something is unreadable, write [unreadable]."""
+part names, labels, callouts, table contents and title-block fields.
+For a drawing, an exploded view or a photo, also describe what is drawn, even where nothing is
+labelled: every distinct component you can see, how many of each, how they are arranged and
+which sits in front of, behind or inside which (for example several identical small parts in a
+row, a separate compartment, an opening in a cover, a connector or cable). Name a component by
+what it visibly is; when you are not sure, describe its shape and say that you are not sure.
+Do not add what is not shown: no materials, functions or regulations the image does not state.
+If something is unreadable, write [unreadable]."""
 
 # The model is given bytes it can read natively: images, and PDFs for providers that take them.
 _MODEL_READS = {
