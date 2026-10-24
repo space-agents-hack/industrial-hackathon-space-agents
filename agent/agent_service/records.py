@@ -100,3 +100,66 @@ class CaseFileBlock(BaseModel):
     image_path: str | None = None
     media_type: str | None = None
     parser: str
+
+
+class LibraryVersion(BaseModel):
+    """One version of a regulation in the organisation's library (regulation_versions), with the
+    regulation's code exactly as the index wrote it ("UN R148"): what a submission cites."""
+
+    id: UUID
+    regulation: str
+    title: str | None = None
+    version_label: str
+    role: str | None = None
+    page_count: int | None = None
+    paragraph_count: int | None = None
+    # What the version says it applies to, written once per version by the indexer
+    # (domain/regulation_search.py). None until the library was indexed.
+    scope_summary: str | None = None
+
+
+class Paragraph(BaseModel):
+    """A row of regulation_paragraphs, in document order (`position`)."""
+
+    id: UUID
+    version_id: UUID
+    position: int
+    label: str | None = None
+    heading: str = ""
+    kind: Literal["paragraph", "text"]
+    text: str
+    page_start: int
+    page_end: int
+    content_hash: str
+
+
+RequirementStatus = Literal["draft", "approved", "rejected"]
+
+
+class NewRequirement(BaseModel):
+    """What the writer adds (requirements). The citation fields are copied from the paragraph by
+    code (domain/writer.py `cite`), never written by a model."""
+
+    case_id: UUID
+    organization_id: UUID
+    run_id: UUID
+    ext_id: str
+    text: str
+    test_case: str | None = None
+    version_id: UUID
+    paragraph_id: UUID
+    paragraph_hash: str
+    regulation: str
+    version_label: str
+    page: int
+    paragraph: str | None = None
+
+
+class Requirement(NewRequirement):
+    id: UUID
+    # Null once the cited paragraph was re-extracted with different text (migration
+    # 20261024250000_requirements).
+    version_id: UUID | None = None  # pyright: ignore[reportIncompatibleVariableOverride]
+    paragraph_id: UUID | None = None  # pyright: ignore[reportIncompatibleVariableOverride]
+    status: RequirementStatus = "draft"
+    findings: list[dict[str, Any]] = []

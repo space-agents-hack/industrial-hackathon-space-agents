@@ -195,7 +195,7 @@ async def _execute(store: RunStore, settings: Settings, plan: Plan) -> RunStatus
         key, endpoint = await credentials(store, plan.run.organization_id, plan.config.model)
         model = build_model(plan.config.model, key, endpoint)
         async with asyncio.timeout(settings.run_timeout_s):
-            return await _run_agent(store, plan, model)
+            return await _run_agent(store, settings, plan, model)
     except TimeoutError:
         return await _fail(
             store, run_id, f"Ran out of time (limit {settings.run_timeout_s:.0f} s)."
@@ -210,7 +210,9 @@ async def _execute(store: RunStore, settings: Settings, plan: Plan) -> RunStatus
         return await _fail(store, run_id, scrub(f"{type(exc).__name__}: {exc}", key)[:2000])
 
 
-async def _run_agent(store: RunStore, plan: Plan, model: Model | str) -> RunStatus:
+async def _run_agent(
+    store: RunStore, settings: Settings, plan: Plan, model: Model | str
+) -> RunStatus:
     run_id = plan.run.id
     resumed_call_ids: set[str] = set()
     deferred_results: DeferredToolResults | None = None
@@ -264,7 +266,7 @@ async def _run_agent(store: RunStore, plan: Plan, model: Model | str) -> RunStat
         conversation=plan.conversation,
         deferred_tool_results=deferred_results,
         model=model,
-        deps=await domain.prepare_deps(store, plan.run.organization_id),
+        deps=await domain.prepare_deps(store, plan.run, settings),
         usage_limits=UsageLimits(request_limit=plan.config.max_model_requests),
         event_stream_handler=record,
     )

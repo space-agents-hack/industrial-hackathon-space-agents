@@ -316,7 +316,8 @@ function Instructions({ id, context }: { id: StepId; context: Context }) {
           </p>
           <ul className="list-disc pl-5">
             <li>
-              <Cmd>systems.py</Cmd>: calls to the real systems or data
+              <Cmd>writer.py</Cmd>, <Cmd>writer.md</Cmd>, <Cmd>check.md</Cmd>: the agents that write
+              and check requirements, and the code around them
             </li>
             <li>
               <Cmd>tools.py</Cmd>: what the model may call; mark every write{" "}

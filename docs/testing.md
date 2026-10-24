@@ -45,12 +45,15 @@ evals are for.
 
 ## Evals
 
-`make eval` runs `agent/evals/ecn_triage.py` with whatever `AGENT_MODEL` is set. That is still the
-template's example task: there is no eval of the requirement writer until #4 adds one, and until
-then the Certivity score (`score_local.py` on `dev-rear-lamp`) is the only measure of it. With `scripted`
-it is free and only proves the harness works (CI does this). With a real model it spends tokens and
-answers the real question. The checks read the tool calls the agent made, so pass or fail does not
-depend on a second model's opinion.
+`make eval` runs `agent/evals/requirements_writer.py` with whatever `AGENT_MODEL` is set, through
+the real runner on an in-memory store: a made-up rear-lamp case and a made-up library of two
+regulations (one applies, one does not). It checks that the regulation that applies is read and the
+other is not, that every obligation that applies is cited, that the export waits for approval, and
+that the file passes `validate.py`. With a real model it also checks that the obligation of another
+device (the front position lamp) is left out; the scripted model cannot judge that. With `scripted`
+it is free and proves the harness works (CI does this). The checks read what was stored and
+called, so pass or fail does not depend on a second model's opinion. The quality measure on real
+data is still the Certivity score (`score_local.py` on `dev-rear-lamp`, #14).
 
 There is no coverage percentage to hit. The two rules that are checked in review instead:
 

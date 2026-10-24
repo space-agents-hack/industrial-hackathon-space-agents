@@ -47,7 +47,7 @@ check-repo: ## Shell scripts, workflows, and the migration rules against origin/
 
 check-agent: ## Python: lint, format, types, tests, evals with the scripted model
 	cd agent && uv run ruff check . && uv run ruff format --check . && uv run pyright \
-		&& uv run pytest -q && uv run python -m evals.ecn_triage
+		&& uv run pytest -q && uv run python -m evals.requirements_writer
 
 check-web: ## Web: lint, types, tests, build
 	cd web && npm run lint && npm run typecheck && npm test && npm run build
@@ -77,7 +77,7 @@ types: ## Regenerate web/lib/database.types.ts after changing the schema
 	supabase gen types typescript $(if $(USES_LOCAL_DB),--local,--linked) | sed -e '$${/^$$/d;}' > web/lib/database.types.ts
 
 eval: ## Run the evals with AGENT_MODEL (a real model spends tokens)
-	cd agent && uv run python -m evals.ecn_triage
+	cd agent && uv run python -m evals.requirements_writer
 
 # Certivity's data is licensed for the hackathon only, so it goes to the database, not to git.
 # Writes to whatever agent/.env points at: the local stack, or the hosted project if you set it so.

@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 
 from agent_service.api import app, get_store
 from agent_service.domain import certivity, prepare_deps
-from agent_service.domain.tools import toolset
 from agent_service.settings import Settings, get_settings
 from tests.fakes import InMemoryRunStore
 
@@ -171,29 +170,29 @@ def test_without_the_reference_in_the_database_the_check_says_so() -> None:
 def test_the_agent_tool_never_sees_the_score(ref: certivity.Reference) -> None:
     # A model shown the dev score can tune its answer to the one case that has an answer key.
     assert certivity.check(json.dumps(_expected()), ref, with_score=False)["score"] is None
-    assert "certivity_check" in toolset.tools
-    assert not toolset.tools["certivity_check"].requires_approval
 
 
 @pytest.mark.anyio
-async def test_a_run_gets_the_reference_from_the_store(store: InMemoryRunStore) -> None:
+async def test_a_run_gets_the_reference_from_the_store(
+    store: InMemoryRunStore, settings: Settings
+) -> None:
     await store.replace_certivity_reference(certivity.read_package(PACKAGE))
     store.library[ORG] = _library()
-    deps = await prepare_deps(store, ORG)
+    deps = await prepare_deps(store, store.runs[store.add_run("Write.", org=ORG)], settings)
     assert "demo-lamp" in deps.reference.expected
     assert deps.reference.index == _library()
 
 
 @pytest.mark.anyio
-async def test_a_run_whose_store_cannot_read_the_reference_still_starts() -> None:
-    class Broken:
-        async def certivity_reference(self) -> list[dict[str, Any]]:
-            raise RuntimeError("relation does not exist")
+async def test_a_run_whose_store_cannot_read_the_reference_still_starts(
+    store: InMemoryRunStore, settings: Settings
+) -> None:
+    async def broken() -> list[dict[str, Any]]:
+        raise RuntimeError("relation does not exist")
 
-        async def regulation_index(self, organization_id: UUID) -> list[dict[str, Any]]:
-            return []
-
-    assert (await prepare_deps(Broken(), ORG)).reference is certivity.EMPTY
+    store.certivity_reference = broken  # type: ignore[method-assign]
+    run = store.runs[store.add_run("Write.")]
+    assert (await prepare_deps(store, run, settings)).reference is certivity.EMPTY
 
 
 @pytest.fixture

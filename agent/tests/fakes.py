@@ -1,10 +1,14 @@
 """An in-memory RunStore with the same behaviour as the Supabase one, including the conditional
 claim. tests/test_store_integration.py checks the real one against a local stack."""
 
+import hashlib
+import re
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+from agent_service.domain.regulation_search import Hit, ScopeSummary, VersionToSummarize
 from agent_service.providers import Endpoint
 from agent_service.records import (
     Approval,
@@ -13,7 +17,12 @@ from agent_service.records import (
     CaseFileBlock,
     CaseFileStatus,
     EventKind,
+    LibraryVersion,
+    NewRequirement,
     OrganizationSettings,
+    Paragraph,
+    Requirement,
+    RequirementStatus,
     Run,
     RunFile,
     RunStatus,
@@ -46,6 +55,14 @@ class InMemoryRunStore:
         self.objects: dict[str, bytes] = {}
         self.cases: dict[UUID, list[CaseFile]] = {}
         self.blocks: dict[UUID, list[CaseFileBlock]] = {}
+        self.case_names: dict[UUID, str] = {}
+        # Per case, the regulations its project chose; a case not here reads all of them.
+        self.case_choice: dict[UUID, set[str]] = {}
+        # The library as the writer reads it (regulation_versions); `library` above is the same
+        # library in index.json's shape, for tests that only need the checks.
+        self.versions: dict[UUID, list[LibraryVersion]] = {}
+        self.paragraphs: dict[UUID, list[Paragraph]] = {}
+        self.requirements: list[Requirement] = []
         self.closed = False
 
     # Helpers the tests use to play the web's part.
@@ -111,6 +128,59 @@ class InMemoryRunStore:
         )
         files.append(row)
         return row.id
+
+    def add_version(
+        self,
+        regulation: str,
+        version_label: str,
+        paragraphs: Sequence[tuple[str | None, str, int]],
+        *,
+        role: str | None = "base",
+        org: UUID = ORG,
+        heading: str = "",
+    ) -> UUID:
+        """What an import and its extraction leave in the library: a version and its paragraphs,
+        given as (label, text, page)."""
+        version_id = uuid4()
+        self.paragraphs[version_id] = [
+            Paragraph(
+                id=uuid4(),
+                version_id=version_id,
+                position=i,
+                label=label,
+                heading=heading,
+                kind="paragraph" if label else "text",
+                text=text,
+                page_start=page,
+                page_end=page,
+                content_hash=hashlib.sha256(text.encode()).hexdigest(),
+            )
+            for i, (label, text, page) in enumerate(paragraphs)
+        ]
+        self.versions.setdefault(org, []).append(
+            LibraryVersion(
+                id=version_id,
+                regulation=regulation,
+                title=f"{regulation} title",
+                version_label=version_label,
+                role=role,
+                page_count=max((p for _, _, p in paragraphs), default=0),
+                paragraph_count=len(paragraphs),
+            )
+        )
+        return version_id
+
+    def add_parsed_case(self, name: str, text: str, org: UUID = ORG) -> UUID:
+        """A case whose one file was uploaded and parsed: what a run on a case starts from."""
+        case_id = uuid4()
+        self.case_names[case_id] = name
+        file_id = self.add_case_file(case_id, "spec.md", "md", text.encode(), org)
+        files = self.cases[case_id]
+        files[-1] = files[-1].model_copy(update={"status": "parsed"})
+        self.blocks[file_id] = [
+            CaseFileBlock(file_id=file_id, seq=0, kind="text", text=text, parser="markdown")
+        ]
+        return case_id
 
     def case_file(self, file_id: UUID) -> CaseFile:
         return next(f for fs in self.cases.values() for f in fs if f.id == file_id)
@@ -219,7 +289,66 @@ class InMemoryRunStore:
         self.reference = list(rows)
 
     async def regulation_index(self, organization_id: UUID) -> list[dict[str, Any]]:
-        return list(self.library.get(organization_id, []))
+        derived: dict[str, list[dict[str, str]]] = {}
+        for v in self.versions.get(organization_id, []):
+            entry = {"version_label": v.version_label, "role": v.role or ""}
+            derived.setdefault(v.regulation, []).append(entry)
+        return list(self.library.get(organization_id, [])) + [
+            {"regulation": code, "versions": vs} for code, vs in sorted(derived.items())
+        ]
+
+    async def case_name(self, case_id: UUID) -> str | None:
+        return self.case_names.get(case_id)
+
+    async def case_regulations(self, case_id: UUID) -> set[str] | None:
+        return self.case_choice.get(case_id)
+
+    async def library_versions(self, org: UUID) -> list[LibraryVersion]:
+        return sorted(self.versions.get(org, []), key=lambda v: (v.regulation, v.version_label))
+
+    async def version_paragraphs(self, version_id: UUID) -> list[Paragraph]:
+        return list(self.paragraphs.get(version_id, []))
+
+    def search_store(self) -> "TextSearch":
+        return TextSearch(self)
+
+    async def add_requirements(self, rows: list[NewRequirement]) -> None:
+        taken = {(r.run_id, r.ext_id) for r in self.requirements}
+        for row in rows:
+            if (row.run_id, row.ext_id) in taken:
+                raise ValueError(f"duplicate key (run_id, ext_id) = {row.ext_id}")
+            taken.add((row.run_id, row.ext_id))
+        self.requirements += [Requirement(id=uuid4(), **r.model_dump()) for r in rows]
+
+    async def run_requirements(self, run_id: UUID) -> list[Requirement]:
+        rows = [r for r in self.requirements if r.run_id == run_id]
+        return sorted(rows, key=lambda r: int(r.ext_id.partition("-")[2]))
+
+    async def add_findings(self, run_id: UUID, findings: dict[str, list[dict[str, Any]]]) -> None:
+        self.requirements = [
+            r.model_copy(update={"findings": [*r.findings, *findings[r.ext_id]]})
+            if r.run_id == run_id and r.ext_id in findings
+            else r
+            for r in self.requirements
+        ]
+
+    async def set_requirement_status(
+        self,
+        run_id: UUID,
+        status: RequirementStatus,
+        *,
+        only_if: RequirementStatus,
+        ext_ids: list[str] | None = None,
+    ) -> int:
+        moved = 0
+        for i, r in enumerate(self.requirements):
+            if r.run_id != run_id or r.status != only_if:
+                continue
+            if ext_ids is not None and r.ext_id not in ext_ids:
+                continue
+            self.requirements[i] = r.model_copy(update={"status": status})
+            moved += 1
+        return moved
 
     async def set_status(
         self,
@@ -281,3 +410,135 @@ class InMemoryRunStore:
         self.runs[run_id] = self.runs[run_id].model_copy(
             update={"status": status, "updated_at": datetime.now(UTC)}
         )
+
+
+def seed_library(store: InMemoryRunStore, org: UUID = ORG) -> None:
+    """Two made-up regulations, small enough to read in a test: four obligations in all, one of
+    them in a paragraph the scripted check rejects (it calls itself obsolete)."""
+    store.add_version(
+        "UN R148",
+        "00",
+        [
+            ("1", "1. Scope. This Regulation applies to signalling lamps.", 1),
+            ("5.4.2", "5.4.2. The rear position lamp shall be visible from the rear.", 4),
+            ("5.4.3", "5.4.3. The luminous intensity shall not exceed 30 cd.", 4),
+            ("6.1", "6.1. This obsolete provision shall no longer be applied.", 20),
+        ],
+        org=org,
+        heading="5. General specifications",
+    )
+    store.add_version(
+        "UN R48",
+        "06",
+        [
+            ("2.7", "2.7. Definitions: a lamp is a device.", 2),
+            ("6.10.1", "6.10.1. Two rear position lamps must be fitted.", 30),
+        ],
+        org=org,
+    )
+    store.add_version(
+        "UN R48",
+        "07",
+        [("6.10.1", "6.10.1. Two or four lamps must be fitted.", 31)],
+        role="latest",
+        org=org,
+    )
+
+
+CASE_TEXT = "# Rear lamp\nA red LED rear position lamp for vehicles of category M1."
+TASK = "Write the requirements for this rear position lamp."
+
+
+def case_run(store: InMemoryRunStore, task: str = TASK, org: UUID = ORG) -> UUID:
+    """A queued run on a parsed case, with the made-up library: the normal way a run starts."""
+    seed_library(store, org)
+    case_id = store.add_parsed_case("dev-rear-lamp", CASE_TEXT, org)
+    return store.add_run(task, org=org, case_id=case_id)
+
+
+class TextSearch:
+    """The two calls the library search makes when it searches (regulation_search.search), over
+    the fake's paragraphs. Not PostgreSQL's ranking: a paragraph matches if it has any of the
+    query's words, and more occurrences rank higher. Enough to test what the agent does with
+    ranked hits; the SQL is tested in pgTAP (regulation_search_test.sql). No vectors: with no
+    embedding key the agent searches text only, which is what this answers."""
+
+    def __init__(self, store: InMemoryRunStore) -> None:
+        self.store = store
+        self.queries: list[str | None] = []
+
+    async def provider_key(self, org: UUID, provider: str) -> str | None:
+        return None
+
+    async def organization_model(self, org: UUID, process: str) -> str | None:
+        return await self.store.organization_model(org, process)
+
+    # The indexer's half of SearchStore; a run never indexes.
+    async def refresh_keys(self, org: UUID) -> int:
+        raise NotImplementedError
+
+    async def texts_to_embed(self, org: UUID, model: str, limit: int) -> list[tuple[str, str]]:
+        raise NotImplementedError
+
+    async def save_embeddings(
+        self, org: UUID, model: str, rows: list[tuple[str, list[float]]]
+    ) -> None:
+        raise NotImplementedError
+
+    async def prune_embeddings(self, org: UUID, model: str) -> int:
+        raise NotImplementedError
+
+    async def analyze(self) -> None:
+        raise NotImplementedError
+
+    async def versions_to_summarize(self, org: UUID) -> list[VersionToSummarize]:
+        raise NotImplementedError
+
+    async def download(self, path: str) -> bytes:
+        raise NotImplementedError
+
+    async def save_summary(
+        self, version_id: UUID, summary: ScopeSummary, model: str, sha256: str
+    ) -> None:
+        raise NotImplementedError
+
+    async def aclose(self) -> None:
+        pass
+
+    async def match(
+        self,
+        org: UUID,
+        query: str | None,
+        embedding: list[float] | None,
+        model: str,
+        version_ids: list[UUID] | None,
+        k: int,
+    ) -> list[Hit]:
+        self.queries.append(query)
+        words = {w.lower() for w in re.findall(r"\w+", query or "")}
+        hits: list[Hit] = []
+        for version in self.store.versions.get(org, []):
+            if version_ids is not None and version.id not in version_ids:
+                continue
+            for p in self.store.paragraphs.get(version.id, []):
+                haystack = f"{p.label or ''} {p.heading} {p.text}".lower()
+                score = sum(haystack.count(w) for w in words)
+                if score:
+                    hits.append(
+                        Hit(
+                            paragraph_id=p.id,
+                            version_id=version.id,
+                            regulation_code=version.regulation,
+                            version_label=version.version_label,
+                            role=version.role,
+                            label=p.label,
+                            heading=p.heading,
+                            kind=p.kind,
+                            text=p.text,
+                            page_start=p.page_start,
+                            page_end=p.page_end,
+                            score=float(score),
+                            text_rank=1,
+                        )
+                    )
+        return sorted(hits, key=lambda h: -h.score)[:k]

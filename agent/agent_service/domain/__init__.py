@@ -1,53 +1,75 @@
-"""The domain: what this agent is for. To point the template at a new problem, change the files
-in this folder (prompt.md, tools.py, systems.py, scripted.py) and nothing outside it."""
+"""The domain: what this agent is for. Here, writing the requirements a case must meet, each
+linked to the regulation paragraph it comes from (#4; docs/se SYS-25, SYS-28, SYS-29). The
+runner (agent_service/runner.py) knows only `agent`, `prepare_deps` and `resolve_model`.
+
+The files: prompt.md (the orchestrator), tools.py (its tools), writer.py with writer.md and
+check.md (the two sub-agents and the code around them), scripted.py (a model for tests and demos
+with no provider).
+"""
 
 import logging
 from pathlib import Path
-from typing import Any, Protocol
-from uuid import UUID
 
-from pydantic_ai import Agent, DeferredToolRequests
+from pydantic_ai import Agent, DeferredToolRequests, ToolOutput
 from pydantic_ai.models import Model
 
-from agent_service.domain import certivity
+from agent_service.domain import case_ingest, certivity
 from agent_service.domain.scripted import scripted_model
-from agent_service.domain.systems import Systems
-from agent_service.domain.tools import Deps, toolset
+from agent_service.domain.tools import Deps, submit, toolset
+from agent_service.records import Run
+from agent_service.settings import Settings
+from agent_service.store import RunStore
 
-__all__ = ["Deps", "agent", "new_deps", "prepare_deps", "resolve_model"]
+__all__ = ["Deps", "agent", "prepare_deps", "resolve_model"]
 
 log = logging.getLogger(__name__)
 
 # No model here: it is chosen per run from AGENT_MODEL, so switching provider is configuration.
-# `DeferredToolRequests` in the output type is what lets a run end early to wait for approval.
+# The run ends either with `submit` (the submission file, built by code from the stored rows; the
+# model never types the JSON) or early, with `DeferredToolRequests`, to wait for an approval.
 agent = Agent(
-    name="industrial-agent",
+    name="requirements-orchestrator",
     deps_type=Deps,
-    output_type=[str, DeferredToolRequests],
+    output_type=[ToolOutput(submit, name="submit"), DeferredToolRequests],
     instructions=(Path(__file__).parent / "prompt.md").read_text(),
     toolsets=[toolset],
 )
 
 
-def new_deps(reference: certivity.Reference = certivity.EMPTY) -> Deps:
-    return Deps(systems=Systems.from_fixture(), reference=reference)
-
-
-class _Store(Protocol):
-    async def certivity_reference(self) -> list[dict[str, Any]]: ...
-
-    async def regulation_index(self, organization_id: UUID) -> list[dict[str, Any]]: ...
-
-
-async def prepare_deps(store: _Store, organization_id: UUID) -> Deps:
-    """What a run's tools need from the database, read once when the run starts."""
+async def prepare_deps(store: RunStore, run: Run, settings: Settings) -> Deps:
+    """What a run's tools need from the database, read once when the request starts."""
     try:
-        reference = await certivity.load_reference(store, organization_id)
+        reference = await certivity.load_reference(store, run.organization_id)
     except Exception:
         # A run that cannot read the reference still runs: its checks say what was not checked.
         log.exception("could not read certivity_reference; checks run without it")
         reference = certivity.EMPTY
-    return new_deps(reference)
+    check_model: Model | str | None = None
+    check_secret: str | None = None
+    if name := await store.organization_model(run.organization_id, "check"):
+        # Imported here: providers imports this package (resolve_model).
+        from agent_service import providers
+
+        check_secret, endpoint = await providers.credentials(store, run.organization_id, name)
+        check_model = providers.build_model(name, check_secret, endpoint)
+    case_name, parts, chosen = "no-case", [], None
+    if run.case_id is not None:
+        case_name = await store.case_name(run.case_id) or str(run.case_id)
+        parts = (await case_ingest.case_content(store, run.case_id)).parts
+        chosen = await store.case_regulations(run.case_id)
+    return Deps(
+        store=store,
+        run=run,
+        case_name=case_name,
+        case_parts=parts,
+        team_id=settings.certivity_team_id,
+        settings=settings,
+        check_model=check_model,
+        check_secret=check_secret,
+        chosen=chosen,
+        reference=reference,
+        concurrency=settings.writer_concurrency,
+    )
 
 
 def resolve_model(name: str) -> Model | str:

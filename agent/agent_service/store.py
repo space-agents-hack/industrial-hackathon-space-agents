@@ -2,8 +2,9 @@
 tested against an in-memory fake (tests/fakes.py) and the Supabase version against a real local
 stack (tests/test_store_integration.py)."""
 
+import sys
 from datetime import UTC, datetime
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 from uuid import UUID
 
 from pydantic import TypeAdapter
@@ -18,16 +19,26 @@ from agent_service.records import (
     CaseFileBlock,
     CaseFileStatus,
     EventKind,
+    LibraryVersion,
+    NewRequirement,
     OrganizationSettings,
+    Paragraph,
+    Requirement,
+    RequirementStatus,
     Run,
     RunFile,
     RunStatus,
 )
 
+if TYPE_CHECKING:
+    from agent_service.domain.regulation_search import SearchStore
+
 _approvals = TypeAdapter(list[Approval])
 _files = TypeAdapter(list[RunFile])
 _case_files = TypeAdapter(list[CaseFile])
 _blocks = TypeAdapter(list[CaseFileBlock])
+_paragraphs = TypeAdapter(list[Paragraph])
+_requirements = TypeAdapter(list[Requirement])
 
 # The private bucket the browser uploads case files to (migration 20261024160000_case_files).
 CASE_FILES_BUCKET = "case-files"
@@ -98,6 +109,47 @@ class RunStore(Protocol):
 
     async def certivity_reference(self) -> list[dict[str, Any]]:
         """Certivity's reference files (index, answer files), one row each."""
+        ...
+
+    async def case_name(self, case_id: UUID) -> str | None: ...
+
+    async def case_regulations(self, case_id: UUID) -> set[str] | None:
+        """The regulation codes the case's project chose, or None when it reads all of them
+        (projects.all_regulations, the default)."""
+        ...
+
+    async def library_versions(self, org: UUID) -> list[LibraryVersion]:
+        """Every version in the organisation's regulation library, by regulation and label."""
+        ...
+
+    async def version_paragraphs(self, version_id: UUID) -> list[Paragraph]:
+        """A version's paragraphs in document order; empty if it was never extracted."""
+        ...
+
+    def search_store(self) -> "SearchStore":
+        """The library search (domain/regulation_search.py), on this store's connection."""
+        ...
+
+    async def add_requirements(self, rows: list[NewRequirement]) -> None: ...
+
+    async def run_requirements(self, run_id: UUID) -> list[Requirement]:
+        """The run's requirements by id ("R-001" first)."""
+        ...
+
+    async def add_findings(self, run_id: UUID, findings: dict[str, list[dict[str, Any]]]) -> None:
+        """Append the check's findings to the requirements they are about, by ext_id."""
+        ...
+
+    async def set_requirement_status(
+        self,
+        run_id: UUID,
+        status: RequirementStatus,
+        *,
+        only_if: RequirementStatus,
+        ext_ids: list[str] | None = None,
+    ) -> int:
+        """Move the run's requirements (all, or these) from `only_if` to `status`. Returns how
+        many moved."""
         ...
 
     async def replace_certivity_reference(self, rows: list[dict[str, Any]]) -> None: ...
@@ -362,6 +414,155 @@ class SupabaseRunStore:
             for r in cast(list[dict[str, Any]], res.data)
         ]
 
+    async def case_name(self, case_id: UUID) -> str | None:
+        res = await self._db.table("cases").select("name").eq("id", str(case_id)).limit(1).execute()
+        rows = cast(list[dict[str, Any]], res.data)
+        return rows[0]["name"] if rows else None
+
+    async def case_regulations(self, case_id: UUID) -> set[str] | None:
+        res = (
+            await self._db.table("cases")
+            .select("projects!inner(id, all_regulations)")
+            .eq("id", str(case_id))
+            .limit(1)
+            .execute()
+        )
+        rows = cast(list[dict[str, Any]], res.data)
+        if not rows or rows[0]["projects"]["all_regulations"]:
+            return None
+        chosen = (
+            await self._db.table("project_regulations")
+            .select("regulations!inner(code)")
+            .eq("project_id", rows[0]["projects"]["id"])
+            .execute()
+        )
+        return {r["regulations"]["code"] for r in cast(list[dict[str, Any]], chosen.data)}
+
+    async def library_versions(self, org: UUID) -> list[LibraryVersion]:
+        found: list[LibraryVersion] = []
+        offset = 0
+        while True:
+            res = (
+                await self._db.table("regulation_versions")
+                .select(
+                    "id, version_label, role, page_count, paragraph_count, scope_summary,"
+                    " regulations!inner(code, title)"
+                )
+                .eq("organization_id", str(org))
+                .order("id")
+                .range(offset, offset + _PAGE - 1)
+                .execute()
+            )
+            page = cast(list[dict[str, Any]], res.data)
+            found += [
+                LibraryVersion(
+                    id=r["id"],
+                    regulation=r["regulations"]["code"],
+                    title=r["regulations"]["title"],
+                    version_label=r["version_label"],
+                    role=r["role"],
+                    page_count=r["page_count"],
+                    paragraph_count=r["paragraph_count"],
+                    scope_summary=r.get("scope_summary"),
+                )
+                for r in page
+            ]
+            if len(page) < _PAGE:
+                return sorted(found, key=lambda v: (v.regulation, v.version_label))
+            offset += _PAGE
+
+    async def version_paragraphs(self, version_id: UUID) -> list[Paragraph]:
+        # A large regulation (R48) has a few thousand paragraphs: several pages of _PAGE.
+        found: list[Paragraph] = []
+        offset = 0
+        while True:
+            res = (
+                await self._db.table("regulation_paragraphs")
+                .select(
+                    "id, version_id, position, label, heading, kind, text, page_start, page_end,"
+                    " content_hash"
+                )
+                .eq("version_id", str(version_id))
+                .order("position")
+                .range(offset, offset + _PAGE - 1)
+                .execute()
+            )
+            page = _paragraphs.validate_python(res.data)
+            found += page
+            if len(page) < _PAGE:
+                return found
+            offset += _PAGE
+
+    def search_store(self) -> "SearchStore":
+        # Imported here: the domain package imports this module, so a top-level import would be
+        # circular.
+        from agent_service.domain.search_store import SupabaseSearchStore
+
+        return SupabaseSearchStore(self._db)
+
+    async def add_requirements(self, rows: list[NewRequirement]) -> None:
+        payload = [r.model_dump(mode="json") for r in rows]
+        for start in range(0, len(payload), _PAGE):
+            await self._db.table("requirements").insert(payload[start : start + _PAGE]).execute()
+
+    async def run_requirements(self, run_id: UUID) -> list[Requirement]:
+        found: list[Requirement] = []
+        offset = 0
+        while True:
+            res = (
+                await self._db.table("requirements")
+                .select(
+                    "id, case_id, organization_id, run_id, ext_id, text, test_case, version_id,"
+                    " paragraph_id, paragraph_hash, regulation, version_label, page, paragraph,"
+                    " status, findings"
+                )
+                .eq("run_id", str(run_id))
+                .order("id")
+                .range(offset, offset + _PAGE - 1)
+                .execute()
+            )
+            page = _requirements.validate_python(res.data)
+            found += page
+            if len(page) < _PAGE:
+                return sorted(found, key=lambda r: _ext_number(r.ext_id))
+            offset += _PAGE
+
+    async def add_findings(self, run_id: UUID, findings: dict[str, list[dict[str, Any]]]) -> None:
+        # Read, then write each row that has news: the check flags a handful of rows, and
+        # PostgREST cannot append to a jsonb array in place without a function.
+        stored = {r.ext_id: r for r in await self.run_requirements(run_id)}
+        for ext_id, new in findings.items():
+            row = stored.get(ext_id)
+            if row is None or not new:
+                continue
+            await (
+                self._db.table("requirements")
+                .update({"findings": [*row.findings, *new]})
+                .eq("id", str(row.id))
+                .execute()
+            )
+
+    async def set_requirement_status(
+        self,
+        run_id: UUID,
+        status: RequirementStatus,
+        *,
+        only_if: RequirementStatus,
+        ext_ids: list[str] | None = None,
+    ) -> int:
+        if ext_ids is not None and not ext_ids:
+            return 0
+        query = (
+            self._db.table("requirements")
+            .update({"status": status})
+            .eq("run_id", str(run_id))
+            .eq("status", only_if)
+        )
+        if ext_ids is not None:
+            query = query.in_("ext_id", ext_ids)
+        res = await query.execute()
+        return len(res.data)
+
     async def replace_certivity_reference(self, rows: list[dict[str, Any]]) -> None:
         # Upsert first, then delete what the new package no longer has: between the two, a check
         # sees the new files plus at worst a stale one, never an empty table.
@@ -513,3 +714,9 @@ class SupabaseRunStore:
         await self._db.postgrest.aclose()
         # Auth has its own connection pool (used by create_user and set_password).
         await self._db.auth.close()
+
+
+def _ext_number(ext_id: str) -> tuple[int, str]:
+    # "R-010" after "R-009": the number orders them, not the string.
+    head, _, number = ext_id.partition("-")
+    return (int(number), head) if number.isdigit() else (sys.maxsize, ext_id)

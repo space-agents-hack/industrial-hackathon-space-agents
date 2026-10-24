@@ -8,6 +8,8 @@ Each test makes its own organisation, so nothing here reads or changes the stack
 or the keys a developer may have connected to it.
 """
 
+import hashlib
+import json
 import os
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
@@ -20,7 +22,7 @@ from supabase import AsyncClient, acreate_client
 
 from agent_service import runner
 from agent_service.providers import Endpoint
-from agent_service.records import CaseFileBlock, OrganizationSettings
+from agent_service.records import CaseFileBlock, NewRequirement, OrganizationSettings
 from agent_service.settings import Settings
 from agent_service.store import SupabaseRunStore
 
@@ -103,10 +105,85 @@ async def insert_run(db: AsyncClient, org: str, user_id: str, **fields: Any) -> 
     return UUID(rows(await db.table("runs").insert(row).execute())[0]["id"])
 
 
+async def seed_case(db: AsyncClient, org: str) -> str:
+    """A case with no files, and a regulation in the organisation's library with two
+    obligations, written the way an import and its extraction write them."""
+    project = rows(
+        await db.table("projects").insert({"organization_id": org, "name": "Lamps"}).execute()
+    )[0]["id"]
+    case = rows(
+        await db.table("cases")
+        .insert({"project_id": project, "organization_id": org, "name": "dev-rear-lamp"})
+        .execute()
+    )[0]["id"]
+    version = (
+        await db.rpc(
+            "record_regulation_version",
+            {
+                "p_organization_id": org,
+                "p_import_id": None,
+                "p_code": "UN R148",
+                "p_slug": "UN_R148",
+                "p_kind": "UN R",
+                "p_title": "Signalling lamps",
+                "p_source_url": None,
+                "p_version_label": "00",
+                "p_role": "base",
+                "p_status": None,
+                "p_version_title": None,
+                "p_file_name": "UN_R148.pdf",
+                "p_sha256": "a" * 64,
+                "p_size_bytes": 1000,
+                "p_pdf_path": f"{org}/UN_R148/00/UN_R148_00.pdf",
+            },
+        ).execute()
+    ).data
+    await replace_paragraphs(
+        db,
+        str(version),
+        [
+            ("5.4.2", "5.4.2. The rear position lamp shall be visible from the rear.", 4),
+            ("5.4.3", "5.4.3. The intensity of the position lamp shall not exceed 30 cd.", 5),
+        ],
+    )
+    return case
+
+
+async def replace_paragraphs(
+    db: AsyncClient, version_id: str, paragraphs: list[tuple[str, str, int]]
+) -> None:
+    await db.rpc(
+        "replace_regulation_paragraphs",
+        {
+            "p_version_id": version_id,
+            "p_sha256": "a" * 64,
+            "p_extracted_with": "test",
+            "p_page_count": 10,
+            "p_paragraphs": [
+                {
+                    "position": i,
+                    "label": label,
+                    "number": label,
+                    "kind": "paragraph",
+                    "heading": "5. General specifications",
+                    "text": text,
+                    "page_start": page,
+                    "page_end": page,
+                    "content_hash": hashlib.sha256(text.encode()).hexdigest(),
+                }
+                for i, (label, text, page) in enumerate(paragraphs)
+            ],
+        },
+    ).execute()
+
+
 async def test_pause_and_resume_through_the_real_schema(
     db: AsyncClient, store: SupabaseRunStore, org: str, user_id: str, settings: Settings
 ) -> None:
-    run_id = await insert_run(db, org, user_id)
+    case = await seed_case(db, org)
+    run_id = await insert_run(
+        db, org, user_id, case_id=case, task="Write the requirements for this rear position lamp."
+    )
 
     plan = await runner.prepare(store, settings, run_id)
     assert await runner.execute(store, settings, plan) == "awaiting_approval"
@@ -117,7 +194,7 @@ async def test_pause_and_resume_through_the_real_schema(
 
     [approval] = await store.list_approvals(run_id)
     assert approval.status == "pending"
-    assert approval.tool_name == "plm_set_ecn_status"
+    assert approval.tool_name == "export_requirements"
     assert await store.load_conversation(run_id) is not None
 
     await (
@@ -132,9 +209,16 @@ async def test_pause_and_resume_through_the_real_schema(
 
     run = rows(await db.table("runs").select("*").eq("id", str(run_id)).execute())[0]
     assert run["status"] == "succeeded"
-    assert "now on hold" in run["output"]
+    submitted = json.loads(run["output"])
+    assert submitted["case_id"] == "dev-rear-lamp"
+    assert [r["source"]["paragraph"] for r in submitted["requirements"]] == ["5.4.2", "5.4.3"]
     assert run["model"] == "scripted"
-    assert run["usage"]["requests"] == 5
+    # list, search, write, check, export; then submit. The writers and the check do not count.
+    assert run["usage"]["requests"] == 6
+    stored = rows(
+        await db.table("requirements").select("status").eq("run_id", str(run_id)).execute()
+    )
+    assert [r["status"] for r in stored] == ["approved", "approved"]
 
     events = rows(
         await db.table("run_events").select("kind").eq("run_id", str(run_id)).order("id").execute()
@@ -432,3 +516,90 @@ async def test_regulation_index_is_read_from_the_organisations_library(
         ("1.0.0", "base"),
     ]
     assert await store.regulation_index(uuid4()) == []
+
+
+async def test_requirements_and_the_library_through_the_real_schema(
+    db: AsyncClient, store: SupabaseRunStore, org: str, user_id: str
+) -> None:
+    case = await seed_case(db, org)
+    run_id = await insert_run(db, org, user_id, case_id=case)
+
+    [version] = await store.library_versions(UUID(org))
+    assert (version.regulation, version.version_label, version.role) == ("UN R148", "00", "base")
+
+    # A project reads the whole library until it chooses (SYS-32).
+    assert await store.case_regulations(UUID(case)) is None
+    project = rows(await db.table("cases").select("project_id").eq("id", case).execute())[0]
+    reg = rows(await db.table("regulations").select("id").eq("organization_id", org).execute())[0]
+    await (
+        db.table("projects")
+        .update({"all_regulations": False})
+        .eq("id", project["project_id"])
+        .execute()
+    )
+    assert await store.case_regulations(UUID(case)) == set()
+    await (
+        db.table("project_regulations")
+        .insert(
+            {
+                "project_id": project["project_id"],
+                "regulation_id": reg["id"],
+                "organization_id": org,
+            }
+        )
+        .execute()
+    )
+    assert await store.case_regulations(UUID(case)) == {"UN R148"}
+    first, second = await store.version_paragraphs(version.id)
+    assert (first.label, second.label) == ("5.4.2", "5.4.3")
+
+    hits = await store.search_store().match(
+        UUID(org), "intensity visible", None, "none", [version.id], 5
+    )
+    assert {h.label for h in hits} == {"5.4.2", "5.4.3"}
+
+    new = [
+        NewRequirement(
+            case_id=UUID(case),
+            organization_id=UUID(org),
+            run_id=run_id,
+            ext_id=f"R-{n:03d}",
+            text=f"The lamp shall meet {p.label}.",
+            version_id=version.id,
+            paragraph_id=p.id,
+            paragraph_hash=p.content_hash,
+            regulation="UN R148",
+            version_label="00",
+            page=p.page_start,
+            paragraph=p.label,
+        )
+        for n, p in [(10, second), (9, first)]
+    ]
+    await store.add_requirements(new)
+    assert [r.ext_id for r in await store.run_requirements(run_id)] == ["R-009", "R-010"]
+
+    await store.add_findings(run_id, {"R-009": [{"by": "code", "problem": "x", "action": "keep"}]})
+    await store.add_findings(run_id, {"R-009": [{"by": "check", "problem": "y", "action": "keep"}]})
+    nine, _ = await store.run_requirements(run_id)
+    assert [f["problem"] for f in nine.findings] == ["x", "y"]
+
+    assert (
+        await store.set_requirement_status(run_id, "rejected", only_if="draft", ext_ids=["R-010"])
+        == 1
+    )
+    assert await store.set_requirement_status(run_id, "approved", only_if="draft") == 1
+    assert [r.status for r in await store.run_requirements(run_id)] == ["approved", "rejected"]
+
+    # The splitter improves: 5.4.2 comes back word for word, 5.4.3 changes.
+    await replace_paragraphs(
+        db,
+        str(version.id),
+        [
+            ("5.4.2", "5.4.2. The rear position lamp shall be visible from the rear.", 4),
+            ("5.4.3", "5.4.3. The luminous intensity shall not exceed 30 cd.", 5),
+        ],
+    )
+    nine, ten = await store.run_requirements(run_id)
+    [again, _] = await store.version_paragraphs(version.id)
+    assert nine.paragraph_id == again.id != first.id
+    assert ten.paragraph_id is None and ten.paragraph == "5.4.3"

@@ -11,7 +11,7 @@ from agent_service import api, providers
 from agent_service.api import app, get_http, get_store
 from agent_service.records import OrganizationSettings
 from agent_service.settings import Settings, get_settings
-from tests.fakes import ORG, InMemoryRunStore
+from tests.fakes import ORG, InMemoryRunStore, case_run
 
 AUTH = {"Authorization": "Bearer test-secret"}
 KEY = "sk-test-0123456789abcdef-SECRET"
@@ -54,7 +54,7 @@ def test_advance_of_a_malformed_id_is_422(client: TestClient) -> None:
 
 
 def test_advance_streams_accepted_then_done(client: TestClient, store: InMemoryRunStore) -> None:
-    run_id = store.add_run("Triage ECN-1001.")
+    run_id = case_run(store)
 
     response = client.post(f"/runs/{run_id}/advance", headers=AUTH)
 
@@ -70,7 +70,7 @@ def test_advance_streams_accepted_then_done(client: TestClient, store: InMemoryR
 def test_advance_of_a_run_waiting_for_a_person_is_409(
     client: TestClient, store: InMemoryRunStore
 ) -> None:
-    run_id = store.add_run("Triage ECN-1001.")
+    run_id = case_run(store)
     client.post(f"/runs/{run_id}/advance", headers=AUTH)
 
     response = client.post(f"/runs/{run_id}/advance", headers=AUTH)

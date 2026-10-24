@@ -112,7 +112,7 @@ jobs:
       # The scripted model, so this is free and offline. It proves the eval harness still runs;
       # evaluating a real model is a manual step (`make eval`).
       - name: Evals (scripted model)
-        run: uv run python -m evals.ecn_triage
+        run: uv run python -m evals.requirements_writer
 
   web:
     name: Check web (Next.js)

@@ -3,11 +3,10 @@
 The decisions and their reasons are in `docs/adr/`. This page is the map. What the product must do
 is in `docs/se/`; the data model for cases, regulations and requirements is ADR-0006.
 
-**Where it stands on `main` (2026-10-24):** case upload, the regulation library import, Certivity's
-checks and the sub-goal CLI exist. The agent that writes the requirements does not yet (#4): until
-it lands, `domain/prompt.md` and the tools are still the template's example (engineering change
-notices against mock PLM, CAD and ERP systems), and a run started with case files gets that
-instruction.
+**Where it stands on `main` (2026-10-24):** case upload, the regulation library import with
+paragraphs, Certivity's checks, the sub-goal, and the requirement writer (#4) exist. The writer has
+run only with the scripted model so far; its first timed run on the dev case with a real model is
+#14.
 
 ## The pieces
 
@@ -20,7 +19,6 @@ flowchart LR
   W -->|"POST /runs/{id}/advance, /checks + shared secret"| A[agent/ FastAPI on Vercel]
   A -->|runs, events, approvals, saved conversation, regulation library, with the secret key| D
   A -->|reads case files, stores regulation PDFs| F
-  A -->|tool calls| S[Mock company systems, template example]
   A -->|model calls| M[Model provider chosen by AGENT_MODEL, or the organisation's Ollama server]
 ```
 
@@ -67,20 +65,30 @@ row to `audit_events`.
 2. The agent claims the run (`queued` to `running`, in one conditional update so two requests
    cannot both get it) and starts the loop. Every model message and tool call becomes a
    `run_events` row as it happens. The browser shows them live.
-3. The model calls a tool marked `requires_approval`. The library stops the run before the tool
+3. On a case, the orchestrator (`domain/prompt.md`) reads the library's scope summaries and
+   searches it (`domain/regulation_search.py`: by meaning where embeddings exist, by words
+   otherwise), then has writers read each chosen regulation in windows of about 15 pages, in
+   parallel. Each writer stores a `draft` row in `requirements` per obligation, citing one
+   paragraph; code copies the citation from the paragraph row (`domain/writer.py`). A check agent
+   reads each requirement next to its paragraph, and code lists the "shall" paragraphs nobody
+   cited. The orchestrator rejects or fills in, then asks for the export: a tool marked
+   `requires_approval` (`export_requirements`). The library stops the run before the tool
    executes. The agent saves the conversation to `run_state`, inserts an `approvals` row, sets the
    run to `awaiting_approval`, and the request ends. Nothing is running now.
 4. A person approves or denies in the web. The web records the decision as that user and calls
    "advance" again.
 5. The agent loads the conversation, hands the decision to the library, and the loop continues:
    the tool runs if approved, or the model is told it was denied.
-6. The run ends as `succeeded` with an output, or `failed` with an error.
+6. The run ends as `succeeded` with an output, or `failed` with an error. For a requirement run
+   the output is Certivity's submission file, built by code from the run's rows that were not
+   rejected (approved, or still draft if the export was denied).
 
 ## Where things live
 
 | To change | Edit |
 |---|---|
-| What the agent is for: prompt, tools, mock systems | `agent/agent_service/domain/` |
+| What the agent is for: prompts, tools, the writer and the check | `agent/agent_service/domain/` |
+| A run's requirements and what they cite | table `requirements` (`20261024250000_requirements.sql`) |
 | Which model runs it | `AGENT_MODEL` and the provider's key; no code |
 | Certivity's validate and score (copied, never edited) | `scripts/sync-certivity.sh`, then `agent/certivity/` |
 | Certivity's reference data (index, answer files) | Reloaded on every release; `make certivity-load` locally; table `certivity_reference` |

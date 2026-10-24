@@ -14,12 +14,12 @@ from agent_service import providers, runner
 from agent_service.providers import Endpoint
 from agent_service.records import OrganizationSettings
 from agent_service.settings import RunSettings, Settings, effective
-from tests.fakes import ORG, InMemoryRunStore
+from tests.fakes import ORG, InMemoryRunStore, case_run
 
 pytestmark = pytest.mark.anyio
 
-COLLIDING = "Triage ECN-1001 and put it on hold if anything collides."
-HARMLESS = "Triage ECN-1002."
+# Ends without an approval: no library, so nothing to write.
+HARMLESS = "Write the requirements."
 ORG_KEY = "sk-org-0123456789abcdef-SECRET"
 
 
@@ -51,7 +51,7 @@ def test_a_cap_of_zero_is_kept_not_mistaken_for_unset(settings: Settings) -> Non
 
 async def test_the_organisation_request_limit_reaches_the_run(store, settings) -> None:
     store.settings[ORG] = OrganizationSettings(max_model_requests=2)
-    run_id = store.add_run(COLLIDING)
+    run_id = case_run(store)
 
     assert await advance(store, settings, run_id) == "failed"
     assert "usage limit" in (store.errors[run_id] or "")
@@ -70,7 +70,7 @@ async def test_another_organisations_settings_do_not_apply(store, settings) -> N
 async def test_a_new_run_past_the_cap_fails_before_any_model_call(store, settings) -> None:
     settings.monthly_cost_cap_usd = 10
     store.spent[ORG] = 10.5
-    run_id = store.add_run(COLLIDING)
+    run_id = case_run(store)
 
     with pytest.raises(runner.CannotAdvance) as refused:
         await runner.prepare(store, settings, run_id)
@@ -121,14 +121,14 @@ async def test_another_organisations_spending_does_not_count(store, settings) ->
 
 async def test_an_approved_run_resumes_even_past_the_cap(store, settings) -> None:
     settings.monthly_cost_cap_usd = 10
-    run_id = store.add_run(COLLIDING)
+    run_id = case_run(store)
     assert await advance(store, settings, run_id) == "awaiting_approval"
     # Other runs spent the rest of the month's budget while this one waited for a person.
     store.spent[ORG] = 12
     store.decide(run_id, "approved")
 
     assert await advance(store, settings, run_id) == "succeeded"
-    assert "now on hold" in (store.outputs[run_id] or "")
+    assert {r.status for r in await store.run_requirements(run_id)} == {"approved", "rejected"}
 
 
 # The organisation's own key.
