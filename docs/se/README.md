@@ -26,11 +26,12 @@ Certivity's output requirements are numbered R-001 and up.
 The requirements, tables, routes and code use the left column; the web shows the right one
 (Clemente, 2026-10-24 21:13). Requirements keep the old words so that ids, tables and tests stay
 searchable. Same-name risk: "case" also means Certivity's case (`dev-rear-lamp`, `subgoal-dev`),
-which is what a Part holds.
+which is what a Part holds. A sub-goal case is a different workflow, though a similar one (Clemente, 2026-10-24 21:25): it is shown under Review requirements, not among the Parts.
 
 | In docs and code | On screen |
 |---|---|
-| case | Part |
+| case of kind `main` | Part |
+| case of kind `subgoal` | an item under Review requirements, never a Part |
 | run | Draft requirements |
 | changes (sub-goal, SYS-19, SYS-45) | Review requirements |
 | regulations | Regulations; "Add regulations" proposed, not decided |
