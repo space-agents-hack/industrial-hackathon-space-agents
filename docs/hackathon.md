@@ -57,19 +57,48 @@ Only then start on the challenge.
 - When the prompt or a tool description changes, run `make eval` with the real model and add a
   case for whatever went wrong.
 
-## The freeze (our plan)
+## Sunday: the held-out upload, then the demo
 
-Code freeze is Sunday 15:00 *(organisers)*. Ours is earlier, on purpose:
+Two deadlines, and the first one decides 40% of the grade:
+
+- **Certivity uploads close at 13:00** (brief, section 08). Held-out inputs arrive at 08:00.
+- For the held-out case **the last valid upload counts, not the best**. An upload at 12:55 that
+  scores worse than the one at 11:00 replaces it. 5 valid uploads per hour per challenge.
+- Organisers' code freeze is 15:00; finalists pitch from 15:00.
+
+### Held-out upload procedure
+
+One person holds the uploads for the whole morning (owner: `UNASSIGNED`, Clemente and Ramón to
+decide). Nobody else uploads to the held-out case. Every upload is logged on issue #7: time,
+file sha256, commit, model, and the platform's scores once they appear.
 
 | When, Sunday | What |
 |---|---|
-| 12:00 | Feature freeze. From here only fixes and the demo |
+| 08:00 | Held-out released: `git pull` in the Certivity repo, `fetch_regulations.py` again |
+| by 08:45 | First valid held-out upload with whatever the pipeline produces. A floor, in case all else fails |
+| 08:45 to 11:00 | Improve and upload. Keep every uploaded file with its score; mark the best |
+| 11:00 | **Pipeline freeze.** No more changes to code or prompts that generate the submission |
+| 11:30 | Last improvement upload |
+| 12:00 | Scores for all uploads are in (they are computed in the background, not instantly). Pick the best file by platform score |
+| by 12:15 | **Final upload.** If the last upload is not the best, re-upload the best file unchanged. Check it was accepted |
+| 12:15 to 13:00 | Nobody uploads to the held-out case. The margin is for a slow platform or a rejected file, not for one more try |
+
+Why so early: if the final upload were at 12:50 and its score arrived worse, there would be no
+time to put the best file back, and the worse file would count.
+
+Assumption, not checked: dev-case uploads use the same hourly quota as held-out uploads of the
+same challenge. If so, do not upload the dev case on Sunday morning. Ask Certivity on Saturday.
+
+### Demo freeze
+
+| When, Sunday | What |
+|---|---|
 | 13:00 | Full run-through of the demo on production, timed, with the real model |
 | 14:00 | Last push. After this nobody pushes without both of us agreeing |
 | 14:30 | Decide: real model or `AGENT_MODEL=scripted` for the stage |
 
 `AGENT_MODEL=scripted` plays a fixed run with no network. It only helps if `scripted.py` was
-rewritten for our challenge, so do that before the feature freeze. Say on stage that it is a
+rewritten for our challenge, so do that before the pipeline freeze. Say on stage that it is a
 recorded path if we use it.
 
 ## The demo

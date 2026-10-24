@@ -155,7 +155,7 @@ First confirmed on 2026-10-14 with hackathon-prep (Vercel Pro, Supabase in Frank
 
 - `scripts/bootstrap.sh`, driven by an earlier version of the local form, connected a fresh
   repository end to end. Creating the Supabase project and Connect GitHub are not yet proven on a
-  real run (TODO.md).
+  real run (issue #10, template backlog).
 - Migrations applied by the workflow; Vercel builds `agent/` from `uv.lock` as FastAPI on Python
   3.13; the web deploys prebuilt; both smoke tests pass; both are promoted.
 - Production: the web redirects signed-out visitors to `/login`, the setup endpoints are closed,
