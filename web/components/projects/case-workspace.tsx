@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { type DragEvent, useEffect, useState } from "react";
 
 import { FilePickerButton } from "@/components/file-picker-button";
 import { runBlockers } from "@/lib/run-readiness";
@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ACCEPT, CASE_FILES_BUCKET, MAX_FILES, describeSize, isSettled, refusal } from "@/lib/case-files";
 import { parseCase, removeCaseFile, startCaseRun, uploadCaseFiles } from "@/lib/case-upload";
 import { type CaseBlockView, type CaseFileView, describeParser, fetchCaseBlocks } from "@/lib/cases";
+import { type CaseKind, type EntryLike, SUBGOAL_ACCEPT, filesInEntries, screenSubgoalFiles } from "@/lib/subgoal";
 import { createClient } from "@/lib/supabase/client";
 import { MODEL_PATTERN, TASK_MAX_LENGTH } from "@/lib/validation";
 
@@ -19,9 +20,13 @@ import { MODEL_PATTERN, TASK_MAX_LENGTH } from "@/lib/validation";
 // run, what the parser or model read from each, and Find requirements. Adding files and running
 // are separate on purpose: a case is put together once and run many times (another model, a new
 // prompt), and before this page every upload cost a run.
+//
+// A sub-goal case (#42) is the same page with another job: its files are Certivity's subgoal
+// folder, dropped or chosen whole, and its run writes the changes file.
 export function CaseWorkspace({
   organizationId,
   caseId,
+  kind,
   initialFiles,
   canEdit,
   writerModel,
@@ -29,6 +34,7 @@ export function CaseWorkspace({
 }: {
   organizationId: string;
   caseId: string;
+  kind: CaseKind;
   initialFiles: CaseFileView[];
   canEdit: boolean;
   // What a run uses when no other model is asked for: the organisation's, else the deployment's.
@@ -44,16 +50,27 @@ export function CaseWorkspace({
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  // Answer keys held back from a sub-goal upload: said apart from errors, since nothing went wrong.
+  const [heldBack, setHeldBack] = useState<string[]>([]);
+  const [dragging, setDragging] = useState(false);
   const busy = pending !== null;
+  const subgoal = kind === "subgoal";
 
   // Picking is adding: the files go up and are read at once, with no second button to press.
-  async function addFiles(list: FileList) {
-    const chosen: File[] = [];
+  async function addFiles(list: FileList | File[]) {
+    let chosen: File[] = [];
     const problems: string[] = [];
-    for (const file of Array.from(list)) {
-      const reason = refusal(file);
-      if (reason) problems.push(reason);
-      else chosen.push(file);
+    if (subgoal) {
+      const screened = await screenSubgoalFiles(Array.from(list));
+      chosen = screened.keep;
+      problems.push(...screened.problems);
+      setHeldBack(screened.answerKeys);
+    } else {
+      for (const file of Array.from(list)) {
+        const reason = refusal(file);
+        if (reason) problems.push(reason);
+        else chosen.push(file);
+      }
     }
     if (chosen.length > MAX_FILES) problems.push(`At most ${MAX_FILES} files at a time; the first ${MAX_FILES} are added.`);
     setError(problems.length ? problems.join(" ") : null);
@@ -69,6 +86,53 @@ export function CaseWorkspace({
       setPending(null);
     }
   }
+
+  // A dropped folder arrives as entries, not files. They have to be taken during the drop event:
+  // the browser empties the DataTransfer as soon as the handler returns, so the walk comes after.
+  function drop(event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+    setDragging(false);
+    if (busy) return;
+    const items = Array.from(event.dataTransfer.items);
+    const entries = items.flatMap((item) => {
+      const entry = item.kind === "file" ? item.webkitGetAsEntry?.() : null;
+      return entry ? [entry as EntryLike] : [];
+    });
+    // Without entry support (or for files from another app), the plain file list still works.
+    const fallback = Array.from(event.dataTransfer.files);
+    if (entries.length === 0) {
+      void addFiles(fallback);
+      return;
+    }
+    setPending("Reading the folder…");
+    filesInEntries(entries)
+      .then((found) => {
+        setPending(null);
+        return addFiles(found);
+      })
+      .catch((caught: unknown) => {
+        setPending(null);
+        setError(`The folder could not be read: ${caught instanceof Error ? caught.message : String(caught)}`);
+      });
+  }
+
+  // Only a sub-goal case takes a drop, and only while nothing else is going on.
+  const dropProps =
+    subgoal && canEdit
+      ? {
+          onDragOver: (event: DragEvent<HTMLElement>) => {
+            if (busy || !event.dataTransfer.types.includes("Files")) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "copy";
+            setDragging(true);
+          },
+          onDragLeave: (event: DragEvent<HTMLElement>) => {
+            // Leaving for a child element is not leaving the section.
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
+          },
+          onDrop: drop,
+        }
+      : {};
 
   async function remove(file: CaseFileView) {
     if (!window.confirm(`Remove ${file.filename} from this case? What was read from it goes too.`)) return;
@@ -89,7 +153,7 @@ export function CaseWorkspace({
   const readable = files.some((f) => f.status === "parsed");
   const modelOk = model.trim() === "" || MODEL_PATTERN.test(model.trim());
   const blockers = [
-    ...runBlockers({ files: files.length, library: 1, allRegulations: true, chosen: 0 }),
+    ...runBlockers({ files: files.length, library: 1, allRegulations: true, chosen: 0, kind }),
     ...regulationBlockers,
   ];
   const canRun = canEdit && !busy && modelOk && readable && blockers.length === 0;
@@ -109,13 +173,22 @@ export function CaseWorkspace({
 
   return (
     <div className="grid gap-5">
-      <section className="grid gap-2" aria-labelledby="files-heading">
+      <section
+        className={`grid gap-2 ${dragging ? "rounded-md outline-2 outline-offset-4 outline-ring outline-dashed" : ""}`}
+        aria-labelledby="files-heading"
+        {...dropProps}
+      >
         <h2 id="files-heading" className="text-base font-semibold">
           Files
         </h2>
         {files.length === 0 ? (
           <p className="rounded-md border border-dashed px-3 py-4 text-center text-muted-foreground">
-            No files yet.{canEdit ? " Add the specification, drawings, datasheets or CAD files below." : ""}
+            No files yet.
+            {canEdit
+              ? subgoal
+                ? " Drop Certivity's subgoal folder here, or choose it below: requirements_old.json and files.json, with old.pdf and new.pdf if you have them."
+                : " Add the specification, drawings, datasheets or CAD files below."
+              : ""}
           </p>
         ) : (
           <ul className="divide-y rounded-md border bg-card">
@@ -155,9 +228,18 @@ export function CaseWorkspace({
         {canEdit ? (
           <div className="grid gap-1.5">
             <div className="flex flex-wrap items-center gap-2">
+              {subgoal ? (
+                <FilePickerButton
+                  label="Choose folder…"
+                  accept={SUBGOAL_ACCEPT}
+                  directory
+                  disabled={busy}
+                  onPick={(list) => void addFiles(list)}
+                />
+              ) : null}
               <FilePickerButton
                 label={files.length === 0 ? "Add files…" : "Add more files…"}
-                accept={ACCEPT}
+                accept={subgoal ? SUBGOAL_ACCEPT : ACCEPT}
                 multiple
                 disabled={busy}
                 onPick={(list) => void addFiles(list)}
@@ -165,9 +247,15 @@ export function CaseWorkspace({
               {pending ? <span className="text-sm text-muted-foreground">{pending}</span> : null}
             </div>
             <p className="text-xs text-muted-foreground">
-              .md .txt .csv .json, .png .jpg .webp, .pdf, .docx, .xlsx, CAD .step .iges .stl. Up to {MAX_FILES} files
-              at a time, 25 MB each. Each file is read once, when added; open it above to see what was read.
+              {subgoal
+                ? `.json and .pdf only; other files in the folder are left out. Up to ${MAX_FILES} files at a time, 25 MB each. Each file is checked once, when added; the note under it says what it was recognised as.`
+                : `.md .txt .csv .json, .png .jpg .webp, .pdf, .docx, .xlsx, CAD .step .iges .stl. Up to ${MAX_FILES} files at a time, 25 MB each. Each file is read once, when added; open it above to see what was read.`}
             </p>
+            {heldBack.map((message) => (
+              <p key={message} role="status" className="text-sm text-attention">
+                {message}
+              </p>
+            ))}
           </div>
         ) : null}
       </section>
@@ -175,9 +263,17 @@ export function CaseWorkspace({
       {canEdit ? (
         <section className="grid gap-2 rounded-md border bg-card p-3" aria-labelledby="run-heading">
           <h2 id="run-heading" className="text-base font-semibold">
-            Find requirements
+            {subgoal ? "Find changes" : "Find requirements"}
           </h2>
-          <div className="grid gap-1.5">
+          {subgoal ? (
+            <p className="text-sm text-muted-foreground">
+              The run compares the old and the new version by text, then a reviewer model re-reads each requirement
+              whose paragraph changed. It writes Certivity&apos;s changes file, checked and ready to download on the
+              run page.
+            </p>
+          ) : null}
+          {/* Notes are for the requirement writer; the comparison has no use for them. */}
+          <div className={subgoal ? "hidden" : "grid gap-1.5"}>
             <Label htmlFor="notes">Notes for this run (optional)</Label>
             <Textarea
               id="notes"
@@ -191,7 +287,7 @@ export function CaseWorkspace({
             />
           </div>
           <div className="grid gap-1.5 sm:max-w-md">
-            <Label htmlFor="run-model">Model for this run</Label>
+            <Label htmlFor="run-model">{subgoal ? "Reviewer model for this run" : "Model for this run"}</Label>
             <Input
               id="run-model"
               placeholder={writerModel}
@@ -211,7 +307,7 @@ export function CaseWorkspace({
           <div className="flex items-center gap-2">
             {pending ? <span className="text-sm text-muted-foreground">{pending}</span> : null}
             <Button className="ml-auto" disabled={!canRun} onClick={() => void run()}>
-              {pending ? "Working…" : "Find requirements"}
+              {pending ? "Working…" : subgoal ? "Find changes" : "Find requirements"}
             </Button>
           </div>
           {blockers.map((b) => (
@@ -225,7 +321,8 @@ export function CaseWorkspace({
         </section>
       ) : (
         <p className="rounded-md border bg-card px-3 py-2 text-muted-foreground">
-          You can read this case. Adding files and finding requirements needs the member role.
+          You can read this case. Adding files and {subgoal ? "finding changes" : "finding requirements"} needs the member
+          role.
         </p>
       )}
 

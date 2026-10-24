@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -12,6 +12,7 @@ export function FilePickerButton({
   label,
   accept,
   multiple = false,
+  directory = false,
   disabled = false,
   variant = "outline",
   onPick,
@@ -19,11 +20,19 @@ export function FilePickerButton({
   label: string;
   accept: string;
   multiple?: boolean;
+  // Opens a folder dialog and hands over every file inside it (a sub-goal folder, #42).
+  directory?: boolean;
   disabled?: boolean;
   variant?: "default" | "outline";
   onPick: (files: FileList) => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
+  // Set on the element, not as a prop: React's types do not know webkitdirectory. Every current
+  // browser supports it under this name; one that does not shows a file dialog instead.
+  useEffect(() => {
+    if (directory) input.current?.setAttribute("webkitdirectory", "");
+    else input.current?.removeAttribute("webkitdirectory");
+  }, [directory]);
   return (
     <>
       <Button type="button" variant={variant} disabled={disabled} onClick={() => input.current?.click()}>

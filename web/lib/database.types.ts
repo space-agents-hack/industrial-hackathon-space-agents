@@ -302,6 +302,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           id: string
+          kind: string
           name: string
           organization_id: string
           project_id: string
@@ -310,6 +311,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          kind?: string
           name: string
           organization_id: string
           project_id: string
@@ -318,6 +320,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          kind?: string
           name?: string
           organization_id?: string
           project_id?: string

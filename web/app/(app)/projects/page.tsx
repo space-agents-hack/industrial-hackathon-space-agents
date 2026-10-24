@@ -8,6 +8,7 @@ import { NewNamedForm } from "@/components/projects/new-named-form";
 import { RelativeTime } from "@/components/relative-time";
 import { hasNoAccess } from "@/lib/access";
 import { getCurrentOrg } from "@/lib/current-org";
+import { ofKind } from "@/lib/subgoal";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Choose a project" };
@@ -38,7 +39,7 @@ async function Projects() {
   const [{ data, error }, library] = await Promise.all([
     supabase
       .from("projects")
-      .select("id, name, created_at, all_regulations, cases(id, created_at), project_regulations(regulation_id)")
+      .select("id, name, created_at, all_regulations, cases(id, created_at, kind), project_regulations(regulation_id)")
       .eq("organization_id", current.id)
       .order("name"),
     supabase.from("regulations").select("id", { count: "exact", head: true }).eq("organization_id", current.id),
@@ -75,7 +76,9 @@ async function Projects() {
       ) : (
         <ul className="divide-y rounded-md border bg-card">
           {data.map((project) => {
-            const latest = project.cases.map((c) => c.created_at).sort().at(-1) ?? project.created_at;
+            // The main goal's cases: a project's sub-goal cases are on Changes, not counted here.
+            const cases = ofKind(project.cases, "main");
+            const latest = cases.map((c) => c.created_at).sort().at(-1) ?? project.created_at;
             const regulations = project.all_regulations
               ? `all ${libraryCount} regulations`
               : `${project.project_regulations.length} of ${libraryCount} regulations`;
@@ -89,7 +92,7 @@ async function Projects() {
                 >
                   <span className="font-medium">{project.name}</span>
                   <span className="text-sm text-muted-foreground">
-                    {project.cases.length} {project.cases.length === 1 ? "case" : "cases"} · {regulations} ·{" "}
+                    {cases.length} {cases.length === 1 ? "case" : "cases"} · {regulations} ·{" "}
                     <RelativeTime iso={latest} />
                   </span>
                 </a>

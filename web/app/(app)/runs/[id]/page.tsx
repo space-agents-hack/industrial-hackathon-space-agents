@@ -7,6 +7,7 @@ import { RunTrace } from "@/components/run-trace";
 import { hasNoAccess, permissionsIn } from "@/lib/access";
 import { getAccess } from "@/lib/current-org";
 import { fetchApprovals, fetchRun, fetchRunEvents } from "@/lib/runs";
+import { caseKind } from "@/lib/subgoal";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/validation";
 
@@ -48,7 +49,7 @@ async function Run({ params, searchParams }: PageProps<"/runs/[id]">) {
   // can come from anywhere.
   const canAct = permissionsIn(access, run.organization_id).decideApprovals;
   const { data: onCase } = run.case_id
-    ? await supabase.from("cases").select("id, name, project_id, projects(name)").eq("id", run.case_id).maybeSingle()
+    ? await supabase.from("cases").select("id, name, project_id, kind, projects(name)").eq("id", run.case_id).maybeSingle()
     : { data: null };
 
   return (
@@ -60,6 +61,15 @@ async function Run({ params, searchParams }: PageProps<"/runs/[id]">) {
             {onCase.projects?.name ?? "Project"}
           </Link>{" "}
           ›{" "}
+          {/* A sub-goal case is listed on Changes, not under the project's Cases (#42). */}
+          {caseKind(onCase.kind) === "subgoal" ? (
+            <>
+              <Link href="/changes" className="hover:text-foreground hover:underline">
+                Changes
+              </Link>{" "}
+              ›{" "}
+            </>
+          ) : null}
           <Link
             href={`/projects/${onCase.project_id}/cases/${onCase.id}`}
             className="text-foreground underline-offset-4 hover:underline"

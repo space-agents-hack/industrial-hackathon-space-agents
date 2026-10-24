@@ -13,6 +13,7 @@ import { RelativeTime } from "@/components/relative-time";
 import { hasNoAccess, permissionsIn } from "@/lib/access";
 import { getAccess } from "@/lib/current-org";
 import { getCurrentProject } from "@/lib/current-project";
+import { ofKind } from "@/lib/subgoal";
 import { createClient } from "@/lib/supabase/server";
 import { summarizeRun } from "@/lib/trace";
 import { isUuid } from "@/lib/validation";
@@ -39,7 +40,7 @@ async function Project({ params }: Pick<PageProps<"/projects/[id]">, "params">) 
     supabase
       .from("projects")
       .select(
-        "id, name, organization_id, all_regulations, organizations(name), project_regulations(regulation_id), cases(id, name, created_at, case_files(status))",
+        "id, name, organization_id, all_regulations, organizations(name), project_regulations(regulation_id), cases(id, name, created_at, kind, case_files(status))",
       )
       .eq("id", id)
       .maybeSingle(),
@@ -58,7 +59,11 @@ async function Project({ params }: Pick<PageProps<"/projects/[id]">, "params">) 
   // The role in the project's own organisation, not the one in the header: a link can come from
   // anywhere.
   const canEdit = permissionsIn(access, project.organization_id).startRuns;
-  const caseIds = project.cases.map((c) => c.id);
+  // This page is the main goal's: sub-goal cases and their runs are on Changes (#42). Deleting the
+  // project still deletes both kinds, so the warning counts them all.
+  const mainCases = ofKind(project.cases, "main");
+  const subgoalCount = project.cases.length - mainCases.length;
+  const caseIds = mainCases.map((c) => c.id);
   const [library, runs] = await Promise.all([
     supabase.from("regulations").select("id, code, title").eq("organization_id", project.organization_id),
     caseIds.length === 0
@@ -71,8 +76,8 @@ async function Project({ params }: Pick<PageProps<"/projects/[id]">, "params">) 
           .limit(20),
   ]);
   const regulations = [...(library.data ?? [])].sort((a, b) => a.code.localeCompare(b.code, "en", { numeric: true }));
-  const caseName = new Map(project.cases.map((c) => [c.id, c.name]));
-  const cases = [...project.cases].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const caseName = new Map(mainCases.map((c) => [c.id, c.name]));
+  const cases = [...mainCases].sort((a, b) => b.created_at.localeCompare(a.created_at));
 
   return (
     <>
@@ -86,7 +91,7 @@ async function Project({ params }: Pick<PageProps<"/projects/[id]">, "params">) 
           id={project.id}
           name={project.name}
           canEdit={canEdit}
-          deleteWarning={`Its ${cases.length} cases, their files and what was read from them are deleted. Runs stay, without their case.`}
+          deleteWarning={`Its ${cases.length} cases${subgoalCount > 0 ? ` and ${subgoalCount} sub-goal ${subgoalCount === 1 ? "case" : "cases"}` : ""}, their files and what was read from them are deleted. Runs stay, without their case.`}
           afterDelete="/projects"
         />
       </div>

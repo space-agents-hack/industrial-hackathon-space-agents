@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "@/lib/database.types";
+import { type CaseKind, caseKind } from "./subgoal.ts";
 
 // What a run needs before it may start (Clemente, 2026-10-24, first experiments): a case with at
 // least one file, and at least one regulation the case's project uses. Without a regulation the
@@ -14,11 +15,16 @@ export type Readiness = {
   library: number;
   allRegulations: boolean;
   chosen: number;
+  // Absent means 'main': the callers that only know the regulation side ask about the main goal.
+  kind?: CaseKind;
 };
 
 export function runBlockers(r: Readiness): string[] {
   const blockers: string[] = [];
   if (r.files === 0) blockers.push("The case has no files yet: add at least one.");
+  // A sub-goal run compares the case's own two versions of the regulation (#42) and cites nothing
+  // from the library, so an empty library or a project without regulations must not stop it.
+  if (r.kind === "subgoal") return blockers;
   if (r.library === 0) {
     blockers.push("The organisation's regulation library is empty: an admin imports an index file on Regulations.");
   } else if (!r.allRegulations && r.chosen === 0) {
@@ -33,7 +39,7 @@ type Client = SupabaseClient<Database>;
 export async function fetchReadiness(supabase: Client, caseId: string): Promise<Readiness | null> {
   const { data: found, error } = await supabase
     .from("cases")
-    .select("organization_id, projects(all_regulations, project_regulations(regulation_id))")
+    .select("organization_id, kind, projects(all_regulations, project_regulations(regulation_id))")
     .eq("id", caseId)
     .maybeSingle();
   if (error) console.error(`readiness: case ${caseId} read failed`, error);
@@ -50,5 +56,6 @@ export async function fetchReadiness(supabase: Client, caseId: string): Promise<
     library: library.count ?? 0,
     allRegulations: found.projects?.all_regulations ?? true,
     chosen: found.projects?.project_regulations.length ?? 0,
+    kind: caseKind(found.kind),
   };
 }

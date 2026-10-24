@@ -7,17 +7,22 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { nameTakenMessage } from "@/lib/cases";
 import { rememberProject } from "@/lib/project-actions";
+import type { CaseKind } from "@/lib/subgoal";
 import { createClient } from "@/lib/supabase/client";
 
-// "New project" on the projects page and "New case" on a project page. The id is made here, as in
-// the quick-run form: a case's id names its Storage folder, and the page to open next needs it.
+// "New project" on the projects page, "New case" on a project page and "New sub-goal case" on
+// Changes. The id is made here, as in the quick-run form: a case's id names its Storage folder, and
+// the page to open next needs it.
 export function NewNamedForm({
   kind,
+  caseKind = "main",
   organizationId,
   projectId,
   placeholder,
 }: {
   kind: "project" | "case";
+  // Fixed at creation: the database lets a case's kind be inserted but never changed.
+  caseKind?: CaseKind;
   organizationId: string;
   projectId?: string;
   placeholder: string;
@@ -39,7 +44,7 @@ export function NewNamedForm({
         ? await supabase.from("projects").insert({ id, organization_id: organizationId, name: trimmed })
         : await supabase
             .from("cases")
-            .insert({ id, project_id: projectId!, organization_id: organizationId, name: trimmed });
+            .insert({ id, project_id: projectId!, organization_id: organizationId, name: trimmed, kind: caseKind });
     if (e) {
       setBusy(false);
       setError(nameTakenMessage(e.code, kind, trimmed) ?? `The ${kind} could not be created: ${e.message}`);
@@ -60,7 +65,7 @@ export function NewNamedForm({
     >
       <div className="flex gap-2">
         <Input
-          aria-label={`New ${kind} name`}
+          aria-label={caseKind === "subgoal" ? "New sub-goal case name" : `New ${kind} name`}
           placeholder={placeholder}
           maxLength={200}
           value={name}
@@ -69,7 +74,7 @@ export function NewNamedForm({
           className="max-w-sm"
         />
         <Button type="submit" variant="outline" disabled={busy || name.trim() === ""}>
-          {kind === "project" ? "New project" : "New case"}
+          {kind === "project" ? "New project" : caseKind === "subgoal" ? "New sub-goal case" : "New case"}
         </Button>
       </div>
       {error ? (

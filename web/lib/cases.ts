@@ -30,6 +30,9 @@ export async function fetchCases(
       .from("cases")
       .select("id, name, project_id")
       .eq("organization_id", organizationId)
+      // The quick run finds requirements; a sub-goal case offered here would get a specification
+      // uploaded into it and a run that ignores it (#42).
+      .eq("kind", "main")
       .order("created_at", { ascending: false }),
   ]);
   if (projects.error || cases.error) {

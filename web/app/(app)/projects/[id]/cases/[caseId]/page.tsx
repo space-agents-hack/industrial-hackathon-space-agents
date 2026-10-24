@@ -14,6 +14,7 @@ import { fetchCaseFiles } from "@/lib/cases";
 import { getAccess } from "@/lib/current-org";
 import { getCurrentProject } from "@/lib/current-project";
 import { fetchReadiness, runBlockers } from "@/lib/run-readiness";
+import { caseKind } from "@/lib/subgoal";
 import { createClient } from "@/lib/supabase/server";
 import { summarizeRun } from "@/lib/trace";
 import { isUuid } from "@/lib/validation";
@@ -39,7 +40,7 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
     getCurrentProject(),
     supabase
       .from("cases")
-      .select("id, name, organization_id, project_id, projects(name, organizations(name))")
+      .select("id, name, kind, organization_id, project_id, projects(name, organizations(name))")
       .eq("id", caseId)
       .eq("project_id", id)
       .maybeSingle(),
@@ -71,10 +72,13 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
     agentHealth(),
     fetchReadiness(supabase, caseId),
   ]);
-  // Only the regulation side: the files are counted live in the workspace as they are added.
+  const kind = caseKind(found.kind);
+  // Only the regulation side: the files are counted live in the workspace as they are added. A
+  // sub-goal case has none (lib/run-readiness.ts): runBlockers reads the kind from readiness.
   const regulationBlockers = readiness ? runBlockers({ ...readiness, files: 1 }) : [];
   const writerModel = settings.data?.model ?? health?.model ?? "the organisation's model";
   const projectName = found.projects?.name ?? "Project";
+  const subgoal = kind === "subgoal";
 
   return (
     <>
@@ -84,6 +88,8 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
           items={[
             { label: found.projects?.organizations?.name ?? "Organisation", href: "/projects" },
             { label: projectName, href: `/projects/${found.project_id}` },
+            // A sub-goal case is listed on Changes, not under the project's Cases (#42).
+            ...(subgoal ? [{ label: "Changes", href: "/changes" }] : []),
             { label: found.name },
           ]}
         />
@@ -93,7 +99,7 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
           name={found.name}
           canEdit={canEdit}
           deleteWarning="Its files and what was read from them are deleted. Its runs stay, without their case."
-          afterDelete={`/projects/${found.project_id}`}
+          afterDelete={subgoal ? "/changes" : `/projects/${found.project_id}`}
         />
       </div>
 
@@ -101,6 +107,7 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
         <CaseWorkspace
           organizationId={found.organization_id}
           caseId={found.id}
+          kind={kind}
           initialFiles={files}
           canEdit={canEdit}
           writerModel={writerModel}
@@ -119,15 +126,18 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
         <RunRows runs={(runs.data ?? []).map(summarizeRun)} empty="No runs on this case yet." />
       </section>
 
-      <section className="grid gap-1" aria-labelledby="requirements-heading">
-        <h2 id="requirements-heading" className="text-base font-semibold">
-          Requirements
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Not stored per case yet: each run&apos;s result is on its run page. The list with a link from each
-          requirement to its regulation paragraph comes with the requirements table (issue #4).
-        </p>
-      </section>
+      {/* A sub-goal run writes changes, not requirements; its file is on the run page. */}
+      {subgoal ? null : (
+        <section className="grid gap-1" aria-labelledby="requirements-heading">
+          <h2 id="requirements-heading" className="text-base font-semibold">
+            Requirements
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Not stored per case yet: each run&apos;s result is on its run page. The list with a link from each
+            requirement to its regulation paragraph comes with the requirements table (issue #4).
+          </p>
+        </section>
+      )}
     </>
   );
 }
