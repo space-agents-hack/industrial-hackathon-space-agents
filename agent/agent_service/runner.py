@@ -483,9 +483,39 @@ def _usage(usage: RunUsage) -> dict[str, Any]:
     }
 
 
+# Tried in order until the result fits: (list items kept, characters kept per string). Strings
+# shrink faster than lists, because a reader of the trace wants to see which items came back (every
+# regulation `list_regulations` gave the agent) before the full text of any one of them.
+_CLIP_STEPS = ((200, 2000), (200, 400), (100, 160), (60, 80), (30, 60), (10, 40))
+
+
 def _clip(value: Any) -> Any:
+    # Cutting the serialised text would leave a fragment of escaped JSON that the trace can only
+    # show as one long string, so the value is shrunk in place and stays JSON a person can read.
     plain = to_jsonable_python(value, fallback=str)
-    text = json.dumps(plain, ensure_ascii=False)
-    if len(text) <= _MAX_EVENT_RESULT_CHARS:
+    if _length(plain) <= _MAX_EVENT_RESULT_CHARS:
         return plain
+    for items, chars in _CLIP_STEPS:
+        clipped = _shrink(plain, items, chars)
+        if _length(clipped) <= _MAX_EVENT_RESULT_CHARS:
+            return clipped
+    # Only a deeply nested result gets here; a plain cut keeps the event row small regardless.
+    text = json.dumps(plain, ensure_ascii=False)
     return {"truncated": True, "preview": text[:_MAX_EVENT_RESULT_CHARS]}
+
+
+def _length(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False))
+
+
+def _shrink(value: Any, items: int, chars: int) -> Any:
+    if isinstance(value, str):
+        return value if len(value) <= chars else f"{value[: chars - 1].rstrip()}…"
+    if isinstance(value, list):
+        kept: list[Any] = [_shrink(v, items, chars) for v in value[:items]]
+        if len(value) > items:
+            kept.append(f"… {len(value) - items} more not shown here ({len(value)} in all)")
+        return kept
+    if isinstance(value, dict):
+        return {k: _shrink(v, items, chars) for k, v in value.items()}
+    return value

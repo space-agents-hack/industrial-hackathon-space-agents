@@ -14,6 +14,7 @@ import {
   formatCost,
   formatElapsed,
   formatJson,
+  indentJsonText,
   formatRelativeTime,
   formatUsage,
   formatUtc,
@@ -27,6 +28,7 @@ import {
   mergeRunList,
   parseEvent,
   pendingApprovals,
+  readableResult,
   statusLabel,
   statusTone,
   summarizeEvent,
@@ -582,4 +584,31 @@ test("describeResult counts requirements and keeps plain text as it is", async (
   assert.match(json.summary, /^2 requirements, \d+ characters$/);
   assert.equal(describeResult("Done.\nNo requirements.").json, false);
   assert.equal(describeResult("Done.\nNo requirements.").summary, "2 lines");
+});
+
+test("a result cut by an older agent is shown indented, not as one escaped line", () => {
+  const preview = '[{"regulation": "UN R1", "tags": [], "scope": "a, b: \\"c\\""}, {"regulation": "UN R2", "sc';
+  const shown = readableResult({ truncated: true, preview });
+  assert.equal(
+    shown,
+    [
+      "[",
+      "  {",
+      '    "regulation": "UN R1",',
+      '    "tags": [],',
+      '    "scope": "a, b: \\"c\\""',
+      "  },",
+      "  {",
+      '    "regulation": "UN R2",',
+      '    "sc',
+      "… cut here: the rest was not kept in the trace",
+    ].join("\n"),
+  );
+});
+
+test("readableResult leaves every other result as it is", () => {
+  const value = { truncated: true, preview: "x", count: 3 };
+  assert.equal(readableResult(value), value);
+  assert.deepEqual(readableResult([1, 2]), [1, 2]);
+  assert.equal(indentJsonText("{}"), "{}");
 });

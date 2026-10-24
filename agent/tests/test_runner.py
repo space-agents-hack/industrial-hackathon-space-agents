@@ -332,3 +332,20 @@ async def test_a_file_that_changed_since_upload_is_read_and_flagged(store, setti
     changed, same = store.payloads(run_id, "case_file")
     assert changed["characters"] == 2 and any("differs" in n for n in changed["notes"])
     assert not any("differs" in n for n in same["notes"])
+
+
+def test_a_small_tool_result_reaches_the_trace_unchanged() -> None:
+    value = [{"regulation": "UN R1", "scope": "x" * 100}]
+    assert runner._clip(value) == value
+
+
+def test_a_long_tool_result_is_cut_but_stays_json_a_person_can_read() -> None:
+    # A made-up library big enough that the whole list cannot fit in one event.
+    value = [{"regulation": f"UN R{n}", "pages": n, "scope": "word " * 200} for n in range(300)]
+
+    clipped = runner._clip(value)
+
+    assert len(json.dumps(clipped, ensure_ascii=False)) <= runner._MAX_EVENT_RESULT_CHARS
+    assert isinstance(clipped, list) and clipped[0]["regulation"] == "UN R0"
+    assert clipped[0]["pages"] == 0 and clipped[0]["scope"].endswith("…")
+    assert clipped[-1] == f"… {300 - (len(clipped) - 1)} more not shown here (300 in all)"

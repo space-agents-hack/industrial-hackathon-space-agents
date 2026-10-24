@@ -309,6 +309,50 @@ export function formatJson(value: unknown): string {
   }
 }
 
+// Runs recorded before the agent clipped results in place stored a long result as the first
+// characters of its JSON text, `{truncated, preview}`, which showed as one escaped line. The cut
+// text no longer parses, so it is indented by its brackets and commas instead.
+export function readableResult(value: unknown): unknown {
+  if (!isRecord(value) || value.truncated !== true || !isString(value.preview)) return value;
+  if (Object.keys(value).length !== 2) return value;
+  return `${indentJsonText(value.preview)}\n… cut here: the rest was not kept in the trace`;
+}
+
+export function indentJsonText(text: string): string {
+  let out = "";
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  const newline = () => `\n${"  ".repeat(depth)}`;
+  for (const char of text) {
+    if (inString) {
+      out += char;
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      out += char;
+    } else if (char === "{" || char === "[") {
+      depth += 1;
+      out += char + newline();
+    } else if (char === "}" || char === "]") {
+      depth = Math.max(0, depth - 1);
+      out = out.trimEnd();
+      out += /[[{]$/.test(out) ? char : newline() + char;
+    } else if (char === ",") {
+      out += char + newline();
+    } else if (char === ":") {
+      out += ": ";
+    } else if (char.trim() !== "") {
+      out += char;
+    }
+  }
+  return out;
+}
+
 export function compactJson(value: unknown, max = 80): string {
   let text: string;
   try {
@@ -452,7 +496,7 @@ export function buildTimeline(rows: readonly RunEventRow[]): TimelineItem[] {
       case "tool_result": {
         const step = stepFor(event.payload.tool_call_id, event.payload.tool_name, event.createdAt);
         step.result = {
-          value: event.payload.result,
+          value: readableResult(event.payload.result),
           isError: event.payload.is_error,
           at: event.createdAt,
         };
