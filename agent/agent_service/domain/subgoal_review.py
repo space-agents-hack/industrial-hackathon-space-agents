@@ -27,9 +27,9 @@ flagged requirements:
   sentence is not reported twice.
 
 The batches run in parallel, `concurrency` at a time, each with its own timeout. A failed batch
-is tried once more while the run has time. A batch that still fails keeps the rules' answer, and
-the trace names its requirements. These are the main goal's lessons (e3c19a4, 8167ef2): a call
-that hangs must not take the run with it, and a failure says what was not done.
+is tried once more right away, while the run has time. A batch that still fails keeps the rules'
+answer, and the trace names its requirements. These are the main goal's lessons (e3c19a4,
+8167ef2): a call that hangs must not take the run with it, and a failure says what was not done.
 
 What this does NOT do: write `added` entries (the rules do, from unpaired new sentences), or
 review requirements whose paragraph did not change at all. Those are unchanged by construction.
@@ -284,7 +284,7 @@ async def review(
     def has_time() -> bool:
         return limits.deadline is None or loop.time() + limits.timeout_s < limits.deadline
 
-    async def one(batch: list[Candidate], label: str) -> list[Verdict] | str | None:
+    async def attempt(batch: list[Candidate], label: str) -> list[Verdict] | str | None:
         async with semaphore:
             if not has_time():
                 return None
@@ -319,30 +319,29 @@ async def review(
             )
             return got
 
+    async def one(batch: list[Candidate], label: str) -> list[Verdict] | str | None:
+        # A failed batch is tried again at once, not after the whole round: a batch refused in
+        # 3 s used to wait for the slowest batch of the round (up to timeout_s) before its retry.
+        first = await attempt(batch, label)
+        if not isinstance(first, str):
+            return first
+        await progress(f"Batch {label} failed; trying it once more.")
+        second = await attempt(batch, f"{label}, second try")
+        return f"{first}; then {second}" if isinstance(second, str) else second
+
     verdicts: dict[str, Verdict] = {}
     report = Report(list(rules), usage)
-    pending = batches
-    for attempt in (1, 2):
-        outcomes = await asyncio.gather(
-            *(one(b, f"{i} of {len(pending)}") for i, b in enumerate(pending, 1))
-        )
-        retry: list[list[Candidate]] = []
-        for batch, outcome in zip(pending, outcomes, strict=True):
-            ids = ", ".join(c.id for c in batch)
-            if outcome is None:
-                report.not_reviewed += [c.id for c in batch]
-            elif isinstance(outcome, str):
-                if attempt == 1:
-                    retry.append(batch)
-                else:
-                    report.failed.append(f"{ids}: {outcome}")
-            else:
-                for v in outcome:
-                    verdicts[v.requirement_id] = v
-        if not retry:
-            break
-        await progress(f"{len(retry)} batch(es) failed; trying them once more.")
-        pending = retry
+    outcomes = await asyncio.gather(
+        *(one(b, f"{i} of {len(batches)}") for i, b in enumerate(batches, 1))
+    )
+    for batch, outcome in zip(batches, outcomes, strict=True):
+        if outcome is None:
+            report.not_reviewed += [c.id for c in batch]
+        elif isinstance(outcome, str):
+            report.failed.append(f"{', '.join(c.id for c in batch)}: {outcome[:300]}")
+        else:
+            for v in outcome:
+                verdicts[v.requirement_id] = v
 
     report.reviewed = len(verdicts)
     by_id = {c.id: c for c in ordered}

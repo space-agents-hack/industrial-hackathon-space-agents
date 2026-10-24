@@ -46,6 +46,7 @@ from pydantic_ai import (
     UsageLimits,
 )
 from pydantic_ai.models import Model
+from pydantic_ai.models.anthropic import AnthropicModelSettings
 from pydantic_ai.usage import RunUsage
 from pydantic_core import to_jsonable_python
 
@@ -326,6 +327,11 @@ async def _run_agent(
         deps=await domain.prepare_deps(store, plan.run, settings, meter),
         usage_limits=UsageLimits(request_limit=plan.config.max_model_requests),
         event_stream_handler=record,
+        # Each orchestrator turn re-sends the case (with its page images), the library and every
+        # tool result so far. Without a cache marker all of it was read at full price and full
+        # prefill time on every one of its 8 to 10 turns. Anthropic's automatic caching moves the
+        # breakpoint forward as the conversation grows; other providers ignore the setting.
+        model_settings=AnthropicModelSettings(anthropic_cache=True),
     )
 
     # Saved at the end as well as at a pause: it is the full record of what the model saw.

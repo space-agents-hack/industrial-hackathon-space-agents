@@ -437,19 +437,28 @@ async def read_inputs(
     old_entry, new_entry = pair(listing)
     have = {f.filename: data for f, data in pdfs}
     position = max((f.position for f in await store.case_files(case_id)), default=-1) + 1
-    fetched: list[bytes] = []
+    names = [
+        str(entry.get("name") or entry["pdf_url"].rsplit("/", 1)[-1])
+        for entry in (old_entry, new_entry)
+    ]
     async with http() as client:
-        for entry in (old_entry, new_entry):
-            name = str(entry.get("name") or entry["pdf_url"].rsplit("/", 1)[-1])
+
+        async def get(entry: dict[str, Any], name: str) -> bytes:
             data = have.get(name)
-            if data is None:
-                data = await fetch(client, entry)
-                await _keep(store, case_id, organization_id, position, name, data)
-                position += 1
-                notes.append(
-                    f"{name}: fetched from files.json, checksum matches, kept in the case."
-                )
-            fetched.append(data)
+            return data if data is not None else await fetch(client, entry)
+
+        # Both versions at once: downloading is network only, so pdfium's one-thread rule does
+        # not apply here (extraction stays sequential).
+        fetched = list(
+            await asyncio.gather(
+                *(get(e, n) for e, n in zip((old_entry, new_entry), names, strict=True))
+            )
+        )
+    for name, data in zip(names, fetched, strict=True):
+        if name not in have:
+            await _keep(store, case_id, organization_id, position, name, data)
+            position += 1
+            notes.append(f"{name}: fetched from files.json, checksum matches, kept in the case.")
     return Inputs(
         requirements,
         fetched[0],

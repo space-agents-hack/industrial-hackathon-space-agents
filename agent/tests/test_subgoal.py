@@ -2,6 +2,7 @@
 goal's workflow with the rules diff and the reviewer inside. Every regulation, requirement and PDF
 here is made up; `paragraphs.extract` is replaced so a "PDF" is just a key to its paragraphs."""
 
+import asyncio
 import hashlib
 import json
 import threading
@@ -436,6 +437,30 @@ async def test_a_failed_batch_is_tried_again_then_keeps_the_rules_answer() -> No
     assert report.changes == rules
     assert report.failed and all("provider down" in f for f in report.failed)
     assert report.reviewed == 0
+
+
+async def test_a_failed_batch_is_retried_without_waiting_for_the_slowest_batch() -> None:
+    # Before, the retry round started only when every batch of the first round had answered, so
+    # a batch refused in seconds waited for the slowest one.
+    events: list[str] = []
+    calls: dict[str, int] = {}
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        prompt = str(messages[0])
+        batch = "slow" if "R-003" in prompt else "flaky"
+        calls[batch] = calls.get(batch, 0) + 1
+        events.append(f"{batch} {calls[batch]} starts")
+        if batch == "slow":
+            await asyncio.sleep(0.2)
+        elif calls[batch] == 1:
+            raise RuntimeError("refused")
+        events.append(f"{batch} {calls[batch]} ends")
+        return ModelResponse(parts=[ToolCallPart("report_verdicts", {"response": []})])
+
+    report, _ = await run_review(FunctionModel(respond))
+
+    assert not report.failed
+    assert events.index("flaky 2 ends") < events.index("slow 1 ends")
 
 
 async def test_each_batch_reports_when_it_ends_so_a_slow_review_is_visible() -> None:
