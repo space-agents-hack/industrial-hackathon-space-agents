@@ -34,6 +34,9 @@ Methods: **T** automated test in `make check`, **S** score, **D** demonstration,
 | V-24 | SYS-24 | T (pgTAP): two members of one organisation both read and write its projects and cases; a member of another organisation reads none of its projects, cases, files or requirements; I: `git ls-files` has no case data | none yet |
 | V-27 | SYS-27 | T: a fixture the parser cannot read goes to the (fake) model, and both paths store blocks of the same schema with file and page | none yet |
 | V-25 | SYS-25 | T: every stored requirement points to exactly one existing catalogue paragraph whose regulation, version and page match its citation; S: requirement-level score | none yet |
+| V-28 | SYS-28 | T: with a fake index, the regulations returned by top-k are then read in full (all their paragraphs reach the writer); S: regulation-level recall on the dev case | none yet |
+| V-29 | SYS-29 | T: a requirement citing a paragraph that is not in the DB, or a duplicate, is caught by the check agent before output | none yet |
+| V-30 | SYS-30 | D: one dev-case run with a local model (future) | none yet |
 | V-26 | SYS-26 | D: a generated `index.json` passes the same loader as Certivity's (future) | none yet |
 
 ## Score log
