@@ -251,3 +251,21 @@ def test_an_index_row_from_before_adr_0006_is_ignored() -> None:
         }
     ]
     assert certivity.Reference.from_rows(rows).index is None
+
+
+def test_a_chosen_expected_file_is_scored_against_like_score_local_expected(
+    ref: certivity.Reference,
+) -> None:
+    # The user's own answer key: used whatever the submission's case_id, as --expected is.
+    submission = {**_expected(), "case_id": "held-out-case"}
+    mine = {**_expected(), "requirements": _expected()["requirements"][:1]}
+    result = certivity.check(json.dumps(submission), ref, expected=mine)
+    assert result["score"]["page_level"]["n_expected"] == 1
+    assert any("expected.json you chose" in note for note in result["notes"])
+
+
+@pytest.mark.anyio
+async def test_checks_endpoint_takes_an_expected_file(client: TestClient) -> None:
+    body = {"text": json.dumps(_expected()), "expected": _expected()}
+    result = client.post("/checks", headers=AUTH, json=body).json()
+    assert result["score"]["regulation_level"]["f1"] == 1.0

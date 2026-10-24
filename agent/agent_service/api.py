@@ -510,6 +510,10 @@ class SubmissionText(BaseModel):
     # Whose regulation library to check citations against. The web has checked the caller can
     # read this organisation; without it validate.py skips the regulation check.
     organization_id: UUID | None = None
+    # An expected.json the user chose in the web, scored against for this one check and not
+    # stored (the release reloads certivity_reference from Certivity's package and would delete
+    # it). Like score_local.py --expected: it is used whatever case_id the submission names.
+    expected: dict[str, Any] | None = None
 
 
 @app.post("/checks", dependencies=[Depends(require_secret)])
@@ -520,7 +524,7 @@ async def certivity_checks(
         reference = await certivity.load_reference(store, body.organization_id)
     finally:
         await store.aclose()
-    return certivity.check(body.text, reference)
+    return certivity.check(body.text, reference, expected=body.expected)
 
 
 # ------------------------------------------------------------------------------------------

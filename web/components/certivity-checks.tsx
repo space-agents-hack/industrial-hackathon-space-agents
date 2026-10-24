@@ -19,7 +19,16 @@ type Answer = { text: string } & ({ phase: "done"; result: CheckResult } | { pha
 // Certivity's validate.py and score_local.py on `text`, through the agent. A failed validation is
 // a warning on the run, not a failed run: the requirements are still worth reading and fixing.
 // `organizationId` picks the regulation library the citations are checked against (ADR-0006).
-export function CertivityChecks({ text, organizationId }: { text: string; organizationId: string | null }) {
+// `expected` is the text of an expected.json the user chose; the score is then against it.
+export function CertivityChecks({
+  text,
+  organizationId,
+  expected = null,
+}: {
+  text: string;
+  organizationId: string | null;
+  expected?: string | null;
+}) {
   const [answer, setAnswer] = useState<Answer | null>(null);
 
   useEffect(() => {
@@ -29,7 +38,11 @@ export function CertivityChecks({ text, organizationId }: { text: string; organi
         const response = await fetch("/api/checks", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ text, organization_id: organizationId }),
+          body: JSON.stringify({
+            text,
+            organization_id: organizationId,
+            expected: expected === null ? null : (JSON.parse(expected) as unknown),
+          }),
           signal: controller.signal,
         });
         const body: unknown = await response.json().catch(() => null);
@@ -52,7 +65,7 @@ export function CertivityChecks({ text, organizationId }: { text: string; organi
       }
     })();
     return () => controller.abort();
-  }, [text, organizationId]);
+  }, [text, organizationId, expected]);
 
   const state = answer?.text === text ? answer : null;
   return (

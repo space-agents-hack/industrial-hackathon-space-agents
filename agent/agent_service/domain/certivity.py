@@ -153,7 +153,13 @@ def extract_json(text: str) -> tuple[Any, tuple[int, int] | None, str | None]:
     return None, None, error or "Empty."
 
 
-def check(text: str, ref: Reference, *, with_score: bool = True) -> dict[str, Any]:
+def check(
+    text: str,
+    ref: Reference,
+    *,
+    with_score: bool = True,
+    expected: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Validate a submission the way the platform does, and score it where Certivity allows.
 
     `with_score=False` is for the agent's own tool: a model that sees the score on the worked
@@ -230,7 +236,9 @@ def check(text: str, ref: Reference, *, with_score: bool = True) -> dict[str, An
                 "Certivity ships no local score for the sub-goal; it is scored on the platform."
             )
         return result
-    expected = ref.expected.get(case_id) if case_id else None
+    supplied = expected is not None
+    if expected is None:
+        expected = ref.expected.get(case_id) if case_id else None
     if expected is None:
         # case_id is the case's name in the app (Deps.case_name). A case named anything but
         # Certivity's id ("dev-rear-lamp", or the held-out case's folder name) gets no score here
@@ -251,6 +259,11 @@ def check(text: str, ref: Reference, *, with_score: bool = True) -> dict[str, An
             f"Could not score this file ({type(exc).__name__}); fix the problems above first."
         )
         return result
+    if supplied:
+        notes.append(
+            "Scored against the expected.json you chose "
+            f"(its case_id: {expected.get('case_id')!r}), not the one in the database."
+        )
     notes.append(
         "Regulation and page level only, as Certivity's score_local.py computes them. The platform "
         "uses full page ranges, so its numbers can differ slightly; the requirement level is "

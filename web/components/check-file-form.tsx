@@ -13,6 +13,9 @@ import { SUBMISSION_MAX_BYTES } from "@/lib/certivity";
 export function CheckFileForm({ organizationId }: { organizationId: string | null }) {
   const [text, setText] = useState("");
   const [checked, setChecked] = useState<string | null>(null);
+  // An expected.json to score against instead of the one in the database (score_local.py --expected).
+  const [expected, setExpected] = useState<{ name: string; text: string } | null>(null);
+  const [checkedExpected, setCheckedExpected] = useState<string | null>(null);
   const [round, setRound] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,6 +34,22 @@ export function CheckFileForm({ organizationId }: { organizationId: string | nul
     }
   }
 
+  async function loadExpected(file: File | undefined) {
+    if (!file) return;
+    try {
+      const raw = await file.text();
+      const data: unknown = JSON.parse(raw);
+      if (typeof data !== "object" || data === null || !Array.isArray((data as { requirements?: unknown }).requirements)) {
+        setError(`${file.name} is not an expected.json: it has no requirements list.`);
+        return;
+      }
+      setExpected({ name: file.name, text: raw });
+      setError(null);
+    } catch {
+      setError(`${file.name} is not valid JSON.`);
+    }
+  }
+
   return (
     <div className="grid gap-4">
       <form
@@ -39,6 +58,7 @@ export function CheckFileForm({ organizationId }: { organizationId: string | nul
           event.preventDefault();
           if (!text.trim()) return;
           setChecked(text);
+          setCheckedExpected(expected?.text ?? null);
           setRound((n) => n + 1);
         }}
       >
@@ -77,6 +97,34 @@ export function CheckFileForm({ organizationId }: { organizationId: string | nul
             />
           </div>
         </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="expected-file">Expected file (optional)</Label>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              id="expected-file"
+              type="file"
+              accept=".json,application/json"
+              className="text-xs"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                void loadExpected(file);
+              }}
+            />
+            {expected ? (
+              <>
+                <span className="text-xs">{expected.name}</span>
+                <Button type="button" variant="outline" size="sm" onClick={() => setExpected(null)}>
+                  Remove
+                </Button>
+              </>
+            ) : null}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Your own expected.json: the score is computed against it, whatever case_id the submission
+            names. Without one, dev-rear-lamp is scored against Certivity&apos;s. Not stored.
+          </p>
+        </div>
         <div className="flex items-center">
           <Button type="submit" className="ml-auto" disabled={text.trim() === ""}>
             Check
@@ -89,7 +137,7 @@ export function CheckFileForm({ organizationId }: { organizationId: string | nul
         ) : null}
       </form>
       {/* Keyed so that pressing Check again on the same text runs the checks again. */}
-      {checked !== null ? <CertivityChecks key={round} text={checked} organizationId={organizationId} /> : null}
+      {checked !== null ? <CertivityChecks key={round} text={checked} organizationId={organizationId} expected={checkedExpected} /> : null}
     </div>
   );
 }
