@@ -58,6 +58,6 @@ and recall, who ran it. Platform scores for the held-out case also go on issue #
 
 | When | Case | Commit | Model | Scores | By |
 |---|---|---|---|---|---|
-| 2026-10-24 19:07 UTC | dev-rear-lamp (platform) | not given | not given | valid; 462 requirements; regulations P 0.500 R 0.750 F2 0.682; pages P 0.369 R 0.849 F2 0.674 | Clemente |
+| 2026-10-24 19:07 UTC | dev-rear-lamp (platform) | main at de54029 or earlier (not recorded) | organisation default (not recorded) | valid; 462 requirements; regulations P 0.500 R 0.750 F2 0.682; pages P 0.369 R 0.849 F2 0.674 | Clemente |
 | 2026-10-24 16:30 | dev-rear-lamp, subgoal-dev | this commit (#3) | none (`paragraphs.py`, rules only) | paragraph split: every cited (regulation, version, paragraph) found with its page in range, 119/121 dev (2 misses cite a table name), 117/117 sub-goal | Claude for Ramón |
 | 2026-10-24 16:20 | subgoal-dev | 3fb3f40 | none (`regdiff`, rules only) | local sub-goal scorer in `regdiff.score`: flagged 7/7, extra 0, change type 7/7; added 16/17, extra 0 | Claude for Ramón |
