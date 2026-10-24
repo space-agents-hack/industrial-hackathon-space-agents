@@ -158,6 +158,8 @@ def _write(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
             drafts.append(
                 {
                     "ref": ref,
+                    # The scripted model reads no profile: every obligation is on the whole part.
+                    "covers": "the part",
                     "clauses": [],
                     "text": f"The product shall meet {label}: {line.strip()[:300]}",
                     "test_case": f"Inspect or test the product against {label}.",
@@ -172,7 +174,8 @@ def _dispose(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
     _, calls = _write(messages)
     drafts = calls[0][1]["requirements"]
     obligations = [
-        {"ref": d["ref"], "clauses": d["clauses"], "what": d["text"][:400]} for d in drafts
+        {"ref": d["ref"], "covers": d["covers"], "clauses": d["clauses"], "what": d["text"][:400]}
+        for d in drafts
     ]
     return "", [("record_disposition", {"obligations": obligations, "set_aside": []})]
 

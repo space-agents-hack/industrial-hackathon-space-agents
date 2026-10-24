@@ -22,6 +22,12 @@ written without those words (a heading with a value, a table) and may cut one ob
 Write the missed ones too, with empty `clauses`, and answer for both halves of a cut one with the
 same requirement.
 
+In each requirement's `covers`, name what of the product it is about, copied word for word from
+the product profile: one of the functions it performs or one of the components or materials it
+contains, or `the part` when it is on the part as a whole (its marking, its installation, the
+device as a whole). An obligation about a function or component that is neither in the profile
+nor shown by the case does not apply: set its clauses aside as `not_this_product`.
+
 What counts:
 
 - An obligation is something the product, its installation, its marking or its testing must meet:

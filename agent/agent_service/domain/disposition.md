@@ -17,6 +17,11 @@ answer for every clause, with `record_disposition`:
   in one line, in the regulation's terms (which list item or table row, under which condition).
   A clause with two obligations gives two entries, both listing it; one obligation cut over two
   clauses gives one entry listing both.
+- `covers` in each entry: what of the product the obligation is about, copied word for word from
+  the product profile: one of the functions it performs or one of the components or materials it
+  contains. Write `the part` when it is on the part as a whole (its marking, its installation,
+  the device as a whole). An obligation about a function or component that is neither in the
+  profile nor shown by the case does not apply: set its clauses aside as `not_this_product`.
 - `set_aside`: every other clause, with its reason.
 
 What is an obligation:

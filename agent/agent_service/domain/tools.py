@@ -17,7 +17,7 @@ import json
 import re
 from collections import Counter
 from copy import copy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, cast
 from uuid import UUID
 
@@ -765,7 +765,10 @@ async def _write_windows(
         # window is reported so the orchestrator can write its paragraphs again.
         return stored, ("; ".join(errors)[:300] or None)
 
+    covers_from = writer.coverable(deps.profile)
+
     async def one(window: Window) -> tuple[int, str | None]:
+        window = replace(window, covers_from=covers_from)
         try:
             if two_stages:
                 return await two_stage(window)

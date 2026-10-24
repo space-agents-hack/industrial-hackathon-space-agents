@@ -86,6 +86,9 @@ class Window:
     # Not slots: cached_property needs the instance dict.
     version: LibraryVersion
     paragraphs: Sequence[Paragraph]
+    # What an obligation may name as `covers`: the profile's functions and components plus
+    # WHOLE_PART (coverable). Empty means `covers` is not checked (tests, or no profile).
+    covers_from: tuple[str, ...] = ()
 
     @property
     def pages(self) -> str:
@@ -238,6 +241,12 @@ class ProductProfile(BaseModel):
 
 class Draft(BaseModel):
     ref: int = Field(description="The [#n] number of the paragraph this requirement comes from.")
+    covers: str = Field(
+        default="",
+        max_length=300,
+        description="The function or component of the product profile it is about, copied word "
+        "for word from the profile, or 'the part' for the part as a whole.",
+    )
     clauses: list[str] = Field(
         default_factory=list[str],
         description="The {c...} clause ids this requirement writes, from the paragraph it cites. "
@@ -301,10 +310,11 @@ def _cites_this_window(ctx: RunContext[Window], answer: WindowAnswer) -> WindowA
     }
     unknown = sorted(answered - ids)
     missing = sorted(ids - answered, key=_clause_order)
+    uncovered = _not_in_profile(ctx.deps, answer.requirements)
     # Coverage is asked for once, not forced: a window that fails costs every requirement in it,
     # a few unanswered clauses cost only themselves, and each retry is another full answer in a
     # run that has 770 s for everything. The second answer is kept as it is.
-    if (unknown or missing) and ctx.retry == 0:
+    if (unknown or missing or uncovered) and ctx.retry == 0:
         parts: list[str] = []
         if missing:
             shown = ", ".join(missing[:40]) + (" ..." if len(missing) > 40 else "")
@@ -314,9 +324,45 @@ def _cites_this_window(ctx: RunContext[Window], answer: WindowAnswer) -> WindowA
             )
         if unknown:
             parts.append(f"Not clause ids of this window: {', '.join(unknown[:20])}.")
+        if uncovered:
+            parts.append(
+                f"`covers` is not an entry of the product profile for [#{', #'.join(uncovered)}]. "
+                "Copy a function or component from the profile word for word, or write "
+                f"'{WHOLE_PART}'; if it covers none of them, set its clauses aside as "
+                "not_this_product."
+            )
         raise ModelRetry(" ".join(parts) + " Answer again with the whole list.")
     requirements = [d for d in answer.requirements if d.text.strip()]
     return WindowAnswer(requirements=requirements, set_aside=answer.set_aside)
+
+
+# What `covers` names when an obligation is on the part as a whole: its marking, its
+# installation, the device as a whole.
+WHOLE_PART = "the part"
+
+
+def coverable(profile: "ProductProfile | None") -> tuple[str, ...]:
+    """What an obligation may name as `covers` (SYS-25; Certivity's tips, Clemente 2026-10-24
+    23:01): each function the profile says the part performs, each thing it contains, and the
+    part as a whole. Not the functions it does NOT have: an obligation for one of those is set
+    aside as not_this_product."""
+    if profile is None:
+        return ()
+    return (*profile.does, *profile.contains, WHOLE_PART)
+
+
+def _normal(text: str) -> str:
+    return " ".join(text.casefold().split()).strip(" .;:-")
+
+
+def _not_in_profile(window: Window, drafts: Sequence[Draft]) -> list[str]:
+    """The [#n] of drafts whose `covers` names nothing in the profile. Case, spacing and end
+    punctuation are forgiven: the point is that it names a profile entry, not that it is typed
+    the same."""
+    if not window.covers_from:
+        return []
+    allowed = {_normal(c) for c in window.covers_from}
+    return sorted({str(d.ref) for d in drafts if _normal(d.covers) not in allowed}, key=int)
 
 
 def _clause_order(clause_id: str) -> tuple[int, int]:
@@ -337,6 +383,12 @@ def _clause_order(clause_id: str) -> tuple[int, int]:
 
 class Obligation(BaseModel):
     ref: int = Field(description="The [#n] number of the paragraph that states it.")
+    covers: str = Field(
+        default="",
+        max_length=300,
+        description="The function or component of the product profile it is about, copied word "
+        "for word from the profile, or 'the part' for the part as a whole.",
+    )
     clauses: list[str] = Field(
         default_factory=list[str],
         description="The {c...} clause ids it comes from. Empty for one the clause list does not "
@@ -367,7 +419,7 @@ disposition_agent = Agent(
 def _disposes_of_every_clause(ctx: RunContext[Window], answer: Disposition) -> Disposition:
     as_drafts = WindowAnswer(
         requirements=[
-            Draft(ref=o.ref, clauses=o.clauses, text=o.what or "-", test_case="")
+            Draft(ref=o.ref, covers=o.covers, clauses=o.clauses, text=o.what or "-", test_case="")
             for o in answer.obligations
         ],
         set_aside=answer.set_aside,

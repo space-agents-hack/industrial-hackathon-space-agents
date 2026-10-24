@@ -216,7 +216,7 @@ def answering(*answers: dict[str, object]) -> tuple[FunctionModel, list[int]]:
     def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         calls.append(1)
         args = answers[min(len(calls), len(answers)) - 1]
-        return ModelResponse(parts=[ToolCallPart("record_requirements", args)])
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, args)])
 
     return FunctionModel(model), calls
 
@@ -248,6 +248,25 @@ async def test_the_last_try_is_kept_even_with_clauses_unanswered() -> None:
 
     assert len(calls) == 2  # asked once, then kept
     assert [d.text for d in result.output.requirements] == ["It shall be red."]
+
+
+async def test_an_obligation_must_name_what_of_the_profile_it_covers() -> None:
+    # Certivity's tips (Clemente, 23:01): an obligation that covers no function or component of
+    # the part is noise. Code holds `covers` to the profile; case and end punctuation are forgiven.
+    profile = writer.ProductProfile(part="A made-up widget.", does=["Emits a made-up signal"])
+    window = writer.Window(version(), [paragraph(3, 4, RED)], covers_from=writer.coverable(profile))
+    aside = [{"clause": "c3.2", "reason": "not_this_product"}]
+    first = {"ref": 3, "covers": "a heating function", "clauses": ["c3.1"], "what": "Red."}
+    model, calls = answering(
+        {"obligations": [first], "set_aside": aside},
+        {"obligations": [{**first, "covers": "emits a made-up signal."}], "set_aside": aside},
+    )
+
+    result = await writer.disposition_agent.run(window.render(), model=model, deps=window)
+
+    assert len(calls) == 2
+    assert [o.covers for o in result.output.obligations] == ["emits a made-up signal."]
+    assert writer.coverable(profile) == ("Emits a made-up signal", writer.WHOLE_PART)
 
 
 async def test_a_translator_reads_the_table_an_obligation_refers_to() -> None:
