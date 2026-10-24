@@ -21,6 +21,21 @@ and Ramón (#11).
 Certivity's own required elements are **CR1–CR4**. We never use `R-` or `R1` for our ids, because
 Certivity's output requirements are numbered R-001 and up.
 
+## Names on screen
+
+The requirements, tables, routes and code use the left column; the web shows the right one
+(Clemente, 2026-10-24 21:13). Requirements keep the old words so that ids, tables and tests stay
+searchable. Same-name risk: "case" also means Certivity's case (`dev-rear-lamp`, `subgoal-dev`),
+which is what a Part holds.
+
+| In docs and code | On screen |
+|---|---|
+| case | Part |
+| run | Draft requirements |
+| changes (sub-goal, SYS-19, SYS-45) | Review requirements |
+| regulations | Regulations; "Add regulations" proposed, not decided |
+| checks | Checks |
+
 ## Status values
 
 | Item | Lifecycle |
