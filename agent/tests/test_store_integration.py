@@ -527,29 +527,6 @@ async def test_requirements_and_the_library_through_the_real_schema(
     [version] = await store.library_versions(UUID(org))
     assert (version.regulation, version.version_label, version.role) == ("UN R148", "00", "base")
 
-    # A project reads the whole library until it chooses (SYS-32).
-    assert await store.case_regulations(UUID(case)) is None
-    project = rows(await db.table("cases").select("project_id").eq("id", case).execute())[0]
-    reg = rows(await db.table("regulations").select("id").eq("organization_id", org).execute())[0]
-    await (
-        db.table("projects")
-        .update({"all_regulations": False})
-        .eq("id", project["project_id"])
-        .execute()
-    )
-    assert await store.case_regulations(UUID(case)) == set()
-    await (
-        db.table("project_regulations")
-        .insert(
-            {
-                "project_id": project["project_id"],
-                "regulation_id": reg["id"],
-                "organization_id": org,
-            }
-        )
-        .execute()
-    )
-    assert await store.case_regulations(UUID(case)) == {"UN R148"}
     first, second = await store.version_paragraphs(version.id)
     assert (first.label, second.label) == ("5.4.2", "5.4.3")
 

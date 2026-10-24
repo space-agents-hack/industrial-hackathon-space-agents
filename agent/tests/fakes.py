@@ -8,7 +8,12 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from agent_service.domain.regulation_search import Hit, ScopeSummary, VersionToSummarize
+from agent_service.domain.regulation_search import (
+    Hit,
+    ProjectScope,
+    ScopeSummary,
+    VersionToSummarize,
+)
 from agent_service.providers import Endpoint
 from agent_service.records import (
     Approval,
@@ -300,9 +305,6 @@ class InMemoryRunStore:
     async def case_name(self, case_id: UUID) -> str | None:
         return self.case_names.get(case_id)
 
-    async def case_regulations(self, case_id: UUID) -> set[str] | None:
-        return self.case_choice.get(case_id)
-
     async def library_versions(self, org: UUID) -> list[LibraryVersion]:
         return sorted(self.versions.get(org, []), key=lambda v: (v.regulation, v.version_label))
 
@@ -472,6 +474,15 @@ class TextSearch:
 
     async def organization_model(self, org: UUID, process: str) -> str | None:
         return await self.store.organization_model(org, process)
+
+    async def project_scope(self, case_id: UUID) -> ProjectScope | None:
+        chosen = self.store.case_choice.get(case_id)
+        if chosen is None:
+            return ProjectScope(all_regulations=True)
+        versions = [v for vs in self.store.versions.values() for v in vs]
+        return ProjectScope(
+            all_regulations=False, version_ids=[v.id for v in versions if v.regulation in chosen]
+        )
 
     # The indexer's half of SearchStore; a run never indexes.
     async def refresh_keys(self, org: UUID) -> int:

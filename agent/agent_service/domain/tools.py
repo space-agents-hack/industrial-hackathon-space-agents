@@ -52,9 +52,9 @@ class Deps:
     settings: Settings
     reference: certivity.Reference = field(default_factory=lambda: certivity.EMPTY)
     concurrency: int = 6
-    # The regulations the case's project chose (SYS-32), or None for the whole library. Everything
-    # the orchestrator sees, searches and writes is limited to them.
-    chosen: set[str] | None = None
+    # The versions of the regulations the case's project chose (SYS-32), or None for the whole
+    # library. Everything the orchestrator sees, searches and writes is limited to them.
+    chosen: set[UUID] | None = None
     # The organisation's model for checking (organization_models, process "check"), or None for
     # the run's own model. A second model family catches what the writer's family misses.
     check_model: Model | str | None = None
@@ -114,7 +114,14 @@ async def search_regulations(
     async with httpx.AsyncClient(timeout=30) as http:
         try:
             hits = await regulation_search.search(
-                store, http, deps.settings, deps.run.organization_id, query, version_ids=base, k=k
+                store,
+                http,
+                deps.settings,
+                deps.run.organization_id,
+                query,
+                version_ids=base,
+                k=k,
+                case_id=deps.run.case_id,
             )
         except (regulation_search.EmbeddingError, ValueError):
             # No embedding key, or no embedding model configured: words alone still find the
@@ -128,6 +135,7 @@ async def search_regulations(
                 version_ids=base,
                 k=k,
                 mode="text",
+                case_id=deps.run.case_id,
             )
     return [
         {
@@ -387,7 +395,7 @@ async def _library(deps: Deps) -> list[LibraryVersion]:
     if deps.library is None:
         versions = await deps.store.library_versions(deps.run.organization_id)
         if deps.chosen is not None:
-            versions = [v for v in versions if v.regulation in deps.chosen]
+            versions = [v for v in versions if v.id in deps.chosen]
         deps.library = versions
     return deps.library
 

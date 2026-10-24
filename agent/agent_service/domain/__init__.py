@@ -56,7 +56,10 @@ async def prepare_deps(store: RunStore, run: Run, settings: Settings) -> Deps:
     if run.case_id is not None:
         case_name = await store.case_name(run.case_id) or str(run.case_id)
         parts = (await case_ingest.case_content(store, run.case_id)).parts
-        chosen = await store.case_regulations(run.case_id)
+        # The project's choice of regulations (SYS-32), read the way the search reads it.
+        scope = await store.search_store().project_scope(run.case_id)
+        if scope is not None and not scope.all_regulations:
+            chosen = set(scope.version_ids)
     return Deps(
         store=store,
         run=run,

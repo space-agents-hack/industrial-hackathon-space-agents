@@ -113,11 +113,6 @@ class RunStore(Protocol):
 
     async def case_name(self, case_id: UUID) -> str | None: ...
 
-    async def case_regulations(self, case_id: UUID) -> set[str] | None:
-        """The regulation codes the case's project chose, or None when it reads all of them
-        (projects.all_regulations, the default)."""
-        ...
-
     async def library_versions(self, org: UUID) -> list[LibraryVersion]:
         """Every version in the organisation's regulation library, by regulation and label."""
         ...
