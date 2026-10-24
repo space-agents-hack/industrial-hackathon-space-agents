@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { SETTINGS_TAB, needsProject, projectTabs } from "./navigation.ts";
+import { SETTINGS_TAB, needsProject, projectTabs, settingsTabs } from "./navigation.ts";
 
 test("runs, regulations, changes and checks need a project", () => {
   for (const path of ["/runs", "/regulations", "/regulations/abc", "/changes", "/checks"]) {
@@ -38,4 +38,13 @@ test("Settings holds the former Admin and Setup", () => {
   assert.equal(SETTINGS_TAB.matches("/admin/people"), true);
   assert.equal(SETTINGS_TAB.matches("/setup"), true);
   assert.equal(SETTINGS_TAB.matches("/projects"), false);
+});
+
+test("an organisation admin gets the organisation's tabs only; the deployment's are platform admins'", () => {
+  const deployment = ["Organisations", "Setup", "Releases", "Deployment"];
+  const orgAdmin = settingsTabs(false).map((t) => t.label);
+  assert.ok(orgAdmin.includes("People"));
+  for (const label of deployment) assert.equal(orgAdmin.includes(label), false, label);
+  const platform = settingsTabs(true).map((t) => t.label);
+  for (const label of deployment) assert.equal(platform.includes(label), true, label);
 });

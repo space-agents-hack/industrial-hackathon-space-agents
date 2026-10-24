@@ -44,3 +44,25 @@ export const SETTINGS_TAB: Tab = {
   label: "Settings",
   matches: (path) => path.startsWith("/admin") || path.startsWith("/setup"),
 };
+
+// Settings' tabs. The organisation's for its admins; the deployment's (every organisation, the
+// setup steps, releases, deployment secrets) only for platform admins: an admin of a client
+// organisation must not see or change the deployment. The pages and routes refuse on their own
+// (deployment_test.sql, rls_test.sql); this decides what is offered.
+const ORGANIZATION_TABS = [
+  { href: "/admin", label: "Models and limits" },
+  { href: "/admin/providers", label: "Providers" },
+  { href: "/admin/people", label: "People" },
+  { href: "/admin/usage", label: "Usage" },
+  { href: "/admin/audit", label: "Audit log" },
+];
+const PLATFORM_TABS = [
+  { href: "/admin/organizations", label: "Organisations" },
+  { href: "/admin/setup", label: "Setup" },
+  { href: "/admin/releases", label: "Releases" },
+  { href: "/admin/deployment", label: "Deployment" },
+];
+
+export function settingsTabs(platformAdmin: boolean): { href: string; label: string }[] {
+  return platformAdmin ? [...ORGANIZATION_TABS, ...PLATFORM_TABS] : ORGANIZATION_TABS;
+}

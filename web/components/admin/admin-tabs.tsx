@@ -3,27 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { settingsTabs } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
-
-const TABS = [
-  { href: "/admin", label: "Models and limits" },
-  { href: "/admin/providers", label: "Providers" },
-  { href: "/admin/people", label: "People" },
-  { href: "/admin/usage", label: "Usage" },
-  { href: "/admin/audit", label: "Audit log" },
-];
-// The deployment, not one organisation: platform admins only. Setup is the former Setup page,
-// joined here (SYS-37).
-const PLATFORM_TABS = [
-  { href: "/admin/organizations", label: "Organisations" },
-  { href: "/admin/setup", label: "Setup" },
-  { href: "/admin/releases", label: "Releases" },
-  { href: "/admin/deployment", label: "Deployment" },
-];
 
 export function AdminTabs({ platformAdmin }: { platformAdmin: boolean }) {
   const pathname = usePathname();
-  const tabs = platformAdmin ? [...TABS, ...PLATFORM_TABS] : TABS;
+  const tabs = settingsTabs(platformAdmin);
   return (
     <nav aria-label="Admin sections" className="flex flex-wrap gap-1 border-b pb-2 text-sm">
       {tabs.map((tab) => {
