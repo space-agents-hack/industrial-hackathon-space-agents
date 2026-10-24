@@ -1,14 +1,14 @@
 # Interface control
 
-All `proposed`. **Owners are `UNASSIGNED` until Clemente or Ramón assigns them.** Nobody fills
+All `proposed`. **Owners are `UNASSIGNED` until Clemente or Ramón assigns them** (Clemente took case ingestion, 2026-10-24). Nobody fills
 them in on their behalf. A change needs both owners to agree on the issue before merge.
 
 ## Interface register
 
 | IF | From → To | Carries | Owner (from / to) | SYS | Issue |
 |---|---|---|---|---|---|
-| IF-1 | web → db/Storage → ingest | Case files | `UNASSIGNED` / `UNASSIGNED` | 1, 2, 16 | #8 |
-| IF-2 | ingest → regs | Case content tagged by file and page, plus optional notes | `UNASSIGNED` / `UNASSIGNED` | 2, 3, 8 | — |
+| IF-1 | web → db/Storage → ingest | Case files | Clemente / Clemente | 1, 2, 16 | #8 |
+| IF-2 | ingest → regs | Case content tagged by file and page, plus optional notes | Clemente / `UNASSIGNED` | 2, 3, 8 | — |
 | IF-3 | regs catalogue → requirement writer | Paragraphs with regulation, version, page, paragraph | `UNASSIGNED` / `UNASSIGNED` | 5, 6, 15, 23 | #3 |
 | IF-4 | agent → db → web, checks | Run output: `submission_main` JSON | `UNASSIGNED` / `UNASSIGNED` | 4, 14 | #4 |
 | IF-5 | Certivity → checks, regs | `validate.py`, `score_local.py`, schemas, `index.json`, `expected.json` | `UNASSIGNED` | 10, 11, 16, 19 | — |
