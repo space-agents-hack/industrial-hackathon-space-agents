@@ -34,6 +34,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      access_requests: {
+        Row: {
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          email: string
+          granted_role: string | null
+          id: string
+          kind: string
+          organization_id: string | null
+          organization_name: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          email: string
+          granted_role?: string | null
+          id?: string
+          kind: string
+          organization_id?: string | null
+          organization_name: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          email?: string
+          granted_role?: string | null
+          id?: string
+          kind?: string
+          organization_id?: string | null
+          organization_name?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "access_requests_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       approvals: {
         Row: {
           args: Json
@@ -1234,8 +1284,13 @@ export type Database = {
         Returns: string
       }
       can_reset_password: { Args: { member: string }; Returns: boolean }
+      cancel_access_request: { Args: { request: string }; Returns: undefined }
       cancel_regulation_import: { Args: { job: string }; Returns: undefined }
       create_organization: { Args: { org_name: string }; Returns: string }
+      decide_access_request: {
+        Args: { approve: boolean; member_role?: string; request: string }
+        Returns: string
+      }
       create_regulation_import: {
         Args: { org: string; regulation_index: Json; source_name: string }
         Returns: string
@@ -1270,6 +1325,13 @@ export type Database = {
           vector_rank: number
           version_id: string
           version_label: string
+        }[]
+      }
+      joinable_organizations: {
+        Args: never
+        Returns: {
+          id: string
+          name: string
         }[]
       }
       my_access: { Args: never; Returns: Json }
@@ -1378,6 +1440,8 @@ export type Database = {
         }
         Returns: number
       }
+      request_organization: { Args: { org_name: string }; Returns: string }
+      request_to_join: { Args: { org: string }; Returns: string }
       set_member: {
         Args: {
           member: string

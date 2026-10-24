@@ -177,10 +177,11 @@ enable_refresh_token_rotation = true
 # Requires enable_refresh_token_rotation = true.
 refresh_token_reuse_interval = 10
 # Allow/disallow new user signups to your project.
-enable_signup = false
-# Off on purpose: every signed-in user can see every run and spend model credits, so who can sign
-# in is the access control. Users are created with scripts/create-user.sh. This file only
-# configures the LOCAL stack; turn sign-ups off in the hosted project too (supabase/README.md).
+enable_signup = true
+# On since SYS-35 (2026-10-24): a new account belongs to no organisation and RLS shows it nothing
+# until an admin approves its request to join, or a platform admin approves the organisation it
+# asked for (migration 20261024260000_access_requests.sql). This file only configures the LOCAL
+# stack; the hosted project's setting is separate (supabase/README.md).
 # Allow/disallow anonymous sign-ins to your project.
 enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts

@@ -40,9 +40,15 @@ so this project does not collide with another one running on the same machine:
 Created once by setup (`scripts/bootstrap.sh`, from the local Setup page), which also turns new sign-ups off
 and sets the site address through the Supabase API. If it reports it could not, do it in the
 dashboard: Authentication, Sign In / Providers, "Allow new users to sign up" off; Authentication,
-URL Configuration, Site URL set to the web's production address. Keep sign-ups off: a person who
-signs up joins no organisation and sees nothing (RLS), but accounts are how people are let in, and
-an admin creates them on purpose.
+URL Configuration, Site URL set to the web's production address.
+
+Self sign-up (SYS-35) needs "Allow new users to sign up" on. That is safe because an account alone
+opens nothing: it belongs to no organisation, and RLS shows it nothing, until an organisation's
+admin approves its request to join, or a platform admin approves the new organisation it asked for
+(Settings, People and Settings, Organisations). With "Confirm email" on, Supabase's built-in
+mailer sends only a few emails an hour; either turn confirmation off for the demo or configure
+SMTP. Add `<web address>/auth/confirm` to the redirect URLs so the confirmation link signs the
+person in. With sign-up off, the app's sign-up form says so and admins still create accounts.
 
 Create users with the script. It asks for the password and does not accept the local default:
 
