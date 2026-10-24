@@ -25,6 +25,7 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-35 | let a signed-in person with no organisation either ask to join an existing organisation, which one of its admins approves or declines, or ask for a new organisation, which a platform admin approves or declines and of which they then become admin; no one sees an organisation's data before being approved | N-15, N-9 | web, db | T | 1 | #26 |
 | SYS-36 | after sign-in, make the person pick a project of their organisation, or only offer to create one if it has none; show Runs, Regulations, Changes and Checks only inside the selected project | N-15, N-8 | web | T, D | — | #26 |
 | SYS-37 | gather setup and administration in one Settings area shown only to organisation admins, with the deployment-wide parts shown only to platform admins | N-9 | web, db | T | — | #26 |
+| SYS-38 | start a run only for a case with at least one file in a project that uses at least one regulation, and otherwise refuse it with the reason; runs from loose files with no case are not accepted | N-8, N-7 | web | T | 1, 3 | #27 |
 | **Output** | | | | | | |
 | SYS-4 | output a main-goal JSON that `validate.py` accepts, with `team_id` and `case_id` | N-7 | regs, checks | T | 4 | #4 |
 | SYS-5 | cite only catalogue regulations, with the **base** `version_label` and a page of that PDF | N-2, N-7 | regs | T | 3, 5 | #3, #4 |
@@ -57,7 +58,7 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-26 | (may) find regulations for a given country or industry on the web and other sources, and write them as an `index.json` in Certivity's format, which SYS-23 then ingests | N-14 | regs | D | 3 | #17 |
 | SYS-30 | (may) run the agents on a local model (for example Ollama) instead of a hosted provider | N-9 | regs, ops | D | — | #21 |
 
-SYS-23 to SYS-37 are numbered out of order because they were added later. Ids are never renumbered.
+SYS-23 to SYS-38 are numbered out of order because they were added later. Ids are never renumbered.
 
 ## Rationale and notes
 
@@ -77,6 +78,7 @@ SYS-23 to SYS-37 are numbered out of order because they were added later. Ids ar
 | SYS-35 | Clemente, 2026-10-24 (UX thread). Needs self sign-up, which is off on purpose today (`supabase/README.md`); turning it on is a hosted Supabase setting that Clemente changes himself. A platform admin approves each new organisation (Clemente, 2026-10-24), because otherwise a stranger's runs are billed to the deployment's model keys, which have no monthly cap by default |
 | SYS-36 | Clemente, 2026-10-24 (UX thread). Data ownership does not change: the regulation library stays per organisation (ADR-0006) and appears through the project's chosen regulations (SYS-32) |
 | SYS-37 | Clemente, 2026-10-24 (UX thread): Setup and Admin joined. Deployment-wide settings (model keys, SYS-33 defaults) stay with platform admins, since they act on every organisation |
+| SYS-38 | Clemente's and Ramón's first experiments, 2026-10-24. A run with nothing to read or no regulation to cite can only fail after spending model time. Ends the loose-files path (`run_files`) noted under IF-1 |
 | SYS-26 | Clemente, 2026-10-24: only if time allows. Kept here so it is not lost; issue #17 holds it |
 | SYS-28 | Clemente, 2026-10-24: embeddings (Ramón, #18) narrow 56 regulations fast; the full read keeps recall, since a paragraph the top-k misses inside a chosen regulation would otherwise be lost. Top-k only picks, it never decides alone that a regulation does not apply: the miss risk is regulation-level recall (SYS-8) |
 | SYS-29 | Clemente, 2026-10-24. The check agent reads the DB, not the model's memory, so a hallucinated paragraph is caught before the file is uploaded. The uncovered-paragraph list is for recall, which F2 weighs most (Clemente, 18:29). It costs run time (SYS-15) |
@@ -103,8 +105,8 @@ SYS-23 to SYS-37 are numbered out of order because they were added later. Ids ar
 | N-4 No noise | SYS-3, 7, 8, 28, 29, 32 |
 | N-5 Actionable wording | SYS-7, 9, 25 |
 | N-6 Stale requirements | SYS-19 |
-| N-7 Accepted submission | SYS-4, 5, 10, 19, 20, 29 |
-| N-8 End to end | SYS-14, 15, 28, 36 |
+| N-7 Accepted submission | SYS-4, 5, 10, 19, 20, 29, 38 |
+| N-8 End to end | SYS-14, 15, 28, 36, 38 |
 | N-9 Deployable | SYS-2, 13, 16, 17, 24, 33, 35, 37, 30 (future) |
 | N-10 Fits their tooling | SYS-18 |
 | N-11 Submitted | SYS-21 |
@@ -119,7 +121,7 @@ Every need has at least one requirement, and every requirement has at least one 
 
 | Part | Requirements |
 |---|---|
-| web | SYS-1, 10, 11, 12, 13, 14, 18, 24, 31, 32, 33, 35, 36, 37 |
+| web | SYS-1, 10, 11, 12, 13, 14, 18, 24, 31, 32, 33, 35, 36, 37, 38 |
 | ingest | SYS-1, 2, 3, 8, 14, 15, 24, 27, 33 |
 | regs | SYS-3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 17, 19, 23, 25, 26, 28, 29, 30, 32, 33, 34 |
 | checks | SYS-4, 10, 11, 14, 19, 29, 34 |

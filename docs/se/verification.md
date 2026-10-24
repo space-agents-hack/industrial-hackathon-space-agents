@@ -44,6 +44,7 @@ Methods: **T** automated test in `make check`, **S** score, **D** demonstration,
 | V-35 | SYS-35 | T (pgTAP): a join request gives no access until an admin of that organisation approves it; a declined or pending person reads none of its rows; an admin of another organisation cannot approve it; a new-organisation request gives nothing until a platform admin approves it, then makes the requester its admin | `supabase/tests/access_requests_test.sql` (20 assertions, 03c802d); CI on the local stack |
 | V-36 | SYS-36 | T: navigation rules, no project selected shows only project choice or creation, and Runs, Regulations, Changes and Checks only appear with a project; D: sign in, pick a project, see its sections | T: `web/lib/navigation.test.ts` (3990023); D none yet |
 | V-37 | SYS-37 | T: Settings is hidden from and refused to a non-admin member; deployment-wide parts are hidden from and refused to an organisation admin who is not a platform admin | T: hidden for non-admins `web/lib/access.test.ts` (showsAdmin); deployment tabs only for platform admins `web/lib/navigation.test.ts` (267709d); writes refused `supabase/tests/rls_test.sql`, `deployment_test.sql`. Gap: no test opens an admin page as a member and sees it refuse |
+| V-38 | SYS-38 | T: a run for a case without files, or in a project with no regulation, or with no case, is refused with its reason | `web/lib/run-readiness.test.ts` (cb8f6b8) |
 | V-26 | SYS-26 | D: a generated `index.json` passes the same loader as Certivity's (future) | none yet |
 
 ## Score log
