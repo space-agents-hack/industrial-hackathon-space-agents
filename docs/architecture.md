@@ -16,7 +16,7 @@ flowchart LR
   B <-->|live rows, as the signed-in user| D[(Supabase Postgres)]
   B -->|case files, as the user| F[(Supabase Storage, private buckets)]
   W -->|start run with its files, regulation import, decision, as the user| D
-  W -->|"POST /runs/{id}/advance, /checks + shared secret"| A[agent/ FastAPI on Vercel]
+  W -->|"POST /runs/{id}/advance, /checks, GET /runs/{id}/submission + shared secret"| A[agent/ FastAPI on Vercel]
   A -->|runs, events, approvals, saved conversation, regulation library, with the secret key| D
   A -->|reads case files, stores regulation PDFs| F
   A -->|model calls| M[Model provider chosen by AGENT_MODEL, or the organisation's Ollama server]

@@ -8,7 +8,7 @@ import { describeResult } from "@/lib/trace";
 // A run's result, collapsed by default: a submission is thousands of lines and pushed the trace
 // off the screen (first experiments, 2026-10-24). Copy and Download give it whole, pretty-printed
 // when it is JSON, so nobody selects text by hand to upload it.
-export function RunResult({ output, runId }: { output: string; runId: string }) {
+export function RunResult({ output, runId, title = "Result" }: { output: string; runId: string; title?: string }) {
   const result = describeResult(output);
   const [copied, setCopied] = useState<"yes" | "failed" | null>(null);
 
@@ -35,7 +35,7 @@ export function RunResult({ output, runId }: { output: string; runId: string }) 
   return (
     <section className="grid gap-1.5 rounded-md border border-success-border bg-card px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-sm font-medium">Result</h2>
+        <h2 className="text-sm font-medium">{title}</h2>
         <span className="text-xs text-muted-foreground">{result.summary}</span>
         <div className="ml-auto flex gap-2">
           <Button size="sm" variant="outline" onClick={() => void copy()}>

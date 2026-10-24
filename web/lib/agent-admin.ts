@@ -270,3 +270,16 @@ export async function runSubgoalChanges(request: ChangesRequest): Promise<Change
   if (!result) throw new AgentAdminError("The agent answered in an unexpected form.", 200);
   return result;
 }
+
+// The submission an unfinished run's stored requirements make now (#36): built by the agent the
+// way `submit` builds it, so a run that ran out of time or waits on an approval can still be
+// uploaded. The caller has checked that the person can read the run.
+export async function storedSubmission(runId: string): Promise<{ status: string; submission: unknown }> {
+  const body = await call(`/runs/${encodeURIComponent(runId)}/submission`, {
+    messages: { 409: "This run has no case, so it stored no requirements." },
+  });
+  if (!isRecord(body) || typeof body.status !== "string" || !isRecord(body.submission)) {
+    throw new AgentAdminError("The agent answered in an unexpected form.", 200);
+  }
+  return { status: body.status, submission: body.submission };
+}

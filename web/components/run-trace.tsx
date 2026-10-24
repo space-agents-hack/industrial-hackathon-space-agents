@@ -8,6 +8,7 @@ import { RelativeTime } from "@/components/relative-time";
 import { RunClock } from "@/components/run-clock";
 import { RunResult } from "@/components/run-result";
 import { StatusBadge } from "@/components/status-badge";
+import { StoredSubmission } from "@/components/stored-submission";
 import { Timeline } from "@/components/timeline";
 import { Button } from "@/components/ui/button";
 import { looksLikeSubmission } from "@/lib/certivity";
@@ -325,6 +326,10 @@ export function RunTrace({
       ) : null}
 
       {run.output ? <RunResult output={run.output} runId={run.id} /> : null}
+
+      {!run.output && run.case_id && run.status !== "queued" ? (
+        <StoredSubmission runId={run.id} organizationId={run.organization_id ?? null} />
+      ) : null}
 
       {run.status === "succeeded" && looksLikeSubmission(run.output) ? <CertivityChecks text={run.output} organizationId={run.organization_id ?? null} /> : null}
 

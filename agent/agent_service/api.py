@@ -28,7 +28,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from supabase_auth.errors import AuthApiError
 
-from agent_service import metering, providers, runner
+from agent_service import domain, metering, providers, runner
 from agent_service.domain import (
     assistant,
     case_ingest,
@@ -185,6 +185,26 @@ async def get_project_store(
     if not settings.supabase_url or not settings.supabase_secret_key:
         raise HTTPException(503, "SUPABASE_URL and SUPABASE_SECRET_KEY are not configured.")
     return await SupabaseProjectStore.connect(settings.supabase_url, settings.supabase_secret_key)
+
+
+# The submission as the run's stored requirements make it now (#36): for a run that never reached
+# `submit` (out of time, a limit, a failure, an approval nobody gave), whose requirements are
+# stored but which has no output. Writes nothing and calls no model. The web has checked that the
+# caller can read the run's organisation.
+@app.get("/runs/{run_id}/submission", dependencies=[Depends(require_secret)])
+async def run_submission(
+    run_id: UUID, store: Annotated[RunStore, Depends(get_store)]
+) -> dict[str, Any]:
+    try:
+        run = await store.get_run(run_id)
+        if run is None:
+            raise HTTPException(404, "No such run.")
+        if run.case_id is None:
+            raise HTTPException(409, "This run has no case, so it stored no requirements.")
+        data = await domain.stored_submission(store, run)
+    finally:
+        await store.aclose()
+    return {"status": run.status, "submission": data}
 
 
 class ChatRequest(BaseModel):

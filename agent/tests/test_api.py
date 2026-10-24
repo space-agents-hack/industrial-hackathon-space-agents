@@ -67,6 +67,32 @@ def test_advance_streams_accepted_then_done(client: TestClient, store: InMemoryR
     assert store.closed
 
 
+def test_a_run_that_never_submitted_still_hands_over_its_stored_requirements(
+    client: TestClient, store: InMemoryRunStore
+) -> None:
+    # Paused for the export approval: requirements stored, no output yet (#36).
+    store.organization_names[ORG] = "team-09"
+    run_id = case_run(store)
+    client.post(f"/runs/{run_id}/advance", headers=AUTH)
+    assert store.outputs.get(run_id) is None
+
+    response = client.get(f"/runs/{run_id}/submission", headers=AUTH)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "awaiting_approval"
+    data = body["submission"]
+    assert (data["team_id"], data["case_id"]) == ("team-09", "dev-rear-lamp")
+    stored = [r for r in store.requirements if r.run_id == run_id and r.status != "rejected"]
+    assert stored and [r["id"] for r in data["requirements"]] == [r.ext_id for r in stored]
+    assert store.closed
+
+
+def test_the_stored_submission_needs_the_secret_and_a_known_run(client: TestClient) -> None:
+    assert client.get(f"/runs/{uuid4()}/submission").status_code == 401
+    assert client.get(f"/runs/{uuid4()}/submission", headers=AUTH).status_code == 404
+
+
 def test_advance_of_a_run_waiting_for_a_person_is_409(
     client: TestClient, store: InMemoryRunStore
 ) -> None:
