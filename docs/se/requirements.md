@@ -113,7 +113,7 @@ Status: proposed.
 marked `requires_approval=True`, so a person approves before anything leaves the system. One
 approval covers the whole list ("approve all"), not one per requirement or per file.
 Per-requirement review (accept or reject each line) is future work: useful for an engineer at a
-client, not something we can do for 200 lines during the hackathon.
+client, not something we can do for a long list during the hackathon.
 Why: AGENTS.md rule for writes, and the deployability story. Serves N-9. Allocated: regs, web.
 Verify: T (the run pauses before it). Issue: #6. Status: proposed.
 
