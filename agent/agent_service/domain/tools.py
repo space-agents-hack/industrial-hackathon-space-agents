@@ -277,7 +277,8 @@ async def search_regulations(
     if reason is not None and not deps.words_only_noted:
         # For the person reading the trace, not for the model: its tool result is unchanged.
         deps.words_only_noted = True
-        await _progress(deps, regulation_search.WORDS_ONLY.format(reason=reason))
+        text = regulation_search.WORDS_ONLY.format(reason=reason)
+        await deps.store.add_event(deps.run.id, "text", {"text": text, "level": "warning"})
     return [
         {
             "regulation": h.regulation_code,

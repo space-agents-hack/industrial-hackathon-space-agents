@@ -7,7 +7,9 @@
 import { isUuid } from "./validation.ts";
 
 export type ChatRole = "user" | "assistant";
-export type ChatTurn = { role: ChatRole; content: string };
+// `notices`: what the agent said about how an answer was found (#37), kept with the answer it
+// belongs to in the tab's conversation. Never sent back to the agent.
+export type ChatTurn = { role: ChatRole; content: string; notices?: string[] };
 // `notices`: what the agent says about how the answer was found, shown as it is under the answer
 // whatever the model wrote (a search that matched words only, #37).
 export type ChatAnswer = { answer: string; model: string; costUsd: number | null; notices: string[] };

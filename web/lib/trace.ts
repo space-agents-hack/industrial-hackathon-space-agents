@@ -102,7 +102,9 @@ export type RunSummary = {
 // ---------------------------------------------------------------------------------------------
 
 export type StatusPayload = { status: string; detail?: string };
-export type TextPayload = { text: string };
+// `warning`: a line the agent's code wrote for the person, not the model's words (a search that
+// matched words only, #37), shown so it is not read past.
+export type TextPayload = { text: string; warning?: true };
 export type ToolCallPayload = { tool_call_id: string; tool_name: string; args: unknown };
 export type ToolResultPayload = {
   tool_call_id: string;
@@ -175,7 +177,11 @@ export function parseEvent(row: RunEventRow): ParsedEvent {
       };
     case "text":
       if (!isString(p.text)) return unknown;
-      return { ...base, kind: "text", payload: { text: p.text } };
+      return {
+        ...base,
+        kind: "text",
+        payload: p.level === "warning" ? { text: p.text, warning: true } : { text: p.text },
+      };
     case "tool_call":
       if (!isString(p.tool_call_id) || !isString(p.tool_name)) return unknown;
       return {

@@ -2,7 +2,7 @@
 
 import { MessageSquareText, X } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, Fragment, type KeyboardEvent, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,7 +33,10 @@ function loadTurns(projectId: string): ChatTurn[] {
             t !== null &&
             (t.role === "user" || t.role === "assistant") &&
             typeof t.content === "string",
-        )
+        ).map((t) => {
+          const notices = Array.isArray(t.notices) ? t.notices.filter((n): n is string => typeof n === "string") : [];
+          return notices.length > 0 ? { role: t.role, content: t.content, notices } : { role: t.role, content: t.content };
+        })
       : [];
   } catch {
     return [];
@@ -67,8 +70,6 @@ export function Assistant({ projectId, projectName }: { projectId: string; proje
   const [error, setError] = useState<string | null>(null);
   const [model, setModel] = useState<string | null>(null);
   const [lastCost, setLastCost] = useState<number | null>(null);
-  // The agent's notices about the last answer (#37), under it; not kept with the conversation.
-  const [notices, setNotices] = useState<string[]>([]);
   const list = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
@@ -114,13 +115,16 @@ export function Assistant({ projectId, projectName }: { projectId: string; proje
     saveTurns(projectId, next);
     setDraft("");
     setError(null);
-    setNotices([]);
     setWaiting(true);
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ project_id: projectId, path: pathname, messages: next }),
+        body: JSON.stringify({
+          project_id: projectId,
+          path: pathname,
+          messages: next.map(({ role, content }) => ({ role, content })),
+        }),
       });
       const body: unknown = await response.json().catch(() => null);
       const answer = response.ok ? parseChatAnswer(body) : null;
@@ -129,12 +133,14 @@ export function Assistant({ projectId, projectName }: { projectId: string; proje
         setError(errorOf(body, response.status));
         return;
       }
-      const answered: ChatTurn[] = [...next, { role: "assistant", content: answer.answer }];
+      const answered: ChatTurn[] = [
+        ...next,
+        { role: "assistant", content: answer.answer, ...(answer.notices.length > 0 ? { notices: answer.notices } : {}) },
+      ];
       setTurns(answered);
       saveTurns(projectId, answered);
       setModel(answer.model);
       setLastCost(answer.costUsd);
-      setNotices(answer.notices);
     } catch {
       setError("The question could not be sent: the server did not answer.");
     } finally {
@@ -153,7 +159,6 @@ export function Assistant({ projectId, projectName }: { projectId: string; proje
     saveTurns(projectId, []);
     setError(null);
     setLastCost(null);
-    setNotices([]);
   }
 
   function submit(event: FormEvent) {
@@ -221,25 +226,26 @@ export function Assistant({ projectId, projectName }: { projectId: string; proje
               </div>
             ) : (
               turns.map((t, i) => (
-                <p
-                  key={i}
-                  className={
-                    t.role === "user"
-                      ? "ml-8 justify-self-end rounded-md bg-primary px-2.5 py-1.5 break-words whitespace-pre-wrap text-primary-foreground"
-                      : "mr-4 rounded-md border bg-background px-2.5 py-1.5 break-words whitespace-pre-wrap"
-                  }
-                >
-                  {t.content}
-                </p>
+                <Fragment key={i}>
+                  <p
+                    className={
+                      t.role === "user"
+                        ? "ml-8 justify-self-end rounded-md bg-primary px-2.5 py-1.5 break-words whitespace-pre-wrap text-primary-foreground"
+                        : "mr-4 rounded-md border bg-background px-2.5 py-1.5 break-words whitespace-pre-wrap"
+                    }
+                  >
+                    {t.content}
+                  </p>
+                  {t.notices?.length ? (
+                    <ul role="note" className="mr-4 -mt-1 grid gap-1 text-xs font-medium text-attention">
+                      {t.notices.map((n) => (
+                        <li key={n}>{n}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </Fragment>
               ))
             )}
-            {notices.length > 0 && !waiting ? (
-              <ul className="mr-4 grid gap-1 text-xs font-medium text-attention">
-                {notices.map((n) => (
-                  <li key={n}>{n}</li>
-                ))}
-              </ul>
-            ) : null}
             {waiting ? <p className="text-muted-foreground">Reading the project…</p> : null}
             {error ? (
               <div role="alert" className="grid gap-1.5 rounded-md border border-danger-border bg-danger-surface px-2.5 py-1.5 text-danger">

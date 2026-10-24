@@ -110,6 +110,14 @@ function EventRow({ step }: { step: EventStep }) {
         </div>
       );
     case "text":
+      if (event.payload.warning) {
+        return (
+          <div role="note" className="grid gap-0.5 rounded-md border border-attention-border bg-attention-surface px-2.5 py-1.5">
+            <span className="text-xs font-medium text-attention">Warning</span>
+            <p className="break-words whitespace-pre-wrap">{event.payload.text}</p>
+          </div>
+        );
+      }
       return (
         <div className="grid gap-0.5">
           <span className="text-xs text-muted-foreground">Agent</span>

@@ -531,7 +531,9 @@ async def model_name(store: RunStore, settings: Settings, org: UUID) -> str:
     if chosen := await store.organization_model(org, "chat"):
         return chosen.strip()
     run_model = effective(settings, await store.organization_settings(org)).model
-    if run_model.startswith("ollama:"):
+    # "scripted" too: the deployment's fallback when the venue's network or a provider is down,
+    # and a cloud default would fail the same way there.
+    if run_model.startswith("ollama:") or run_model == "scripted":
         return run_model
     return settings.chat_model.strip()
 

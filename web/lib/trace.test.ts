@@ -83,6 +83,10 @@ test("parseEvent reads each documented payload", () => {
   assert.deepEqual(parseEvent(row("text", { text: "Looking up the bracket." })).payload, {
     text: "Looking up the bracket.",
   });
+  assert.deepEqual(parseEvent(row("text", { text: "Search matched words only.", level: "warning" })).payload, {
+    text: "Search matched words only.",
+    warning: true,
+  });
   assert.deepEqual(
     parseEvent(row("tool_call", { tool_call_id: "c1", tool_name: "plm_get_ecn", args: { id: 1 } }))
       .payload,

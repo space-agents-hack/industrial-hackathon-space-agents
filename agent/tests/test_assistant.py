@@ -444,6 +444,15 @@ async def test_an_organisation_on_its_own_ollama_server_keeps_its_questions_ther
     assert await assistant.model_name(store, settings, ORG) == "anthropic:claude-haiku-5-5"
 
 
+async def test_a_deployment_on_the_scripted_model_keeps_the_assistant_offline(
+    store, settings
+) -> None:
+    settings.agent_model = "scripted"
+    settings.chat_model = "anthropic:claude-haiku-5-5"
+
+    assert await assistant.model_name(store, settings, ORG) == "scripted"
+
+
 def test_post_chat_needs_the_secret(client: TestClient) -> None:
     body = {"project_id": str(uuid4()), "messages": [{"role": "user", "content": "x"}]}
     assert client.post("/chat", json=body).status_code == 401

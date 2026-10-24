@@ -1,11 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { providerLabel } from "@/lib/admin";
+import { type ModelOption, PROVIDERS, formatModelPrice, isProviderId, providerLabel } from "@/lib/admin";
 import { createClient } from "@/lib/supabase/client";
 import { MODEL_PATTERN } from "@/lib/validation";
 
@@ -68,6 +68,34 @@ export function ProcessModelsForm({
   defaults: Partial<Record<string, string>>;
   connected: string[];
 }) {
+  const [lists, setLists] = useState<Record<string, ModelOption[]>>({});
+
+  // What each connected provider offers, once for every row: the same list the writer's model
+  // comes from (GET /api/admin/models), so a model is picked, not typed from memory (#37). A
+  // provider whose list fails is left out; "Another model" still takes any name.
+  useEffect(() => {
+    let cancelled = false;
+    const providers = PROVIDERS.map((p) => p.id).filter((id) => connected.includes(id));
+    void Promise.all(
+      providers.map(async (provider) => {
+        try {
+          const response = await fetch(`/api/admin/models?${new URLSearchParams({ org, provider })}`, { cache: "no-store" });
+          const body = (await response.json().catch(() => ({}))) as { models?: ModelOption[] };
+          return [provider, response.ok && body.models ? body.models : []] as const;
+        } catch {
+          return [provider, []] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!cancelled) setLists(Object.fromEntries(entries.filter(([, models]) => models.length > 0)));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // The providers by value: a new array with the same names must not fetch again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [org, connected.join(",")]);
+
   return (
     <ul className="divide-y rounded-md border bg-card">
       {PROCESSES.map((p) => (
@@ -78,11 +106,15 @@ export function ProcessModelsForm({
           stored={stored[p.id] ?? ""}
           fallback={defaults[p.id] ?? null}
           connected={connected}
+          lists={lists}
         />
       ))}
     </ul>
   );
 }
+
+// The select's value for "type a model name".
+const OTHER = "__other__";
 
 function ProcessRow({
   org,
@@ -90,15 +122,19 @@ function ProcessRow({
   stored,
   fallback,
   connected,
+  lists,
 }: {
   org: string;
   process: (typeof PROCESSES)[number];
   stored: string;
   fallback: string | null;
   connected: string[];
+  lists: Record<string, ModelOption[]>;
 }) {
   const router = useRouter();
   const [value, setValue] = useState(stored);
+  const listed = Object.values(lists).some((models) => models.some((m) => m.id === value.trim()));
+  const [typing, setTyping] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const trimmed = value.trim();
@@ -164,6 +200,31 @@ function ProcessRow({
               ),
             )}
           </select>
+        ) : !typing && (value === "" || listed) ? (
+          <select
+            aria-label={`${process.label} model`}
+            className="h-8 max-w-md min-w-0 flex-1 rounded-md border border-input bg-card px-2 font-mono text-sm"
+            value={value}
+            disabled={busy}
+            onChange={(event) => {
+              if (event.target.value === OTHER) setTyping(true);
+              else setValue(event.target.value);
+            }}
+          >
+            <option value="">{fallback ? `Deployment default: ${fallback}` : "Deployment default"}</option>
+            {Object.entries(lists)
+              .filter(([provider]) => isProviderId(provider))
+              .map(([provider, models]) => (
+                <optgroup key={provider} label={providerLabel(provider)}>
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.id} · {formatModelPrice(m)}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            <option value={OTHER}>Another model (type it)…</option>
+          </select>
         ) : (
           <Input
             aria-label={`${process.label} model`}
@@ -179,6 +240,19 @@ function ProcessRow({
         <Button type="submit" variant="outline" disabled={busy || !valid || trimmed === stored}>
           Save
         </Button>
+        {process.id !== "embedding" && (typing || (value !== "" && !listed)) && Object.keys(lists).length > 0 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => {
+              setTyping(false);
+              setValue(listed ? value : "");
+            }}
+          >
+            Choose from the list
+          </Button>
+        ) : null}
       </form>
       {!valid ? <p className="text-xs text-danger">Write it as provider:model, for example anthropic:claude-haiku-5-5.</p> : null}
       {valid && missingKey && provider ? (
