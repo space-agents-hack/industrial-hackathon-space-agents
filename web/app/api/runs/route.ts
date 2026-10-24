@@ -60,7 +60,7 @@ async function startOnCase(
       );
     }
     console.error("POST /api/runs: run on case failed", error);
-    return Response.json({ error: "The run could not be saved." }, { status: 500 });
+    return Response.json({ error: "The draft could not be saved." }, { status: 500 });
   }
   return send(data.id);
 }

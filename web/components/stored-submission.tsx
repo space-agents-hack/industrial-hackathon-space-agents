@@ -38,7 +38,7 @@ export function StoredSubmission({ runId, organizationId }: { runId: string; org
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border bg-card px-3 py-2">
       <p className="min-w-0 flex-1 basis-64">
-        This run has not written a submission. The requirements it stored so far can be built into the same file,
+        This draft has not written a submission. The requirements it stored so far can be built into the same file,
         without the rejected ones.
         {state.phase === "failed" ? <span className="block text-danger">{state.error}</span> : null}
       </p>

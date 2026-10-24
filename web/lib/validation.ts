@@ -56,7 +56,7 @@ export function parseNewRun(
   if (body.case_id !== undefined && body.case_id !== null) {
     if (!isUuid(body.case_id)) return { ok: false, error: "case_id must be a case's id." };
     if (Array.isArray(body.files) && body.files.length > 0) {
-      return { ok: false, error: "A run on a case reads the case's files; upload them to the case." };
+      return { ok: false, error: "A draft on a part reads the part's files; upload them to the part." };
     }
     const task = body.task.trim();
     if (characters(task) > TASK_MAX_LENGTH) {

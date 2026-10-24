@@ -52,7 +52,7 @@ export async function fetchCaseFiles(supabase: Client, caseId: string): Promise<
     .eq("case_id", caseId)
     .order("position")
     .order("created_at");
-  if (error) throw new Error(`The case's files could not be read: ${error.message}`);
+  if (error) throw new Error(`The part's files could not be read: ${error.message}`);
   return data.map((f) => ({
     ...f,
     notes: Array.isArray(f.notes) ? f.notes.filter((n): n is string => typeof n === "string") : [],

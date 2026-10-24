@@ -82,7 +82,7 @@ export function NewRunForm({
       setSpec("");
       router.push(path);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The run could not be started: the server did not answer.");
+      setError(caught instanceof Error ? caught.message : "The draft could not be started: the server did not answer.");
     } finally {
       setPending(null);
     }
@@ -146,7 +146,7 @@ export function NewRunForm({
       </div>
 
       <div className="grid gap-1.5">
-        <Label htmlFor="spec">Notes for this run (optional)</Label>
+        <Label htmlFor="spec">Notes for this draft (optional)</Label>
         <Textarea
           id="spec"
           name="spec"
@@ -193,6 +193,6 @@ function describeFiles(total: number, parsed: number, failed: number, unsettled:
   if (total === 0) return "No files yet.";
   const parts = [`${total} ${total === 1 ? "file" : "files"}`, `${parsed} read`];
   if (failed > 0) parts.push(`${failed} could not be read`);
-  if (unsettled) parts.push("the rest are read before the run starts");
+  if (unsettled) parts.push("the rest are read before the draft starts");
   return `${parts.join(", ")}.`;
 }

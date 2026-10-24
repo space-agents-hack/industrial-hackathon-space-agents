@@ -174,7 +174,7 @@ export function RunTrace({
               approval.id === approvalId ? { ...approval, status: decision } : approval,
             ),
           );
-          if (body.warning) setNotice(`The decision was saved, but the run did not resume. ${body.warning}`);
+          if (body.warning) setNotice(`The decision was saved, but the draft did not resume. ${body.warning}`);
         } else {
           setNotice(body.error ?? `The decision could not be saved (${response.status}).`);
         }
@@ -255,8 +255,8 @@ export function RunTrace({
           submission. */}
       {run.model === SCRIPTED_MODEL ? (
         <p className="text-sm text-attention">
-          Test model: this run used the scripted model, not a real one. Its requirements are
-          placeholders. Do not upload them. Set a model in Settings and run again.
+          Test model: this draft used the scripted model, not a real one. Its requirements are
+          placeholders. Do not upload them. Set a model in Settings and draft again.
         </p>
       ) : null}
 
@@ -300,12 +300,12 @@ export function RunTrace({
           <p className="min-w-0 flex-1 basis-64">
             {run.status === "queued"
               ? agentUnreachable
-                ? "The agent could not be reached when this run was created, so it is still queued."
-                : "This run is queued: the agent has not picked it up yet."
+                ? "The agent could not be reached when this draft was created, so it is still queued."
+                : "This draft is queued: the agent has not picked it up yet."
               : "Every approval has been decided, but the agent has not resumed this run."}
           </p>
           <Button variant="outline" onClick={retry} disabled={retrying}>
-            {retrying ? "Calling the agent…" : run.status === "queued" ? "Send to agent" : "Resume run"}
+            {retrying ? "Calling the agent…" : run.status === "queued" ? "Send to agent" : "Resume draft"}
           </Button>
         </div>
       ) : null}
@@ -317,7 +317,7 @@ export function RunTrace({
             run marks it failed; nothing is re-run.
           </p>
           <Button variant="outline" onClick={retry} disabled={retrying}>
-            {retrying ? "Calling the agent…" : "Close run"}
+            {retrying ? "Calling the agent…" : "Close draft"}
           </Button>
         </div>
       ) : null}
@@ -352,7 +352,7 @@ export function RunTrace({
         </h2>
         {timeline.length === 0 ? (
           <p className="rounded-xl border border-dashed px-3 py-5 text-center text-muted-foreground">
-            {finished ? "This run recorded no events." : "Nothing yet. Events appear here as the agent works."}
+            {finished ? "This draft recorded no events." : "Nothing yet. Events appear here as the agent works."}
           </p>
         ) : (
           <Timeline items={timeline} startedAt={run.created_at} runFinished={finished} />

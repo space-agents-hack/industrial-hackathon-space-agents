@@ -87,7 +87,7 @@ export function ProjectRegulations({
   const summary = allRegulations
     ? `All ${library.length} regulations in the library, including any imported later.`
     : chosenRegulations.length === 0
-      ? "None chosen: a run on this project would have no regulation to cite."
+      ? "None chosen: a draft on this project would have no regulation to cite."
       : `${chosenRegulations.length} of ${library.length} regulations in the library.`;
 
   return (

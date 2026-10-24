@@ -24,9 +24,9 @@ export const ROLE_LABELS: Record<Role, string> = {
 };
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
-  admin: "manages people, settings and keys, and starts runs",
-  member: "starts runs and decides approvals",
-  viewer: "reads runs, changes nothing",
+  admin: "manages people, settings and keys, and drafts requirements",
+  member: "drafts requirements and decides approvals",
+  viewer: "reads drafts, changes nothing",
 };
 
 // What `my_access()` returns, parsed. `organizations` are the ones the person is an active

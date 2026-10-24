@@ -27,17 +27,17 @@ export function suggestionsFor(page: ChatPage): string[] {
   if (page.run_id) {
     return [
       "Why did you add R-001?",
-      "Which obligations of the chosen regulations might this run have missed?",
-      "Which regulations did this run use, and why?",
+      "Which obligations of the chosen regulations might this draft have missed?",
+      "Which regulations did this draft use, and why?",
     ];
   }
   if (page.case_id) {
-    return ["What does this case describe?", "Which regulations are likely to apply to it?"];
+    return ["What does this part describe?", "Which regulations are likely to apply to it?"];
   }
   return [
     "What is in this project so far?",
     "Which regulations does this project use?",
-    "What did the latest run produce?",
+    "What did the latest draft produce?",
   ];
 }
 

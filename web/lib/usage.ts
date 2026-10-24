@@ -203,7 +203,7 @@ export function niceMax(value: number): number {
 const PROCESS_LABELS: Record<string, string> = {
   writer: "Requirement runs",
   check: "Check agent",
-  transcription: "Case transcription",
+  transcription: "Part transcription",
   summary: "Regulation summaries",
   embedding: "Regulation vectors",
   search: "Search queries",

@@ -19,7 +19,7 @@ export default function RunPage({ params, searchParams }: PageProps<"/runs/[id]"
     <div className="grid gap-5">
       {/* The run id and the session are only known at request time, so everything that depends
           on them streams in behind this boundary. */}
-      <Suspense fallback={<p className="text-muted-foreground">Loading run…</p>}>
+      <Suspense fallback={<p className="text-muted-foreground">Loading draft…</p>}>
         <Run params={params} searchParams={searchParams} />
       </Suspense>
     </div>
@@ -79,5 +79,5 @@ async function Run({ params, searchParams }: PageProps<"/runs/[id]">) {
 }
 
 function Missing() {
-  return <p className="text-muted-foreground">This run does not exist.</p>;
+  return <p className="text-muted-foreground">This draft does not exist.</p>;
 }

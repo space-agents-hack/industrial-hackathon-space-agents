@@ -289,14 +289,14 @@ export function CaseWorkspace({
           </h2>
           {subgoal ? (
             <p className="text-sm text-muted-foreground">
-              The run compares the old and the new version by text, then a reviewer model re-reads each requirement
+              The review compares the old and the new version by text, then a reviewer model re-reads each requirement
               whose paragraph changed. It writes Certivity&apos;s changes file, checked and ready to download on the
-              run page.
+              review&apos;s page.
             </p>
           ) : null}
           {/* Notes are for the requirement writer; the comparison has no use for them. */}
           <div className={subgoal ? "hidden" : "grid gap-1.5"}>
-            <Label htmlFor="notes">Notes for this run (optional)</Label>
+            <Label htmlFor="notes">Notes for this draft (optional)</Label>
             <Textarea
               id="notes"
               rows={3}
@@ -309,7 +309,7 @@ export function CaseWorkspace({
             />
           </div>
           <div className="grid gap-1.5 sm:max-w-md">
-            <Label htmlFor="run-model">{subgoal ? "Reviewer model for this run" : "Model for this run"}</Label>
+            <Label htmlFor="run-model">{subgoal ? "Reviewer model for this review" : "Model for this draft"}</Label>
             <Input
               id="run-model"
               placeholder={writerModel}

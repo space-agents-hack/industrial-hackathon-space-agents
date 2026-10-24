@@ -177,7 +177,7 @@ async function Regulations() {
           </p>
         ) : regulations.length === 0 ? (
           <p className="rounded-xl border border-dashed px-3 py-6 text-center text-danger">
-            This project has chosen no regulation, so a run on it has nothing to cite.
+            This project has chosen no regulation, so a draft on it has nothing to cite.
           </p>
         ) : (
           <>

@@ -97,7 +97,7 @@ export function RunList({
   if (runs.length === 0) {
     return (
       <p className="rounded-xl border border-dashed px-3 py-6 text-center text-muted-foreground">
-        {canStart ? "No runs yet. Start one above." : "No runs yet."}
+        {canStart ? "No drafts yet. Start one above." : "No drafts yet."}
       </p>
     );
   }
