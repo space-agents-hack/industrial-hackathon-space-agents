@@ -43,7 +43,10 @@ All interfaces below are `proposed`. Designs in progress are in the project's sh
 - To define: query in (regulation, topic, paragraph?), paragraphs out with regulation, version
   label, page and paragraph label; whether it is pre-computed or built during the run (SYS-15:
   the run has 270 s).
-- Requirements: SYS-5, SYS-6, SYS-15. Issue: #3.
+- Source of the catalogue: Certivity's `index.json`, ingested automatically into the database
+  (SYS-23). The `regulation` and `version_label` strings are kept exactly as in the file, because
+  `validate.py` and the platform compare against the file (SYS-5).
+- Requirements: SYS-5, SYS-6, SYS-15, SYS-23. Issue: #3.
 
 ## IF-4 Run output: agent to database to web
 

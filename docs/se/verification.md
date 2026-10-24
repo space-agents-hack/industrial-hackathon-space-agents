@@ -30,6 +30,7 @@ Methods: **T** automated test in `make check`, **S** score, **D** demonstration,
 | V-20 | SYS-20 | I: upload log on #7, last upload = best file, before 13:00 | none yet |
 | V-21 | SYS-21 | I: confirmation from the organisers' platform | none yet |
 | V-22 | SYS-22 | I: pitch slide numbers match the recorded scores | none yet |
+| V-23 | SYS-23 | T: a small index ingests end to end; I: rows per regulation match the index | none yet |
 
 ## Score log
 
