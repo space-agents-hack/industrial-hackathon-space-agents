@@ -2,7 +2,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { ACCEPT, CASE_FORMATS, MAX_FILE_BYTES, MAX_FILES, formatOf, refusal, storagePath } from "./case-files.ts";
+import {
+  ACCEPT,
+  CASE_FORMATS,
+  MAX_FILE_BYTES,
+  MAX_FILES,
+  casePath,
+  formatOf,
+  isSettled,
+  refusal,
+  storagePath,
+} from "./case-files.ts";
 
 const migration = readFileSync(
   new URL("../../supabase/migrations/20261024160000_case_files.sql", import.meta.url),
@@ -48,4 +58,17 @@ test("storage paths start with the organisation and keep only safe characters", 
   const path = storagePath("org-id", "upload-id", 0, "Spec (v2) ä.pdf");
   assert.equal(path, "org-id/upload-id/1-Spec_v2_a_.pdf");
   assert.equal(storagePath("o", "u", 1, "...hidden"), "o/u/2-hidden");
+});
+
+test("a case file sits in the case's folder, where the insert policy looks for it", () => {
+  const path = casePath("org", "case-id", 2, "exploded view.png");
+  assert.equal(path.split("/")[1], "case-id");
+  assert.equal(path, "org/case-id/3-exploded_view.png");
+});
+
+test("only parsed and failed files are settled", () => {
+  assert.deepEqual(
+    ["pending", "parsing", "parsed", "failed"].map(isSettled),
+    [false, false, true, true],
+  );
 });

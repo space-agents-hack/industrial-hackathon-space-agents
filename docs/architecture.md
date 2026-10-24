@@ -25,8 +25,9 @@ flowchart LR
 ```
 
 - **web/** knows nothing about models or tools. It shows rows, uploads files to Storage as the
-  signed-in user, and writes two things: a new run (with its files, `start_run()`) and a decision
-  on an approval.
+  signed-in user, and writes three things: projects, cases and their files; a new run on a case;
+  and a decision on an approval. `start_run()` with files of the run's own still works for API
+  callers; the page no longer uses it.
 - **agent/** knows nothing about pages or users. It advances a run and writes down what happened.
 - **supabase/** is the contract between them. A change to a table is a change to both sides.
 
@@ -50,11 +51,15 @@ row to `audit_events`.
 
 ## A run, step by step
 
-1. A person attaches the case files and an optional note. The browser uploads the files to the
-   private `case-files` bucket under the organisation's folder; the web calls `start_run()` as
-   that user, which inserts the `runs` row (`queued`) and one `run_files` row per file in one
-   transaction, and calls the agent: "advance this run". The agent downloads and reads the files
-   (`domain/ingest.py`) and records one `case_file` event per file before the model starts.
+1. A person picks or creates a project and a case, adds files and an optional note. The browser
+   uploads each file to the private `case-files` bucket under `{organisation}/{case}/` and inserts
+   a `case_files` row as that user (RLS accepts it only for an object that exists in that folder).
+   The web asks the agent to parse the case (`POST /cases/{id}/ingest`): parsers first, a small
+   model (`INGEST_MODEL`) only for what they cannot read, the result stored once as
+   `case_file_blocks` (`domain/case_ingest.py`). The page waits until every file is `parsed` or
+   `failed`, then inserts the `runs` row (`queued`, with `case_id`) and calls the agent: "advance
+   this run". The agent builds the first message from the stored blocks and records one
+   `case_file` event per file before the model starts.
 2. The agent claims the run (`queued` to `running`, in one conditional update so two requests
    cannot both get it) and starts the loop. Every model message and tool call becomes a
    `run_events` row as it happens. The browser shows them live.
@@ -110,13 +115,16 @@ row to `audit_events`.
 - **No tracing product.** The `run_events` table is the trace. Logfire or another OpenTelemetry
   backend can be added in `agent_service/__init__.py` in a few lines.
 - **The mock systems do not persist writes.** They exist to be replaced.
-- **Case content is not stored yet.** Case files belong to a run (`run_files`), and the agent
-  reads them again at the start of each run; the text and images it sends the model end up only
-  in that run's saved conversation. ADR-0006 replaces this with organisation-owned cases whose
-  ingested blocks are rows.
-- **Uploads that never become a run stay in the bucket.** If an upload or `start_run()` fails,
-  the files already uploaded are linked to no run, and only the agent's secret key can delete
-  them. The purge empties the whole bucket (#16).
+- **A case's files are parsed once, not again per run.** A file added later is parsed when it is
+  added; nothing re-parses a file that is already `parsed`. A file left `parsing` by a request
+  that died stays so (the page stops waiting after 10 minutes and the run's trace says which
+  file the agent did not have); uploading it again is the way out.
+- **The saved conversation still carries the images.** Each run's `run_state` holds the base64 of
+  the images it sent the model, so a case's drawings are stored once per run as well as once in
+  the bucket.
+- **Uploads that never become a row stay in the bucket.** If the `case_files` insert or
+  `start_run()` fails after an upload, the object is linked to nothing, and only the agent's
+  secret key can delete it. The purge empties the whole bucket (#16).
 - **Certivity checks are not stored.** `POST /checks` on the agent runs Certivity's `validate.py`
   and, for a case with an `expected.json`, `score_local.py`, on text the web sends (a succeeded
   run's output, or a file pasted on the Checks page). They take milliseconds, so they are

@@ -37,6 +37,12 @@ export async function advanceRegulationImport(importId: string): Promise<void> {
   );
 }
 
+// Parses a case's pending files once (agent_service/domain/case_ingest.py). Like a run, the agent
+// answers at once and the parsing is reported through case_files.status.
+export async function ingestCase(caseId: string): Promise<void> {
+  await startOnAgent(`/cases/${encodeURIComponent(caseId)}/ingest`, `ingestCase(${caseId})`);
+}
+
 async function startOnAgent(path: string, label: string): Promise<void> {
   const baseUrl = process.env.AGENT_URL;
   const secret = process.env.AGENT_SHARED_SECRET;
@@ -85,7 +91,7 @@ async function startOnAgent(path: string, label: string): Promise<void> {
 }
 
 // What to tell the person at the keyboard. Never includes the URL or the secret.
-export function describeAgentFailure(error: unknown, subject: "run" | "import" = "run"): string {
+export function describeAgentFailure(error: unknown, subject: "run" | "import" | "case" = "run"): string {
   if (error instanceof AgentConfigError) {
     return "The agent is not configured on the web server (AGENT_URL / AGENT_SHARED_SECRET).";
   }

@@ -62,6 +62,19 @@ export function storagePath(organizationId: string, uploadId: string, index: num
   return `${organizationId}/${uploadId}/${index + 1}-${storageName(filename)}`;
 }
 
+// A case's file (ADR-0006): the case id is the second segment, which the case_files insert policy
+// checks, and the position keeps two uploads of the same name apart.
+export function casePath(organizationId: string, caseId: string, position: number, filename: string): string {
+  return storagePath(organizationId, caseId, position, filename);
+}
+
+// The statuses the agent moves a case file through (case_files.status).
+export type CaseFileStatus = "pending" | "parsing" | "parsed" | "failed";
+
+export function isSettled(status: string): boolean {
+  return status === "parsed" || status === "failed";
+}
+
 // Why a file cannot be uploaded, or null. Shown next to the file before anything is sent.
 export function refusal(file: { name: string; size: number }): string | null {
   if (formatOf(file.name) === null) {

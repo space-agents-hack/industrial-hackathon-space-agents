@@ -6,6 +6,7 @@ import { NoAccess } from "@/components/no-access";
 import { RunList } from "@/components/run-list";
 import { hasNoAccess } from "@/lib/access";
 import { getCurrentOrg } from "@/lib/current-org";
+import { fetchCases } from "@/lib/cases";
 import { fetchRunList } from "@/lib/runs";
 import { createClient } from "@/lib/supabase/server";
 
@@ -36,16 +37,19 @@ async function Runs() {
   }
 
   const supabase = await createClient();
-  const runs = await fetchRunList(supabase, current.id).catch((error: unknown) => {
-    console.error("Home: could not load runs", error);
-    return null;
-  });
+  const [runs, cases] = await Promise.all([
+    fetchRunList(supabase, current.id).catch((error: unknown) => {
+      console.error("Home: could not load runs", error);
+      return null;
+    }),
+    fetchCases(supabase, current.id),
+  ]);
 
   return (
     <>
       {/* A viewer gets no form: the database would refuse the run anyway. */}
       {permissions.startRuns ? (
-        <NewRunForm organizationId={current.id} />
+        <NewRunForm key={current.id} organizationId={current.id} {...cases} />
       ) : (
         <p className="rounded-md border bg-card px-3 py-2 text-muted-foreground">
           {current.role === "viewer"

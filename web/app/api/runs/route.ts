@@ -15,6 +15,8 @@ export async function POST(request: Request) {
   const parsed = parseNewRun(await readJson(request));
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
 
+  if (parsed.value.caseId) return startOnCase(supabase, parsed.value.organizationId, parsed.value.caseId, parsed.value.task);
+
   // start_run() runs as the user (security invoker): `created_by` defaults to auth.uid(), and RLS
   // accepts the run only if they are an active admin or member of that organisation, and each
   // file only if it was uploaded to that organisation's folder. A viewer, a suspended person or a
@@ -42,8 +44,40 @@ export async function POST(request: Request) {
     console.error("POST /api/runs: start_run failed", error);
     return Response.json({ error: "The run could not be saved." }, { status: 500 });
   }
-  const run = { id: runId };
+  return send(runId);
+}
 
+// A run on a case (ADR-0006) is a plain insert as the user: the case's files are already in
+// case_files and parsed, and the composite key (case_id, organization_id) refuses a case from
+// another organisation.
+async function startOnCase(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+  caseId: string,
+  task: string,
+) {
+  const { data: found } = await supabase.from("cases").select("name").eq("id", caseId).maybeSingle();
+  if (!found) return Response.json({ error: "That case does not exist here." }, { status: 404 });
+  const { data, error } = await supabase
+    .from("runs")
+    .insert({ task: task || `Case: ${found.name}`, organization_id: organizationId, case_id: caseId })
+    .select("id")
+    .single();
+  if (error || !data) {
+    if (error?.code === "42501" || error?.code === "23503") {
+      return Response.json(
+        { error: "You cannot start runs on this case. It needs the member role in its organisation." },
+        { status: 403 },
+      );
+    }
+    console.error("POST /api/runs: run on case failed", error);
+    return Response.json({ error: "The run could not be saved." }, { status: 500 });
+  }
+  return send(data.id);
+}
+
+async function send(runId: string) {
+  const run = { id: runId };
   try {
     await advanceRun(run.id);
   } catch (agentError) {

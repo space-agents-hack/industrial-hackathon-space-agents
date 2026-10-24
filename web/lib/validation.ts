@@ -37,13 +37,30 @@ export async function readJson(request: Request): Promise<unknown> {
 //
 // With case files the note is optional: the run list previews the task, so a run started from
 // files alone is named after them instead of an empty line.
+//
+// A run on a case (case_id) reads the case's parsed files and carries none of its own; its task
+// may be empty, and the route names it after the case.
 export function parseNewRun(
   body: unknown,
-): Parsed<{ task: string; organizationId: string; files: UploadedFile[] }> {
+): Parsed<{ task: string; organizationId: string; files: UploadedFile[]; caseId: string | null }> {
   if (!isRecord(body) || typeof body.task !== "string") {
     return { ok: false, error: 'Expected a JSON body like { "task": "...", "organization_id": "..." }.' };
   }
   if (!isUuid(body.organization_id)) return { ok: false, error: "Choose an organisation first." };
+  if (body.case_id !== undefined && body.case_id !== null) {
+    if (!isUuid(body.case_id)) return { ok: false, error: "case_id must be a case's id." };
+    if (Array.isArray(body.files) && body.files.length > 0) {
+      return { ok: false, error: "A run on a case reads the case's files; upload them to the case." };
+    }
+    const task = body.task.trim();
+    if (characters(task) > TASK_MAX_LENGTH) {
+      return { ok: false, error: `The task is longer than ${TASK_MAX_LENGTH} characters.` };
+    }
+    return {
+      ok: true,
+      value: { task, organizationId: body.organization_id, files: [], caseId: body.case_id },
+    };
+  }
   const files = parseFiles(body.files, body.organization_id);
   if (!files.ok) return files;
   let task = body.task.trim();
@@ -54,7 +71,10 @@ export function parseNewRun(
   if (characters(task) > TASK_MAX_LENGTH) {
     return { ok: false, error: `The task is longer than ${TASK_MAX_LENGTH} characters.` };
   }
-  return { ok: true, value: { task, organizationId: body.organization_id, files: files.value } };
+  return {
+    ok: true,
+    value: { task, organizationId: body.organization_id, files: files.value, caseId: null },
+  };
 }
 
 const SHA256 = /^[0-9a-f]{64}$/;

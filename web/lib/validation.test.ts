@@ -23,7 +23,7 @@ const ORG = "3941c1f6-f67c-455e-b12b-92c9f7d2d944";
 test("parseNewRun trims the task and enforces the database limits", () => {
   assert.deepEqual(parseNewRun({ task: "  Triage ECN-1001  ", organization_id: ORG }), {
     ok: true,
-    value: { task: "Triage ECN-1001", organizationId: ORG, files: [] },
+    value: { task: "Triage ECN-1001", organizationId: ORG, files: [], caseId: null },
   });
   assert.equal(parseNewRun({ task: "   ", organization_id: ORG }).ok, false);
   assert.equal(parseNewRun({ task: 5, organization_id: ORG }).ok, false);
@@ -101,4 +101,15 @@ test("parseNewRun refuses a file from another organisation, an unknown format or
   assert.equal(parseNewRun({ task: "x", organization_id: ORG, files: [{ ...FILE, bytes: 0 }] }).ok, false);
   assert.equal(parseNewRun({ task: "x", organization_id: ORG, files: "spec.md" }).ok, false);
   assert.equal(parseNewRun({ task: "x", organization_id: ORG, files: Array(21).fill(FILE) }).ok, false);
+});
+
+test("parseNewRun takes a case instead of files, with an optional task", () => {
+  const caseId = "22222222-3333-4444-8555-666677778888";
+  assert.deepEqual(parseNewRun({ task: " ", organization_id: ORG, case_id: caseId }), {
+    ok: true,
+    value: { task: "", organizationId: ORG, files: [], caseId },
+  });
+  assert.equal(parseNewRun({ task: "x", organization_id: ORG, case_id: "rear-lamp" }).ok, false);
+  // Files go to the case first; a run that named both would read only one of them.
+  assert.equal(parseNewRun({ task: "x", organization_id: ORG, case_id: caseId, files: [FILE] }).ok, false);
 });

@@ -83,3 +83,14 @@ export async function actsInRunOrganization(
   if (!run) return "missing";
   return permissionsIn(await fetchAccess(supabase), run.organization_id).startRuns ? "yes" : "no";
 }
+
+// The same for a case: the agent parses with the secret key, so the role is checked here.
+export async function actsInCaseOrganization(
+  supabase: SupabaseClient<Database>,
+  caseId: string,
+): Promise<"yes" | "no" | "missing"> {
+  const { data: found, error } = await supabase.from("cases").select("organization_id").eq("id", caseId).maybeSingle();
+  if (error) console.error(`could not read case ${caseId}`, error);
+  if (!found) return "missing";
+  return permissionsIn(await fetchAccess(supabase), found.organization_id).startRuns ? "yes" : "no";
+}
