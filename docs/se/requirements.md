@@ -32,6 +32,7 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-28 | pick candidate regulations by top-k embedding similarity between the case content and catalogue paragraphs, then read each selected regulation in full before writing requirements from it | N-1, N-4, N-8 | regs | T, S | 2, 3 | #18, #4 |
 | SYS-29 | run the writing under an orchestrator agent, then pass every requirement through a check agent that verifies it against the database (paragraph exists, its text supports the requirement, no duplicate) and lists the obligation paragraphs of the selected regulations that no requirement cites, before the output is final | N-2, N-4, N-7 | regs, checks | T, S | 3, 4 | #4 |
 | SYS-25 | write requirements from a case's content and the paragraphs of the regulations linked to it, each requirement stored with a link to exactly one regulation, at the catalogue paragraph it comes from | N-1, N-2, N-5 | regs, db | T, S | 2, 3, 4 | #4, #19 |
+| SYS-34 | keep every requirement linked to a regulation paragraph row that exists: re-extracting a regulation version never deletes the paragraph rows requirements cite (old rows are marked superseded); a requirement whose paragraph comes back with the same text is moved to the new row, and one whose paragraph changed or disappeared keeps its link, is marked for re-check, and goes back through the check agent | N-2, N-13 | regs, db, checks | T | 3 | #3, #4 |
 | **Checks** | | | | | | |
 | SYS-10 | run `validate.py` (unchanged) automatically on each run's output JSON and show every problem with its JSON path | N-7 | checks, web | T | 5 | #15 (built) |
 | SYS-11 | for `dev-rear-lamp` only, score the output JSON against its `expected.json` with `score_local.py` and show regulation and page scores | N-1, N-12 | checks, web | D | 5 | #15 (built) |
@@ -53,7 +54,7 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-26 | (may) find regulations for a given country or industry on the web and other sources, and write them as an `index.json` in Certivity's format, which SYS-23 then ingests | N-14 | regs | D | 3 | #17 |
 | SYS-30 | (may) run the agents on a local model (for example Ollama) instead of a hosted provider | N-9 | regs, ops | D | — | #21 |
 
-SYS-23 to SYS-33 are numbered out of order because they were added later. Ids are never renumbered.
+SYS-23 to SYS-34 are numbered out of order because they were added later. Ids are never renumbered.
 
 ## Rationale and notes
 
@@ -69,6 +70,7 @@ SYS-23 to SYS-33 are numbered out of order because they were added later. Ids ar
 | SYS-31 | Clemente, 2026-10-24 (UX thread, design/ux-hierarchy.md). Today a case is only created by starting a run, and nothing can be renamed or removed |
 | SYS-32 | Clemente, 2026-10-24. "Linked" in SYS-25 means the project's regulations. IF-3 change agreed by Clemente and Ramón (2026-10-24). For the challenge project keep "all": a regulation left out is a miss, and F2 weighs misses four times as much as extras |
 | SYS-33 | Clemente, 2026-10-24 (case-ingestion thread). Lets us compare models on the dev case and record which one produced a score (SYS-22) |
+| SYS-34 | Clemente, 2026-10-24 (writer thread): "every requirement has to point to a real regulation id" and a re-run of PDF ingestion re-checks the requirements, without removing the previous rows. A re-extraction must not silently drop or orphan a person's requirements. Changes IF-3 (paragraph rows are superseded, not replaced): Ramón asked on #3, not agreed yet. Replaces the plain "not null" link of ADR-0006 |
 | SYS-26 | Clemente, 2026-10-24: only if time allows. Kept here so it is not lost; issue #17 holds it |
 | SYS-28 | Clemente, 2026-10-24: embeddings (Ramón, #18) narrow 56 regulations fast; the full read keeps recall, since a paragraph the top-k misses inside a chosen regulation would otherwise be lost. Top-k only picks, it never decides alone that a regulation does not apply: the miss risk is regulation-level recall (SYS-8) |
 | SYS-29 | Clemente, 2026-10-24. The check agent reads the DB, not the model's memory, so a hallucinated paragraph is caught before the file is uploaded. The uncovered-paragraph list is for recall, which F2 weighs most (Clemente, 18:29). It costs run time (SYS-15) |
@@ -90,7 +92,7 @@ SYS-23 to SYS-33 are numbered out of order because they were added later. Ids ar
 | Need | Satisfied by |
 |---|---|
 | N-1 Completeness | SYS-2, 3, 6, 7, 8, 11, 23, 25, 27, 28 |
-| N-2 Checkable source | SYS-3, 5, 6, 12, 23, 25, 29, 31 |
+| N-2 Checkable source | SYS-3, 5, 6, 12, 23, 25, 29, 31, 34 |
 | N-3 Input as I have it | SYS-1, 2, 24, 27, 31 |
 | N-4 No noise | SYS-3, 7, 8, 28, 29, 32 |
 | N-5 Actionable wording | SYS-7, 9, 25 |
@@ -101,7 +103,7 @@ SYS-23 to SYS-33 are numbered out of order because they were added later. Ids ar
 | N-10 Fits their tooling | SYS-18 |
 | N-11 Submitted | SYS-21 |
 | N-12 Shows its weakness | SYS-11, 17, 22, 33 |
-| N-13 Reusable regulation set | SYS-23, 32 |
+| N-13 Reusable regulation set | SYS-23, 32, 34 |
 | N-14 More markets | SYS-26 (future) |
 | N-15 Shared work | SYS-24, 31 |
 
@@ -113,7 +115,7 @@ Every need has at least one requirement, and every requirement has at least one 
 |---|---|
 | web | SYS-1, 10, 11, 12, 13, 14, 18, 24, 31, 32, 33 |
 | ingest | SYS-1, 2, 3, 8, 14, 15, 24, 27, 33 |
-| regs | SYS-3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 17, 19, 23, 25, 26, 28, 29, 30, 32, 33 |
-| checks | SYS-4, 10, 11, 14, 19, 29 |
-| db | SYS-1, 16, 17, 23, 24, 25, 27, 31, 32, 33 |
+| regs | SYS-3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 17, 19, 23, 25, 26, 28, 29, 30, 32, 33, 34 |
+| checks | SYS-4, 10, 11, 14, 19, 29, 34 |
+| db | SYS-1, 16, 17, 23, 24, 25, 27, 31, 32, 33, 34 |
 | ops | SYS-15, 16, 20, 21, 22, 30 |

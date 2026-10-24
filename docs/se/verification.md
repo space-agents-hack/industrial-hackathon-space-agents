@@ -40,6 +40,7 @@ Methods: **T** automated test in `make check`, **S** score, **D** demonstration,
 | V-31 | SYS-31 | D: a second member renames a case, removes a file and opens its parsed pages | none yet |
 | V-32 | SYS-32 | T: a project limited to some regulations gives the writer only those; a new import reaches an "all" project | none yet |
 | V-33 | SYS-33 | T: the model set per process by the admin is the one each agent uses, and a per-run override wins for writer and check | none yet |
+| V-34 | SYS-34 | T (pgTAP): after re-extracting a regulation version, every requirement's paragraph link is set and points to an existing row; the old rows are still there, marked superseded; an unchanged paragraph's requirements point to the new row; a changed or missing one's requirements are marked for re-check and the check agent re-runs on them | none yet |
 | V-26 | SYS-26 | D: a generated `index.json` passes the same loader as Certivity's (future) | none yet |
 
 ## Score log
