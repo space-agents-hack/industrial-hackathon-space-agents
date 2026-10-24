@@ -248,6 +248,10 @@ nothing: a missing key or summary model would otherwise loop forever. The page s
 how many paragraphs have a vector of the model searches use (`regulation_index_status`, migration
 `20261024320000_index_status.sql`) and the scope summary with the model that wrote it.
 `make regulations-index` does the same from a terminal against the database in `agent/.env`.
+Paragraph keys are added 1,000 per call (`add_regulation_embedding_keys`, #41): the first version
+hashed the whole library in one statement, about 25 s for 48,487 paragraphs on the hosted database
+(measured 2026-10-24), which cancels any statement after 8 s, so production could not be indexed
+at all. A key made stale by a change of a regulation's title is not rebuilt by the batches.
 `make regulations-search Q="..." MODE=text|vector|hybrid` shows what a query finds. That is also
 how to compare full text, vectors and both on the dev case.
 

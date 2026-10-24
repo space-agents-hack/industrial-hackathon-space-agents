@@ -29,6 +29,10 @@ def vector_literal(vector: list[float]) -> str:
     return "[" + ",".join(f"{x:.6g}" for x in vector) + "]"
 
 
+# Paragraph keys per call of add_regulation_embedding_keys (migration 20261024330000).
+_KEY_BATCH = 1000
+
+
 class SupabaseSearchStore:
     """With the secret key, which bypasses RLS: only the agent writes vectors and summaries, and
     the search functions are granted to the service role alone."""
@@ -94,10 +98,20 @@ class SupabaseSearchStore:
         )
 
     async def refresh_keys(self, org: UUID) -> int:
-        res = await self._db.rpc(
-            "refresh_regulation_embedding_keys", {"p_organization_id": str(org)}
-        ).execute()
-        return int(cast(Any, res.data) or 0)
+        # In batches: one statement over the whole library was cancelled by the hosted database's
+        # 8 s statement timeout, so production could never be indexed (#41): hashing its 48,487
+        # paragraphs took about 25 s there. A batch of 1,000 is about 0.5 s at that speed; on an
+        # indexed library the first call adds nothing and ends it.
+        added = 0
+        while True:
+            res = await self._db.rpc(
+                "add_regulation_embedding_keys",
+                {"p_organization_id": str(org), "p_limit": _KEY_BATCH},
+            ).execute()
+            n = int(cast(Any, res.data) or 0)
+            added += n
+            if n < _KEY_BATCH:
+                return added
 
     async def texts_to_embed(self, org: UUID, model: str, limit: int) -> list[tuple[str, str]]:
         res = await self._db.rpc(

@@ -298,3 +298,59 @@ async def test_a_new_file_under_the_same_version_supersedes_the_old_paragraphs(
     )
     assert job[0]["status"] == "succeeded"
     assert "could not be split" in job[0]["error"]
+
+
+async def test_keys_are_added_in_batches_until_every_current_paragraph_has_one(
+    db: AsyncClient, org: UUID, code: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # One statement over the whole library hit the hosted database's 8 s timeout (#37): the store
+    # now asks for keys in batches until a batch comes back short.
+    from agent_service.domain import search_store
+
+    monkeypatch.setattr(search_store, "_KEY_BATCH", 2)
+    reg = rows(
+        await db.table("regulations")
+        .insert({"organization_id": str(org), "code": code, "slug": slug_of(code), "kind": "UN R"})
+        .execute()
+    )[0]
+    version = rows(
+        await db.table("regulation_versions")
+        .insert(
+            {
+                "regulation_id": reg["id"],
+                "organization_id": str(org),
+                "version_label": "00",
+                "file_name": "x.pdf",
+                "sha256": "a" * 64,
+                "size_bytes": 1,
+                "pdf_path": f"{org}/{slug_of(code)}/00/x.pdf",
+            }
+        )
+        .execute()
+    )[0]
+    await (
+        db.table("regulation_paragraphs")
+        .insert(
+            [
+                {
+                    "version_id": version["id"],
+                    "organization_id": str(org),
+                    "position": i,
+                    "label": f"5.{i}",
+                    "kind": "paragraph",
+                    "text": f"Paragraph {i}.",
+                    "page_start": 1,
+                    "page_end": 1,
+                    "content_hash": hashlib.sha256(f"{i}".encode()).hexdigest(),
+                }
+                for i in range(5)
+            ]
+        )
+        .execute()
+    )
+    store = await search_store.SupabaseSearchStore.connect(URL, KEY)
+    try:
+        assert await store.refresh_keys(org) == 5
+        assert await store.refresh_keys(org) == 0
+    finally:
+        await store.aclose()
