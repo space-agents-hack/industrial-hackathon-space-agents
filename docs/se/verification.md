@@ -61,6 +61,7 @@ and recall, who ran it. Platform scores for the held-out case also go on issue #
 
 | When | Case | Commit | Model | Scores | By |
 |---|---|---|---|---|---|
+| 2026-10-24 21:11 UTC | dev-rear-lamp (platform; local score_local.py identical at regulation and page level) | not recorded (main at c797cce or earlier) | not recorded | valid; 409 requirements; requirements P 0.222 R 0.479 F1 0.304 F2 0.389; regulations P 0.400 R 1.000 F2 0.769 (10 cited, 4 expected); pages P 0.372 R 0.962 F2 0.731 (137 / 53 / 51) | Claude for Ramón |
 | 2026-10-24 20:49 UTC | subgoal-dev (local, real dev PDFs) | 2f00402 | scripted (rules only, reviewer off) | run file byte-identical to the `regdiff` CLI; flagged 7/7, change type 7/7, added 16/17 | Claude for the sub-goal thread |
 | 2026-10-24 19:07 UTC | dev-rear-lamp (platform) | main at de54029 or earlier (not recorded) | organisation default (not recorded) | valid; 462 requirements; regulations P 0.500 R 0.750 F2 0.682; pages P 0.369 R 0.849 F2 0.674 | Clemente |
 | 2026-10-24 16:30 | dev-rear-lamp, subgoal-dev | this commit (#3) | none (`paragraphs.py`, rules only) | paragraph split: every cited (regulation, version, paragraph) found with its page in range, 119/121 dev (2 misses cite a table name), 117/117 sub-goal | Claude for Ramón |
