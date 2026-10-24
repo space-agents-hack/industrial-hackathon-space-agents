@@ -162,6 +162,10 @@ jobs:
       # retrying for 12 s, once for the stack and again for pg_prove: about 30 s of every run on
       # 2026-10-24. Set, the CLI pulls from this registry only, with no fallback.
       SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr.io
+      # `-x realtime` below does not stop "Starting database..." from pulling realtime's 580 MB
+      # image (12 s on run 36). With realtime off in the config it is not pulled at all; the
+      # `supabase_realtime` publication is Postgres's and the tests pass either way.
+      SUPABASE_REALTIME_ENABLED: "false"
     concurrency:
       group: ${{ github.workflow }}-database-${{ github.ref }}
       cancel-in-progress: true
