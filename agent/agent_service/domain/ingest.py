@@ -30,6 +30,8 @@ from typing import Literal, get_args
 
 from pydantic_ai import BinaryContent
 
+from agent_service.pdf_lock import PDFIUM
+
 Format = Literal[
     "md", "txt", "csv", "json", "png", "jpeg", "webp", "pdf", "docx", "xlsx", "step", "iges", "stl"
 ]
@@ -200,17 +202,20 @@ def _pdf(data: bytes, report: FileReport) -> list[_Block]:
 def _render_pdf_page(data: bytes, number: int) -> ImageData:
     import pypdfium2 as pdfium
 
-    pdf = pdfium.PdfDocument(data)
-    try:
-        page = pdf[number - 1]
-        width, height = page.get_size()
-        scale = MAX_IMAGE_SIDE / max(width, height, 1)
-        bitmap = page.render(scale=scale)
-        out = io.BytesIO()
-        bitmap.to_pil().save(out, format="PNG", optimize=True)
-        return ImageData(out.getvalue(), "image/png")
-    finally:
-        pdf.close()
+    # pdfium is not thread-safe (agent_service/pdf_lock.py). The PNG is encoded inside the lock
+    # too: the PIL image can share the bitmap's memory, which pdfium owns.
+    with PDFIUM:
+        pdf = pdfium.PdfDocument(data)
+        try:
+            page = pdf[number - 1]
+            width, height = page.get_size()
+            scale = MAX_IMAGE_SIDE / max(width, height, 1)
+            bitmap = page.render(scale=scale)
+            out = io.BytesIO()
+            bitmap.to_pil().save(out, format="PNG", optimize=True)
+            return ImageData(out.getvalue(), "image/png")
+        finally:
+            pdf.close()
 
 
 def _docx(data: bytes, report: FileReport) -> list[_Block]:

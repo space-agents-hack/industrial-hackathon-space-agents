@@ -45,6 +45,8 @@ from collections import Counter
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
+from agent_service.pdf_lock import PDFIUM
+
 # Stored with each version's paragraphs. Changing how paragraphs are split means changing this, so
 # the import extracts every version again instead of keeping paragraphs cut the old way.
 EXTRACTOR = "paragraphs-1"
@@ -124,6 +126,12 @@ _BROKEN_HYPHEN = "￾"
 
 def _read_lines(data: bytes) -> tuple[list[_Line], int, list[str], list[str]]:
     """(lines, page count, footer version labels, warnings), footers removed."""
+    # pdfium is not thread-safe, and callers read PDFs in threads (agent_service/pdf_lock.py).
+    with PDFIUM:
+        return _read_lines_alone(data)
+
+
+def _read_lines_alone(data: bytes) -> tuple[list[_Line], int, list[str], list[str]]:
     import pypdfium2 as pdfium
     import pypdfium2.raw as pdfium_c
 

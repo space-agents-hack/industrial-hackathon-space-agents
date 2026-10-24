@@ -4,6 +4,8 @@ are confidential and stay out of the repo. How the splitter scores on them is in
 
 import hashlib
 import io
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -128,3 +130,27 @@ def test_a_pdf_without_a_text_layer_is_refused() -> None:
     blank.save(buffer)
     with pytest.raises(ExtractionProblem, match="no text layer"):
         extract(buffer.getvalue())
+
+
+def test_pdfs_read_in_threads_take_turns_in_pdfium(monkeypatch: pytest.MonkeyPatch) -> None:
+    # pdfium is not thread-safe: a sub-goal run read old.pdf and new.pdf in two threads and the
+    # agent process died with no error (2026-10-24, agent_service/pdf_lock.py). Every caller that
+    # reads PDFs in threads (sub-goal, imports, changes) goes through extract, so that is where
+    # the turns are taken.
+    active, peak = 0, 0
+    real = pdfium.PdfDocument
+
+    def counted(*args: object, **kwargs: object) -> pdfium.PdfDocument:
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        time.sleep(0.02)  # long enough for another thread to try to open its own
+        active -= 1
+        return real(*args, **kwargs)  # pyright: ignore[reportArgumentType]
+
+    monkeypatch.setattr(pdfium, "PdfDocument", counted)
+    data = SAMPLE.read_bytes()
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(extract, [data] * 4))
+    assert peak == 1
+    assert len({len(r.paragraphs) for r in results}) == 1
