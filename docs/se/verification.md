@@ -26,7 +26,7 @@ Methods: **T** automated test in `make check`, **S** score, **D** demonstration,
 | V-16 | SYS-16 | I: `git ls-files` has no case files and no Certivity data (test_no_certivity_data_is_in_the_repository); T: purge empties tables, `certivity_reference` included, and the `case-files` bucket | none yet |
 | V-17 | SYS-17 | T: runner test with the in-memory fake records every step | template tests (to recheck) |
 | V-18 | SYS-18 | D: exported file imports into a requirements tool | none yet |
-| V-19 | SYS-19 | T: sub-goal file passes `validate.py --requirements-old`; S: platform sub-goal score | none yet |
+| V-19 | SYS-19 | T: sub-goal file passes `validate.py --requirements-old`; S: platform sub-goal score | `agent/tests/test_regdiff.py` (schema); dev file passed `validate.py`, local score in the log below; platform score not yet |
 | V-20 | SYS-20 | I: upload log on #7, last upload = best file, before 13:00 | none yet |
 | V-21 | SYS-21 | I: confirmation from the organisers' platform | none yet |
 | V-22 | SYS-22 | I: pitch slide numbers match the recorded scores | none yet |
@@ -43,3 +43,4 @@ and recall, who ran it. Platform scores for the held-out case also go on issue #
 
 | When | Case | Commit | Model | Scores | By |
 |---|---|---|---|---|---|
+| 2026-10-24 16:20 | subgoal-dev | 3fb3f40 | none (`regdiff`, rules only) | local sub-goal scorer in `regdiff.score`: flagged 7/7, extra 0, change type 7/7; added 16/17, extra 0 | Claude for Ramón |
