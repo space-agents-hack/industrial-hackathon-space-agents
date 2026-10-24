@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { downloadName, looksLikeSubmission, parseCheckResult, submissionPart } from "./certivity.ts";
+import { downloadName, f2, looksLikeSubmission, parseCheckResult, submissionPart } from "./certivity.ts";
 
 const LEVEL = { precision: 1, recall: 0.5, f1: 0.667, n_submitted: 2, n_expected: 4, n_matched: 2 };
 
@@ -88,4 +88,10 @@ test("downloadName is a safe file name from the case id", () => {
   const result = parseCheckResult({ ...AGENT_ANSWER, case_id: "dev rear/lamp" });
   assert.ok(result);
   assert.equal(downloadName(result), "dev-rear-lamp.json");
+});
+
+test("f2 weighs recall four times precision", () => {
+  // Clemente's dev-rear-lamp run, 2026-10-24: pages P 0.369, R 0.849.
+  assert.equal(f2({ precision: 0.369, recall: 0.849 }).toFixed(3), "0.674");
+  assert.equal(f2({ precision: 0, recall: 0 }), 0);
 });

@@ -131,3 +131,11 @@ export function downloadName(result: CheckResult): string {
 export function formatRatio(value: number): string {
   return value.toFixed(3);
 }
+
+// F-beta with beta 2, the measure the leaderboard uses at the requirement level ("Req F2"): recall
+// weighs four times precision. score_local.py gives P and R only for regulations and pages, so
+// this is F2 at those levels; the requirement level is computed on the platform only.
+export function f2(level: Pick<Level, "precision" | "recall">): number {
+  const { precision: p, recall: r } = level;
+  return p + r === 0 ? 0 : (5 * p * r) / (4 * p + r);
+}

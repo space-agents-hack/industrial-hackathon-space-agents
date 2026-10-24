@@ -8,6 +8,7 @@ import {
   type Level,
   type RegulationRow,
   downloadName,
+  f2,
   formatRatio,
   parseCheckResult,
   submissionPart,
@@ -124,6 +125,7 @@ function Result({ text, result }: { text: string; result: CheckResult }) {
               <th className="pr-4 text-right font-normal">Precision</th>
               <th className="pr-4 text-right font-normal">Recall</th>
               <th className="pr-4 text-right font-normal">F1</th>
+              <th className="pr-4 text-right font-normal">F2</th>
               <th className="text-right font-normal">Cited / expected / matched</th>
             </tr>
           </thead>
@@ -194,6 +196,7 @@ function ScoreRow({ label, level }: { label: string; level: Level }) {
       <td className="pr-4 text-right">{formatRatio(level.precision)}</td>
       <td className="pr-4 text-right">{formatRatio(level.recall)}</td>
       <td className="pr-4 text-right">{formatRatio(level.f1)}</td>
+      <td className="pr-4 text-right">{formatRatio(f2(level))}</td>
       <td className="text-right">
         {level.n_submitted} / {level.n_expected} / {level.n_matched}
       </td>
