@@ -37,6 +37,8 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-8 | reach regulation-level recall ≥ `TBD` and page-level recall ≥ `TBD` on the dev case | N-1, N-4 | ingest, regs | S | — | #4 |
 | SYS-9 | (should) give a test case per requirement | N-5 | regs | I | — | #4 |
 | SYS-28 | pick candidate regulations by top-k embedding similarity between the case content and catalogue paragraphs, then read each selected regulation in full before writing requirements from it | N-1, N-4, N-8 | regs | T, S | 2, 3 | #18, #4 |
+| SYS-43 | state once per run what the part is, does and does not do, contains, where and on which vehicles it is fitted, for which markets, and what the case names, reading text, drawings and exploded views; every writer and check judges applicability against that one statement | N-1, N-3, N-4 | regs, ingest | T, I | 2 | #33 |
+| SYS-44 | judge the scope of every base regulation in the project against the product statement (applies, possibly, does not, with the quoted scope sentence), not only the regulations top-k returns; keep both of two near-identical regulations unless the case or the regulations' own text gives evidence for one | N-1, N-4 | regs | T, S | 3 | #33 |
 | SYS-29 | run the writing under an orchestrator agent, then pass every requirement through a check agent that verifies it against the database (paragraph exists, its text supports the requirement, no duplicate) and lists the obligation paragraphs of the selected regulations that no requirement cites, before the output is final | N-2, N-4, N-7 | regs, checks | T, S | 3, 4 | #4 |
 | SYS-42 | produce its results by the same general method for any case: no prompt text, code, filter or threshold that names or is tuned to the dev case's regulations, paragraphs, pages or `expected.json`, and no hand-picking or removal of results | N-1, N-4, N-7 | regs, ingest | I, S | — | #32 |
 | SYS-25 | write requirements from a case's content and the paragraphs of the regulations linked to it, each requirement stored with a link to exactly one regulation, at the catalogue paragraph it comes from | N-1, N-2, N-5 | regs, db | T, S | 2, 3, 4 | #4, #19 |
@@ -62,7 +64,7 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-26 | (may) find regulations for a given country or industry on the web and other sources, and write them as an `index.json` in Certivity's format, which SYS-23 then ingests | N-14 | regs | D | 3 | #17 |
 | SYS-30 | (may) run the agents on a local model (for example Ollama) instead of a hosted provider | N-9 | regs, ops | D | — | #21 |
 
-SYS-23 to SYS-42 are numbered out of order because they were added later. Ids are never renumbered.
+SYS-23 to SYS-44 are numbered out of order because they were added later. Ids are never renumbered.
 
 ## Rationale and notes
 
@@ -86,6 +88,8 @@ SYS-23 to SYS-42 are numbered out of order because they were added later. Ids ar
 | SYS-39 | Ramón, 2026-10-24: first on a run's page (#28), then on every page of a project (#31): "it will not respond about regulations if there are none imported, or about parts if there are no parts, or about runs if no run was triggered". An engineer checks a requirement list by asking about it, not by reading the trace. The organisation's model, the same on every page so a conversation does not change model between pages; an organisation on its own Ollama server (SYS-30) keeps its data there. Viewers included, as asked ("logged-in users with projects"), although an answer costs model money; the cost is recorded as process `chat` in the usage ledger (SYS-40, #29) and adds to the monthly cap |
 | SYS-41 | Ramón, 2026-10-24: adding someone who already had an account still asked for a password, and a new organisation led straight into creating a new account for its admin. An admin of one organisation searches only people of organisations they manage, so one client's admin cannot list another client's people; they can still add any account by its exact email. Removing keeps the account, its other organisations, its runs and its audit lines |
 | SYS-42 | Clemente, 2026-10-24, after the first platform score on the dev case: Certivity uploads a completely different case, and one session had already proposed a trick. A rule tuned to one case's answers raises the dev score and lowers the held-out one, which is 40% of the grade. Also in AGENTS.md, so every agent sees it |
+| SYS-43 | Clemente, 2026-10-24 ("do the 4"; and "we are not sufficiently leveraging the exploded views"). On the dev run every page lost was lost in choosing regulations, not in writing: a regulation applied because of what the part contains, and the prompt only asked what it does. One statement, so writers and checks cannot judge the same part differently. Kept in run events, no schema change |
+| SYS-44 | Clemente, 2026-10-24 ("do the 4"). Refines SYS-28: top-k still feeds the full read, but no regulation is left out only because top-k missed it. Keeping both near-twins without evidence follows F2, which weighs a missed regulation four times an extra one. Closest of the changes to the no-tuning line (SYS-42): the evidence must come from the case or the regulations, never from `expected.json` |
 | SYS-40 | Ramón, 2026-10-24: "add all sources (Anthropic, OpenAI, etc.)", with the aggregate and the figures per API key and per model, and history as a histogram. Was only the runs' cost (`runs.usage`), which missed transcription, summaries, embeddings, search vectors and failed runs. The monthly cap reads the same entries, so the page and the cap cannot disagree (IF-7, #29) |
 | SYS-26 | Clemente, 2026-10-24: only if time allows. Kept here so it is not lost; issue #17 holds it |
 | SYS-28 | Clemente, 2026-10-24: embeddings (Ramón, #18) narrow 56 regulations fast; the full read keeps recall, since a paragraph the top-k misses inside a chosen regulation would otherwise be lost. Top-k only picks, it never decides alone that a regulation does not apply: the miss risk is regulation-level recall (SYS-8) |
@@ -107,10 +111,10 @@ SYS-23 to SYS-42 are numbered out of order because they were added later. Ids ar
 
 | Need | Satisfied by |
 |---|---|
-| N-1 Completeness | SYS-2, 3, 6, 7, 8, 11, 23, 25, 27, 28, 42 |
+| N-1 Completeness | SYS-2, 3, 6, 7, 8, 11, 23, 25, 27, 28, 42, 43, 44 |
 | N-2 Checkable source | SYS-3, 5, 6, 12, 23, 25, 29, 31, 34 |
-| N-3 Input as I have it | SYS-1, 2, 24, 27, 31 |
-| N-4 No noise | SYS-3, 7, 8, 28, 29, 32, 42 |
+| N-3 Input as I have it | SYS-1, 2, 24, 27, 31, 43 |
+| N-4 No noise | SYS-3, 7, 8, 28, 29, 32, 42, 43, 44 |
 | N-5 Actionable wording | SYS-7, 9, 25 |
 | N-6 Stale requirements | SYS-19 |
 | N-7 Accepted submission | SYS-4, 5, 10, 19, 20, 29, 38, 42 |
@@ -130,8 +134,8 @@ Every need has at least one requirement, and every requirement has at least one 
 | Part | Requirements |
 |---|---|
 | web | SYS-1, 10, 11, 12, 13, 14, 18, 24, 31, 32, 33, 35, 36, 37, 38 |
-| ingest | SYS-1, 2, 3, 8, 14, 15, 24, 27, 33, 42 |
-| regs | SYS-3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 17, 19, 23, 25, 26, 28, 29, 30, 32, 33, 34, 42 |
+| ingest | SYS-1, 2, 3, 8, 14, 15, 24, 27, 33, 42, 43 |
+| regs | SYS-3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 17, 19, 23, 25, 26, 28, 29, 30, 32, 33, 34, 42, 43, 44 |
 | checks | SYS-4, 10, 11, 14, 19, 29, 34 |
 | db | SYS-1, 16, 17, 23, 24, 25, 27, 31, 32, 33, 34, 35, 37 |
 | ops | SYS-15, 16, 20, 21, 22, 30 |
