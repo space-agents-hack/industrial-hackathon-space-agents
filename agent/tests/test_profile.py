@@ -1,11 +1,21 @@
 """The product profile (SYS-43): recorded once, read by every writer and the check, required
 before anything is written, and read back from the trace when a run resumes after a pause."""
 
+import io
+
 import pytest
-from pydantic_ai import ModelRetry
+from PIL import Image
+from pydantic_ai import BinaryContent, ConversationTypeAdapter, ModelRetry
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    ToolCallPart,
+    UserPromptPart,
+)
 
 from agent_service import runner
 from agent_service.domain import tools, writer
+from agent_service.records import CaseFileBlock
 from agent_service.settings import Settings
 from tests.fakes import InMemoryRunStore, case_run
 
@@ -82,3 +92,53 @@ async def test_a_run_records_the_profile_before_it_searches_or_writes(store, set
     called = [p["tool_name"] for p in store.payloads(run_id, "tool_call")]
     assert called.index("record_product_profile") < called.index("search_regulations")
     assert called.index("record_product_profile") < called.index("write_requirements")
+
+
+async def test_the_drawings_of_the_case_reach_the_model_before_it_records_the_profile(
+    store, settings
+) -> None:
+    # Plumbing, not judgement: whether the model reads the drawing well is for a hosted run.
+    # What can break here is the drawing never being shown, which is what this checks.
+    run_id = case_run(store)
+    case_id = store.runs[run_id].case_id
+    assert case_id is not None
+    image = io.BytesIO()
+    Image.new("L", (8, 8)).save(image, format="PNG")
+    file_id = store.add_case_file(case_id, "exploded_view.png", "png", image.getvalue())
+    files = store.cases[case_id]
+    files[-1] = files[-1].model_copy(update={"status": "parsed"})
+    store.blocks[file_id] = [
+        CaseFileBlock(
+            file_id=file_id,
+            seq=0,
+            kind="image",
+            image_path=files[-1].storage_path,
+            media_type="image/png",
+            parser="pillow",
+        )
+    ]
+
+    plan = await runner.prepare(store, settings, run_id)
+    await runner.execute(store, settings, plan)
+
+    seen = ConversationTypeAdapter.validate_python(store.conversations[run_id]).messages
+    first_image = next(
+        i
+        for i, m in enumerate(seen)
+        if isinstance(m, ModelRequest)
+        and any(
+            isinstance(p, UserPromptPart)
+            and not isinstance(p.content, str)
+            and any(isinstance(c, BinaryContent) and c.is_image for c in p.content)
+            for p in m.parts
+        )
+    )
+    profile_call = next(
+        i
+        for i, m in enumerate(seen)
+        if isinstance(m, ModelResponse)
+        and any(
+            isinstance(p, ToolCallPart) and p.tool_name == "record_product_profile" for p in m.parts
+        )
+    )
+    assert first_image < profile_call
