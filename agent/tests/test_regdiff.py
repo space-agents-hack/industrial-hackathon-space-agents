@@ -1,0 +1,205 @@
+"""The sub-goal diff (#5, SYS-19). Every regulation text here is made up: Certivity's files are
+confidential and not in git. Each case is a pattern the worked example contains."""
+
+import json
+from dataclasses import dataclass
+
+import jsonschema
+
+from agent_service.domain import certivity, regdiff
+
+
+@dataclass(frozen=True)
+class P:
+    label: str
+    text: str
+    page_start: int = 1
+
+
+def _versions(old: list[P], new: list[P]) -> tuple[regdiff.Version, regdiff.Version]:
+    return (
+        regdiff.build_version("UN R999", "1.0.0", old),
+        regdiff.build_version("UN R999", "2.0.0", new),
+    )
+
+
+def _req(rid: str, text: str, paragraph: str, page: int = 1) -> dict:
+    return {
+        "id": rid,
+        "text": text,
+        "source": {"regulation": "UN R999", "page": page, "paragraph": paragraph},
+    }
+
+
+SCOPE = P("1", "1. Scope\n1.1. This Regulation applies to widgets.")
+DEFS = P("2", "2. Definitions\nFor the purposes of this Regulation:")
+SPEC = P("5", "5. Specifications")
+
+
+def test_a_reworded_obligation_is_modified_with_the_new_wording_and_what_changed() -> None:
+    old, new = _versions(
+        [SPEC, P("5.1", "5.1. The widget shall glow for at least 5 s after it is switched on.", 4)],
+        [SPEC, P("5.1", "5.1. The widget shall glow for at least 8 s after it is switched on.", 5)],
+    )
+    reqs = [_req("R-001", "When switched on, the widget shall glow for at least 5 s.", "5.1", 4)]
+
+    [change] = regdiff.diff_versions(reqs, old, new)
+
+    assert change.change == "modified"
+    assert change.requirement_id == "R-001"
+    assert change.new_text == "The widget shall glow for at least 8 s after it is switched on."
+    assert "'5' became '8'" in change.reason
+    assert (change.page, change.paragraph) == (5, "5.1")
+
+
+def test_editorial_changes_and_renumbering_are_not_changes() -> None:
+    # "70%" -> "70 per cent", "6 seconds" -> "6 s", a footnote marker that moved from 3 to 4,
+    # and a sentence that moved from 5.1 to its new sub-paragraph 5.1.1 unchanged.
+    old, new = _versions(
+        [
+            SPEC,
+            P(
+                "5.1",
+                "5.1. The lamp shall dim to 70% within 6 seconds.\nThe Secretariat3 shall be told.",
+            ),
+        ],
+        [
+            SPEC,
+            P("5.1", "5.1. Dimming"),
+            P(
+                "5.1.1",
+                "5.1.1. The lamp shall dim to 70 per cent within 6 s.\n"
+                "The Secretariat4 shall be told.",
+            ),
+        ],
+    )
+    reqs = [
+        _req("R-001", "The lamp shall dim to 70% within 6 seconds.", "5.1"),
+        _req("R-002", "The Secretariat shall be told.", "5.1"),
+    ]
+
+    assert regdiff.diff_versions(reqs, old, new) == []
+
+
+def test_an_obligation_that_no_longer_appears_is_removed() -> None:
+    old, new = _versions(
+        [
+            SPEC,
+            P(
+                "5.1",
+                "5.1. The widget shall be blue.\nThe widget may be tested twice if requested.",
+            ),
+        ],
+        [SPEC, P("5.1", "5.1. The widget shall be blue.")],
+    )
+    reqs = [
+        _req("R-001", "The widget shall be blue.", "5.1"),
+        _req("R-002", "When requested, the widget shall be allowed to be tested twice.", "5.1"),
+    ]
+
+    [change] = regdiff.diff_versions(reqs, old, new)
+
+    assert (change.change, change.requirement_id, change.new_text) == ("removed", "R-002", None)
+    assert "no longer appears" in change.reason
+
+
+def test_a_changed_lead_in_does_not_change_the_requirement_of_one_item() -> None:
+    old, new = _versions(
+        [
+            SPEC,
+            P(
+                "5.2",
+                "5.2. The procedure for each test shall be as follows:\n"
+                "(a) Place the widget on the bench.\n"
+                "(b) Switch the widget on.",
+            ),
+        ],
+        [
+            SPEC,
+            P(
+                "5.2",
+                "5.2. The procedure for each test with a cold widget shall be as follows:\n"
+                "(a) Place the widget on the heated bench.\n"
+                "(b) Switch the widget on.",
+            ),
+        ],
+    )
+    reqs = [
+        _req("R-001", "The procedure for each test shall place the widget on the bench.", "5.2"),
+        _req("R-002", "The procedure for each test shall switch the widget on.", "5.2"),
+    ]
+
+    [change] = regdiff.diff_versions(reqs, old, new)
+
+    assert (change.change, change.requirement_id) == ("modified", "R-001")
+    assert change.new_text == "(a) Place the widget on the heated bench."
+
+
+def test_new_obligations_are_added_but_not_new_definitions_or_titles() -> None:
+    old, new = _versions(
+        [
+            SCOPE,
+            DEFS,
+            P("2.1", '2.1. "Widget" means a device.'),
+            SPEC,
+            P("5.1", "5.1. The widget shall be blue."),
+        ],
+        [
+            SCOPE,
+            DEFS,
+            P("2.1", '2.1. "Widget" means a device.'),
+            P("2.2", '2.2. "Gadget" means a widget that shall be green.'),
+            SPEC,
+            P("5.1", "5.1. The widget shall be blue."),
+            P("5.2", "5.2. Gadgets", 7),
+            P("5.2.1", "5.2.1. The gadget shall be green.", 7),
+            P(
+                "5.3",
+                "5.3. The procedure for each gadget test shall be as follows:\n"
+                "(a) Place the gadget on the bench.\n"
+                "(b) Switch the gadget on.",
+                8,
+            ),
+            P(
+                "5.4",
+                "5.4. A test is not required when:\n(a) the gadget is off; or\n(b) it is raining.",
+                8,
+            ),
+        ],
+    )
+
+    changes = regdiff.diff_versions([_req("R-001", "The widget shall be blue.", "5.1")], old, new)
+    added = [(c.paragraph, c.new_text) for c in changes]
+
+    assert all(c.change == "added" and c.requirement_id is None for c in changes)
+    assert added == [
+        ("5.2.1", "The gadget shall be green."),
+        (
+            "5.3",
+            "The procedure for each gadget test shall be as follows: "
+            "(a) Place the gadget on the bench.",
+        ),
+        (
+            "5.3",
+            "The procedure for each gadget test shall be as follows: (b) Switch the gadget on.",
+        ),
+        ("5.4", "A test is not required when: (a) the gadget is off; or (b) it is raining."),
+    ]
+
+
+def test_the_submission_is_valid_against_certivitys_schema() -> None:
+    old, new = _versions(
+        [SPEC, P("5.1", "5.1. The widget shall be blue.\nThe widget may be tested twice.")],
+        [SPEC, P("5.1", "5.1. The widget shall be red."), P("5.2", "5.2. The widget shall hum.")],
+    )
+    reqs = [
+        _req("R-001", "The widget shall be blue.", "5.1"),
+        _req("R-002", "The widget shall be allowed to be tested twice.", "5.1"),
+    ]
+    out = regdiff.submission("team-00", "subgoal-demo", regdiff.diff_versions(reqs, old, new))
+    schema = json.loads(
+        (certivity.PACKAGE_DIR / "schemas" / "submission_subgoal.schema.json").read_text()
+    )
+
+    jsonschema.validate(out, schema)
+    assert [c["change"] for c in out["changes"]] == ["modified", "removed", "added"]
