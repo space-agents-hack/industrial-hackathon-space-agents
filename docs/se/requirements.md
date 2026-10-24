@@ -26,12 +26,12 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-9 | (should) give a test case per requirement | N-5 | regs | I | — | — |
 | **Checks** | | | | | | |
 | SYS-10 | run `validate.py` (unchanged) automatically on each run's output JSON and show every problem with its JSON path | N-7 | checks, web | T | 5 | — |
-| SYS-11 | score the output JSON against the dev case's `expected.json` with `score_local.py` and show regulation and page scores | N-1, N-12 | checks, web | D | 5 | — |
+| SYS-11 | for `dev-rear-lamp` only, score the output JSON against its `expected.json` with `score_local.py` and show regulation and page scores | N-1, N-12 | checks, web | D | 5 | — |
 | **Review and deployability** | | | | | | |
 | SYS-12 | link each requirement to its source page in the web | N-2 | web | D | — | #6 |
 | SYS-13 | require one person's approval ("approve all") before export or submission | N-9 | regs, web | T | — | #6 |
 | SYS-14 | go from upload to a validated JSON with no manual step | N-8 | all | D | 1–5 | #4 |
-| SYS-15 | finish a run within `RUN_TIMEOUT_S` = 270 s | N-8 | regs, ingest, ops | T | 3 | — |
+| SYS-15 | finish a run within `RUN_TIMEOUT_S` (270 s today; up to about 770 s on Vercel Pro) | N-8 | regs, ingest, ops | T | 3 | — |
 | SYS-16 | never commit case files or Certivity data, and purge them, Storage included | N-9 | db, ops | I, T | 1, 5 | — |
 | SYS-17 | record every model message, tool call, check and approval in `run_events` | N-9, N-12 | regs, db | T | — | — |
 | SYS-18 | (may) export to Polarion or Jama (ReqIF or CSV) | N-10 | web | D | — | — |
@@ -59,9 +59,9 @@ renumbered.
 | SYS-7 | Matching is one to one, so merging two obligations loses recall (Brief 07) |
 | SYS-8 | F2 favours recall. Targets will be set from the first baseline, not invented |
 | SYS-10 | A check, not a write: nobody approves it. It saves wasting one of the 5 uploads/hour |
-| SYS-11 | Only the dev case has an answer file. `index.json` plays no part in this check |
+| SYS-11 | Only `dev-rear-lamp` has an answer file. On the held-out case the web shows validation (SYS-10) and says no local score exists; the score comes only from the platform. `index.json` plays no part in this check |
 | SYS-13 | One click for the whole list. Per-requirement accept/reject is future work for client engineers |
-| SYS-15 | Not measured. If it doesn't fit, the architecture changes (pre-computed index, or the `agent/Dockerfile` container) |
+| SYS-15 | 270 s = 30 s margin under `maxDuration: 300` in `agent/vercel.json`, the Hobby cap, so a slow run ends as `failed` instead of being killed. On Pro the cap is 800 s: raise both values. Regulation ingestion (SYS-23) must not run inside a run. Not measured. Beyond 800 s, use the `agent/Dockerfile` container |
 | SYS-16 | AGENTS.md, LICENSE-DATA.md. The purge script deletes rows only today, not bucket objects |
 | SYS-20 | The **last** valid upload counts, not the best. Procedure in `docs/hackathon.md` |
 
