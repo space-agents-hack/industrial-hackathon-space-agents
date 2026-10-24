@@ -1,8 +1,7 @@
 # ADR-0006: Projects, cases and requirements live in the database, each requirement linked to one regulation paragraph
 
-**Status:** Accepted for the case and requirement side (Clemente, 2026-10-24). The regulation
-library is Ramón's design (`docs/regulations-store.md`, built in 4cf1d99). One point is still
-proposed: loading both copies of the regulation list in one step (see below).
+**Status:** Accepted (Clemente, 2026-10-24). The regulation library is Ramón's design
+(`docs/regulations-store.md`, built in 4cf1d99).
 **Date:** 2026-10-24
 **Deciders:** Clemente (cases, requirements), Ramón (regulation library)
 
@@ -71,6 +70,13 @@ requirements; the dev answer key does exactly that for 2 of its 188 distinct tex
 `label` ("Annex 3 Part 2 1.2", exactly as Certivity writes it), `page_start`, `page_end`, and
 `embeddings` keyed by `(content_hash, model)`.
 
+**One regulation list.** The library is the only place the list of citable regulations lives
+(Clemente, 2026-10-24: one `index.json`, imported once). The Certivity checks build the list
+`validate.py` needs from the organisation's library: it reads only each regulation's name and its
+versions' `version_label` and `role`, which `regulations` and `regulation_versions` hold.
+`certivity_reference` keeps only Certivity's answer keys (`expected`, `requirements_old`), which
+are scoring data, not regulations, and stops holding the index.
+
 **Where each step runs.**
 
 | Step | Trigger | Runs on |
@@ -117,12 +123,11 @@ choose among the 56 regulations, back up that choice, and serve tracing and the 
   sub-goal finds the requirements a changed paragraph affects through `paragraph_id` (SYS-19); purging is deleting rows and bucket objects.
 - Harder: the web form changes from "files for this run" to "project, case, then run"; one more
   migration after #8 was released.
-- **Same-name risk, still proposed:** "the regulation list" is in `certivity_reference` and in
-  the library, loaded by two steps (`make certivity-load` and the app's import). If only one is
-  reloaded when the held-out case brings new PDFs on Sunday, a citation can be valid in one and
-  missing from the other, and nothing fails until the platform rejects the file. Proposed: one
-  step loads both from the same file, and the checks fail when a `(code, version_label)` offered
-  for citation is not in Certivity's index.
+- The reason for one list: until this ADR the list was in `certivity_reference` and in the
+  library, loaded by two steps (`make certivity-load` or the release, and the app's import). If
+  only one were reloaded when the held-out case brings new PDFs on Sunday, a citation could pass
+  our check and fail the platform, with nothing failing before. With one list, Sunday is one
+  import in the app.
 - Revisit: whether parallel writer calls fit in one 770 s request (#14). Fallback: the
   `agent/Dockerfile` container on the Pi or the VPS.
 
@@ -139,5 +144,6 @@ choose among the 56 regulations, back up that choice, and serve tracing and the 
    IF-2).
 2. `requirements`, and the submission assembled from rows (SYS-25, IF-4, #4).
 3. Paragraph extraction and embeddings (SYS-23, IF-3, #3).
-4. One load for both copies of the regulation list, plus the comparison check (SYS-5).
+4. Checks read the regulation list from the library; drop the `index` row and its loading from
+   `certivity_reference` (SYS-5, SYS-10, IF-5).
 5. Purge both buckets and the new tables (#16).
