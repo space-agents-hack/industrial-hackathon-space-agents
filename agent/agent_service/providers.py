@@ -29,8 +29,6 @@ from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
-from agent_service import domain
-
 Provider = Literal["anthropic", "openai", "openrouter", "deepseek", "ollama"]
 PROVIDERS: tuple[Provider, ...] = get_args(Provider)
 # The ones configured with a URL instead of a key.
@@ -109,6 +107,11 @@ def build_model(name: str, api_key: str | None, endpoint: Endpoint | None = None
     if provider == "ollama" and endpoint is not None:
         return _ollama_model(model_name, endpoint)
     if api_key is None or provider is None or provider in ENDPOINT_PROVIDERS:
+        # Imported here: the domain's tools read the store, and the store imports this module, so
+        # a top-level import made `import main` fail on Vercel (release of 797bb0a) while every
+        # test, which imports the store first, passed.
+        from agent_service import domain
+
         return domain.resolve_model(name)
     # The same classes the library picks for these prefixes (tests/test_providers.py checks it),
     # so a run behaves the same with the organisation's key as with the environment's.
