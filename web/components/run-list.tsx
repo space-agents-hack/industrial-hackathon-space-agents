@@ -54,12 +54,15 @@ export function RunList({
           "postgres_changes",
           { event: "*", schema: "public", table: "runs", filter: `organization_id=eq.${organizationId}` },
           (change) => {
-            if (change.eventType === "DELETE" || !isRunRow(change.new)) {
+            // A new run's project and case are not in the change; the refetch reads them.
+            if (change.eventType !== "UPDATE" || !isRunRow(change.new)) {
               void refetch();
               return;
             }
             const run = summarizeRun(change.new);
-            setRuns((current) => mergeRunList(current, [run], RUN_LIST_LIMIT));
+            setRuns((current) =>
+              mergeRunList(current, [{ ...run, where: current.find((r) => r.id === run.id)?.where }], RUN_LIST_LIMIT),
+            );
           },
         )
         .subscribe((state) => {
@@ -107,6 +110,7 @@ export function RunList({
             >
               <StatusBadge status={run.status} />
               <span className="order-last col-span-2 min-w-0 truncate sm:order-none sm:col-span-1">
+                {run.where ? <span className="text-muted-foreground">{run.where} · </span> : null}
                 {run.preview}
               </span>
               <span className="hidden max-w-56 truncate font-mono text-xs text-muted-foreground sm:inline">

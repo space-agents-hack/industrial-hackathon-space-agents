@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import { AdminNotice } from "@/components/admin/admin-notice";
+import { type ProcessId, ProcessModelsForm } from "@/components/admin/process-models-form";
 import { SettingsForm } from "@/components/admin/settings-form";
 import { isProviderId } from "@/lib/admin";
 import { adminPage } from "@/lib/admin-page";
@@ -22,7 +23,7 @@ async function Settings() {
   if (!page.ok) return <AdminNotice reason={page.reason} />;
   const { supabase, org } = page;
 
-  const [settings, connections, health] = await Promise.all([
+  const [settings, connections, health, models] = await Promise.all([
     supabase
       .from("organization_settings")
       .select("model, max_model_requests, monthly_cost_cap_usd")
@@ -30,9 +31,10 @@ async function Settings() {
       .maybeSingle(),
     supabase.from("provider_connections").select("provider").eq("organization_id", org.id),
     agentHealth(),
+    supabase.from("organization_models").select("process, model").eq("organization_id", org.id),
   ]);
-  if (settings.error || connections.error) {
-    console.error("Admin, models: read failed", settings.error ?? connections.error);
+  if (settings.error || connections.error || models.error) {
+    console.error("Admin, models: read failed", settings.error ?? connections.error ?? models.error);
     return (
       <p role="alert" className="text-danger">
         The settings could not be loaded. Check that the database is reachable and reload.
@@ -57,6 +59,23 @@ async function Settings() {
         defaultModel={health?.model ?? null}
         connected={connections.data.map((c) => c.provider).filter(isProviderId)}
       />
+      <section className="grid gap-2" aria-labelledby="process-models-heading">
+        <h2 id="process-models-heading" className="text-base font-semibold">
+          Other agents and processes
+        </h2>
+        <p className="max-w-prose text-muted-foreground">
+          The model above writes the requirements. Each process below can use its own; an empty field follows
+          the deployment&apos;s default. A member can also pick another writer model for a single run, on the
+          case page.
+        </p>
+        <ProcessModelsForm
+          key={org.id}
+          org={org.id}
+          stored={Object.fromEntries(models.data.map((m) => [m.process, m.model])) as Partial<Record<ProcessId, string>>}
+          defaults={health?.processes ?? {}}
+          connected={connections.data.map((c) => c.provider)}
+        />
+      </section>
     </div>
   );
 }

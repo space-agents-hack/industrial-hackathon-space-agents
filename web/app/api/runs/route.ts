@@ -15,7 +15,10 @@ export async function POST(request: Request) {
   const parsed = parseNewRun(await readJson(request));
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
 
-  if (parsed.value.caseId) return startOnCase(supabase, parsed.value.organizationId, parsed.value.caseId, parsed.value.task);
+  if (parsed.value.caseId) {
+    const { organizationId, caseId, task, model } = parsed.value;
+    return startOnCase(supabase, organizationId, caseId, task, model);
+  }
 
   // start_run() runs as the user (security invoker): `created_by` defaults to auth.uid(), and RLS
   // accepts the run only if they are an active admin or member of that organisation, and each
@@ -55,12 +58,18 @@ async function startOnCase(
   organizationId: string,
   caseId: string,
   task: string,
+  model: string | null,
 ) {
   const { data: found } = await supabase.from("cases").select("name").eq("id", caseId).maybeSingle();
   if (!found) return Response.json({ error: "That case does not exist here." }, { status: 404 });
   const { data, error } = await supabase
     .from("runs")
-    .insert({ task: task || `Case: ${found.name}`, organization_id: organizationId, case_id: caseId })
+    .insert({
+      task: task || `Case: ${found.name}`,
+      organization_id: organizationId,
+      case_id: caseId,
+      requested_model: model,
+    })
     .select("id")
     .single();
   if (error || !data) {

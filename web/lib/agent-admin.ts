@@ -169,7 +169,13 @@ export async function listProviderModels(organizationId: string, provider: Provi
   return parseModelList(body);
 }
 
-export type AgentHealth = { model: string | null; version: string | null };
+export type AgentHealth = {
+  model: string | null;
+  version: string | null;
+  // The deployment's model for each process the organisation can override (organization_models).
+  // Missing from an agent older than SYS-33, which the Admin page then says it cannot name.
+  processes: Partial<Record<string, string>>;
+};
 
 // The deployment's defaults, for "what applies when a field is empty". Never throws: a page
 // that cannot reach the agent still renders, it just cannot name the default.
@@ -180,6 +186,9 @@ export async function agentHealth(): Promise<AgentHealth | null> {
     return {
       model: typeof body.model === "string" ? body.model : null,
       version: typeof body.version === "string" ? body.version : null,
+      processes: isRecord(body.processes)
+        ? Object.fromEntries(Object.entries(body.processes).filter((e): e is [string, string] => typeof e[1] === "string"))
+        : {},
     };
   } catch {
     return null;

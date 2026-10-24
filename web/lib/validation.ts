@@ -42,7 +42,13 @@ export async function readJson(request: Request): Promise<unknown> {
 // may be empty, and the route names it after the case.
 export function parseNewRun(
   body: unknown,
-): Parsed<{ task: string; organizationId: string; files: UploadedFile[]; caseId: string | null }> {
+): Parsed<{
+  task: string;
+  organizationId: string;
+  files: UploadedFile[];
+  caseId: string | null;
+  model: string | null;
+}> {
   if (!isRecord(body) || typeof body.task !== "string") {
     return { ok: false, error: 'Expected a JSON body like { "task": "...", "organization_id": "..." }.' };
   }
@@ -56,9 +62,11 @@ export function parseNewRun(
     if (characters(task) > TASK_MAX_LENGTH) {
       return { ok: false, error: `The task is longer than ${TASK_MAX_LENGTH} characters.` };
     }
+    const model = parseRequestedModel(body.model);
+    if (!model.ok) return model;
     return {
       ok: true,
-      value: { task, organizationId: body.organization_id, files: [], caseId: body.case_id },
+      value: { task, organizationId: body.organization_id, files: [], caseId: body.case_id, model: model.value },
     };
   }
   const files = parseFiles(body.files, body.organization_id);
@@ -73,8 +81,20 @@ export function parseNewRun(
   }
   return {
     ok: true,
-    value: { task, organizationId: body.organization_id, files: files.value, caseId: null },
+    value: { task, organizationId: body.organization_id, files: files.value, caseId: null, model: null },
   };
+}
+
+// Another writer model for one run on a case (SYS-33), as "provider:model", the shape of
+// organization_settings.model. Whether the organisation has a key for it is the agent's to say.
+export const MODEL_PATTERN = /^[a-z][a-z0-9-]*:\S{1,190}$/;
+
+function parseRequestedModel(value: unknown): Parsed<string | null> {
+  if (value === undefined || value === null || value === "") return { ok: true, value: null };
+  if (typeof value !== "string" || !MODEL_PATTERN.test(value.trim())) {
+    return { ok: false, error: 'model must look like "anthropic:claude-sonnet-5-5".' };
+  }
+  return { ok: true, value: value.trim() };
 }
 
 const SHA256 = /^[0-9a-f]{64}$/;

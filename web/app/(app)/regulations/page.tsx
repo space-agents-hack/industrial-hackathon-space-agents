@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 
 import { NoAccess } from "@/components/no-access";
@@ -87,7 +88,7 @@ async function Regulations() {
           <>
             <p className="text-xs text-muted-foreground">
               {regulations.length} regulations, {paths.length} PDFs. Answers cite the version label and the page
-              of these exact files.
+              of these exact files. Open a regulation to read and search its paragraphs.
             </p>
             <ul className="divide-y rounded-md border bg-card">
               {regulations.map((regulation) => {
@@ -106,7 +107,9 @@ async function Regulations() {
                 return (
                   <li key={regulation.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-3 py-2">
                     <span className="min-w-0 flex-1 basis-64">
-                      <span className="font-medium">{regulation.code}</span>
+                      <Link href={`/regulations/${regulation.id}`} className="font-medium underline-offset-4 hover:underline">
+                        {regulation.code}
+                      </Link>
                       {regulation.title ? <span className="text-muted-foreground"> · {regulation.title}</span> : null}
                     </span>
                     <span className="flex flex-wrap gap-2 text-xs">

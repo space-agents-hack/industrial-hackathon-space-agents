@@ -18,12 +18,15 @@ const PAGE_SIZE = 1000;
 export async function fetchRunList(supabase: Client, organizationId: string): Promise<RunSummary[]> {
   const { data, error } = await supabase
     .from("runs")
-    .select("id, created_at, status, model, task")
+    .select("id, created_at, status, model, task, cases(name, projects(name))")
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
     .limit(RUN_LIST_LIMIT);
   if (error) throw error;
-  return data.map(summarizeRun);
+  return data.map((run) => ({
+    ...summarizeRun(run),
+    where: run.cases ? `${run.cases.projects?.name ?? "Project"} › ${run.cases.name}` : undefined,
+  }));
 }
 
 export async function fetchRun(supabase: Client, runId: string): Promise<RunRow | null> {

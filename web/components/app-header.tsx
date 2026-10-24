@@ -37,15 +37,23 @@ export function AppHeader() {
 
 async function Nav() {
   const { access, current } = await getCurrentOrg();
-  return <NavLinks showAdmin={showsAdmin(access, current)} />;
+  return <NavLinks showAdmin={showsAdmin(access, current)} showSetup={access.platformAdmin} />;
 }
 
-// One organisation (the usual case for a clone) shows nothing: there is nothing to switch to,
-// and the name would only take room.
+// The organisation is always named: projects, cases and the regulation library all belong to it,
+// and a person who cannot see which one they are in cannot tell whose data they are looking at.
+// The switcher appears only when there is another one to switch to.
 async function Organisation() {
   const { access, current } = await getCurrentOrg();
   const visible = visibleOrganizations(access);
-  if (!current || visible.length < 2) return null;
+  if (!current) return null;
+  if (visible.length < 2) {
+    return (
+      <span className="max-w-44 truncate text-sm font-medium" title="Organisation">
+        {current.name}
+      </span>
+    );
+  }
   return <OrgSwitcher organizations={visible} currentId={current.id} />;
 }
 

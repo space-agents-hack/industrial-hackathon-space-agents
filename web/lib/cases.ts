@@ -52,3 +52,38 @@ export async function fetchCaseFiles(supabase: Client, caseId: string): Promise<
     notes: Array.isArray(f.notes) ? f.notes.filter((n): n is string => typeof n === "string") : [],
   }));
 }
+
+// What a file was read as (case_file_blocks): the text or image of each page, and which parser
+// or model produced it. Read when a file is opened on the case page, not with the list: a long
+// PDF is hundreds of blocks.
+export type CaseBlockView = {
+  seq: number;
+  kind: string;
+  page: number | null;
+  label: string;
+  text: string | null;
+  image_path: string | null;
+  parser: string;
+};
+
+export async function fetchCaseBlocks(supabase: Client, fileId: string): Promise<CaseBlockView[]> {
+  const { data, error } = await supabase
+    .from("case_file_blocks")
+    .select("seq, kind, page, label, text, image_path, parser")
+    .eq("file_id", fileId)
+    .order("seq")
+    .limit(1000);
+  if (error) throw new Error(`What was read from this file could not be loaded: ${error.message}`);
+  return data;
+}
+
+// "pypdf" reads as "read by pypdf"; a model's block says so, because a model can reword what it
+// read and a parser cannot (SYS-27).
+export function describeParser(parser: string): string {
+  return parser.startsWith("model:") ? `described by a model (${parser.slice(6)})` : `read by ${parser}`;
+}
+
+// A name the database refused as a duplicate, said the way the person would fix it.
+export function nameTakenMessage(code: string | undefined, what: string, name: string): string | null {
+  return code === "23505" ? `A ${what} called "${name}" already exists here.` : null;
+}

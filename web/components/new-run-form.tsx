@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -7,16 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  ACCEPT,
-  CASE_FILES_BUCKET,
-  MAX_FILES,
-  casePath,
-  describeSize,
-  formatOf,
-  isSettled,
-  refusal,
-} from "@/lib/case-files";
+import { ACCEPT, MAX_FILES, describeSize, refusal } from "@/lib/case-files";
+import { parseCase, startCaseRun, uploadCaseFiles } from "@/lib/case-upload";
 import { type CaseFileView, type CaseOption, type ProjectOption, fetchCaseFiles } from "@/lib/cases";
 import { createClient } from "@/lib/supabase/client";
 import { TASK_MAX_LENGTH } from "@/lib/validation";
@@ -31,21 +24,6 @@ import { TASK_MAX_LENGTH } from "@/lib/validation";
 // API (issue #8). The agent parses each file once, and the run reads what it stored.
 
 const NEW = "new";
-// How long the form waits for the parse before starting the run anyway. The run's trace then
-// says which files the agent did not have, which beats a button that spins for ever on a file a
-// dead request left `parsing`.
-const PARSE_WAIT_MS = 10 * 60 * 1000;
-// Polling, not Realtime: one select every two seconds for a minute is cheap, and it needs no
-// channel that can silently drop.
-const POLL_MS = 2000;
-
-async function sha256(file: File): Promise<string | null> {
-  // Recorded so a run can later be matched to the exact file it read. Optional: a browser
-  // without SubtleCrypto (plain http on a LAN address) still uploads.
-  if (!globalThis.crypto?.subtle) return null;
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 function nameTaken(code: string | undefined, what: string, name: string): string | null {
   return code === "23505" ? `A ${what} called "${name}" already exists here. Pick it from the list.` : null;
@@ -138,58 +116,8 @@ export function NewRunForm({
   }
 
   async function uploadInto(target: string): Promise<void> {
-    const supabase = createClient();
-    const first = shownFiles.reduce((max, f) => Math.max(max, f.position + 1), 0);
-    const rows = [];
-    for (const [index, file] of files.entries()) {
-      setPending(`Uploading ${file.name} (${index + 1} of ${files.length})…`);
-      const position = first + index;
-      const path = casePath(organizationId, target, position, file.name);
-      const { error: e } = await supabase.storage
-        .from(CASE_FILES_BUCKET)
-        .upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
-      if (e) throw new Error(`${file.name} could not be uploaded: ${e.message}`);
-      rows.push({
-        case_id: target,
-        organization_id: organizationId,
-        position,
-        storage_path: path,
-        filename: file.name.slice(0, 255),
-        // refusal() let only known formats into the list.
-        format: formatOf(file.name)!,
-        media_type: file.type || null,
-        bytes: file.size,
-        sha256: await sha256(file),
-      });
-    }
-    if (rows.length === 0) return;
-    const { error: e } = await supabase.from("case_files").insert(rows);
-    if (e) throw new Error(`The files were uploaded but not added to the case: ${e.message}`);
+    await uploadCaseFiles(createClient(), organizationId, target, files, shownFiles, setPending);
     setFiles([]);
-  }
-
-  // Asks the agent to parse, then waits until every file of the case is parsed or failed.
-  async function parse(target: string): Promise<CaseFileView[]> {
-    const supabase = createClient();
-    let rows = await fetchCaseFiles(supabase, target);
-    setCaseFiles(rows);
-    if (rows.every((f) => isSettled(f.status))) return rows;
-    setPending("Reading the files…");
-    const response = await fetch(`/api/cases/${target}/ingest`, { method: "POST" });
-    if (!response.ok) {
-      const body: { error?: string } = await response.json().catch(() => ({}));
-      throw new Error(body.error ?? `The files could not be sent to the agent (${response.status}).`);
-    }
-    const until = Date.now() + PARSE_WAIT_MS;
-    while (Date.now() < until) {
-      await new Promise((resolve) => setTimeout(resolve, POLL_MS));
-      rows = await fetchCaseFiles(supabase, target);
-      setCaseFiles(rows);
-      const done = rows.filter((f) => isSettled(f.status)).length;
-      if (done === rows.length) break;
-      setPending(`Reading the files… ${done} of ${rows.length} done`);
-    }
-    return rows;
   }
 
   async function startRun() {
@@ -198,27 +126,16 @@ export function NewRunForm({
     try {
       const target = await resolveCase();
       await uploadInto(target);
-      const rows = await parse(target);
+      const rows = await parseCase(createClient(), target, setCaseFiles, setPending);
       const failed = rows.filter((f) => f.status === "failed");
       if (failed.length > 0 && failed.length === rows.length && trimmed === "") {
         setError("No file of this case could be read, so there is nothing to run on. See the reasons above.");
         return;
       }
       setPending("Starting…");
-      const response = await fetch("/api/runs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ task: trimmed, organization_id: organizationId, case_id: target }),
-      });
-      const body: { id?: string; warning?: string; error?: string } = await response.json().catch(() => ({}));
-      if (!response.ok || !body.id) {
-        setError(body.error ?? `The run could not be started (${response.status}).`);
-        return;
-      }
+      const path = await startCaseRun(organizationId, target, trimmed, null);
       setSpec("");
-      // With a warning the run exists but the agent never heard of it; the run page says so and
-      // offers Send to agent.
-      router.push(`/runs/${body.id}${body.warning ? "?agent=unreachable" : ""}`);
+      router.push(path);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The run could not be started: the server did not answer.");
     } finally {
@@ -237,11 +154,16 @@ export function NewRunForm({
       }}
     >
       <div className="grid gap-1">
-        <h2 className="text-sm font-semibold">Find the requirements for a product</h2>
+        <h2 className="text-sm font-semibold">Quick run: find the requirements for a product</h2>
         <p className="text-xs text-muted-foreground">
           Put the case together: specification, exploded view, datasheets, drawings, BOM or CAD files.
           Everyone in this organisation sees the case. The agent lists the requirements the product
-          must fulfil under the UN Regulations, each with its regulation, page and paragraph.
+          must fulfil under the UN Regulations, each with its regulation, page and paragraph. To add
+          files without running, rename or delete, open the case under{" "}
+          <Link href="/projects" className="underline-offset-4 hover:underline">
+            Projects
+          </Link>
+          .
         </p>
       </div>
 

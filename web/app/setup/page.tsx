@@ -88,7 +88,8 @@ async function sessionUser() {
 async function SetupNav() {
   if (!(await sessionUser())) return <span className="text-xs text-muted-foreground">Setup</span>;
   const { access, current } = await getCurrentOrg();
-  return <NavLinks showAdmin={showsAdmin(access, current)} />;
+  // On the setup page itself, its link stays so the person sees where they are.
+  return <NavLinks showAdmin={showsAdmin(access, current)} showSetup />;
 }
 
 async function SetupAccount() {

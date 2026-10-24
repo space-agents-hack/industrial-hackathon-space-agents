@@ -47,16 +47,36 @@ async function Run({ params, searchParams }: PageProps<"/runs/[id]">) {
   // The role in the run's own organisation, not in the one chosen in the header: a link to a run
   // can come from anywhere.
   const canAct = permissionsIn(access, run.organization_id).decideApprovals;
+  const { data: onCase } = run.case_id
+    ? await supabase.from("cases").select("id, name, project_id, projects(name)").eq("id", run.case_id).maybeSingle()
+    : { data: null };
 
   return (
-    <RunTrace
-      key={run.id}
-      initialRun={run}
-      initialEvents={events}
-      initialApprovals={approvals}
-      agentUnreachable={query.agent === "unreachable"}
-      canAct={canAct}
-    />
+    <>
+      {onCase ? (
+        <p className="text-sm text-muted-foreground">
+          On case{" "}
+          <Link href={`/projects/${onCase.project_id}`} className="hover:text-foreground hover:underline">
+            {onCase.projects?.name ?? "Project"}
+          </Link>{" "}
+          ›{" "}
+          <Link
+            href={`/projects/${onCase.project_id}/cases/${onCase.id}`}
+            className="text-foreground underline-offset-4 hover:underline"
+          >
+            {onCase.name}
+          </Link>
+        </p>
+      ) : null}
+      <RunTrace
+        key={run.id}
+        initialRun={run}
+        initialEvents={events}
+        initialApprovals={approvals}
+        agentUnreachable={query.agent === "unreachable"}
+        canAct={canAct}
+      />
+    </>
   );
 }
 

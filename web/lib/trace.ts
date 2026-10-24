@@ -65,6 +65,8 @@ export type RunRow = {
   output: string | null;
   error: string | null;
   usage: unknown;
+  // The case the run is on (ADR-0006); optional for the same reason as organization_id.
+  case_id?: string | null;
 };
 
 export type ApprovalRow = {
@@ -89,6 +91,8 @@ export type RunSummary = {
   status: string;
   model: string | null;
   preview: string;
+  // "Project › Case" for a run on a case, when the list read it.
+  where?: string;
 };
 
 // ---------------------------------------------------------------------------------------------
