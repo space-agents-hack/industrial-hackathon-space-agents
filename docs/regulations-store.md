@@ -177,9 +177,17 @@ headings alone are not enough.
 - **1,024 dimensions as `halfvec`**, about 2 KB per row. Full 1,536-dimension float vectors would be
   about 6 KB per row, roughly 300 MB for 50,000 rows. The project is on the free plan, whose
   database limit is 500 MB (from memory, not checked against the dashboard): vectors would take most of it.
-- **No ANN index at first.** Exact search over 50,000 rows filtered by version is fast enough, and
-  approximate indexes can return too few rows when combined with filters. Add HNSW only if a
-  measurement says it is slow.
+- **HNSW since #44; exact search at first.** Exact search was fast on a laptop and wrong on the
+  hosted database: on its smallest compute size one search of team-09's 46,084 paragraphs took
+  6.6 to 13.4 s, and about 18 s with the three a run fires at once, so runs failed on the 8 s
+  statement timeout (measured 2026-10-24). Each vector is read out of TOAST, about 150,000
+  buffers per search. Migration `20261024360000_vector_index.sql` adds an HNSW index and asks it
+  for the 400 nearest texts with an iterative scan (both organisations share the index), then
+  joins them to paragraphs. A filter of at most 5,000 paragraphs (a project that uses a few
+  regulations) is still searched exactly, because the nearest texts of the whole library could
+  all be outside it. Approximate: on made-up clustered vectors 93 to 100 of the exact 100 nearest
+  were in the 400, not yet measured on real ones. A search that is still cancelled for time
+  falls back to words, and the trace says so.
 - **Query side:** the specification text goes to the embedding provider at query time. It already
   goes to the model provider; the data notice allows use for the hackathon, but it is one more
   provider holding it.
