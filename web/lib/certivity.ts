@@ -15,6 +15,18 @@ export type Level = {
   n_matched: number;
 };
 
+// The score split by regulation (certivity.breakdown in the agent), to see which regulation was
+// missed or extra. Only where there is a score, so only for a case with an answer key.
+export type RegulationRow = {
+  regulation: string;
+  requirements: number;
+  expected_requirements: number;
+  pages: number;
+  pages_correct: number;
+  expected_pages: number;
+  expected_pages_found: number;
+};
+
 export type CheckResult = {
   kind: "main" | "subgoal" | null;
   caseId: string | null;
@@ -24,12 +36,28 @@ export type CheckResult = {
   problemCount: number;
   jsonSpan: [number, number] | null;
   score: { regulation: Level; page: Level } | null;
+  breakdown: RegulationRow[];
   notes: string[];
   certivityCommit: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const ROW_COUNTS = [
+  "requirements",
+  "expected_requirements",
+  "pages",
+  "pages_correct",
+  "expected_pages",
+  "expected_pages_found",
+] as const;
+
+function parseRow(value: unknown): RegulationRow | null {
+  if (!isRecord(value) || typeof value.regulation !== "string") return null;
+  if (!ROW_COUNTS.every((key) => typeof value[key] === "number")) return null;
+  return value as RegulationRow;
 }
 
 function parseLevel(value: unknown): Level | null {
@@ -65,6 +93,10 @@ export function parseCheckResult(body: unknown): CheckResult | null {
     problemCount: typeof body.problem_count === "number" ? body.problem_count : body.problems.length,
     jsonSpan: span,
     score,
+    // An older agent sends none; a malformed row is dropped rather than shown half.
+    breakdown: Array.isArray(body.breakdown)
+      ? body.breakdown.map(parseRow).filter((r): r is RegulationRow => r !== null)
+      : [],
     notes: Array.isArray(body.notes) ? body.notes.filter((n): n is string => typeof n === "string") : [],
     certivityCommit: typeof body.certivity_commit === "string" ? body.certivity_commit : "unknown",
   };

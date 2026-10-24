@@ -176,6 +176,7 @@ def check(
         "problem_count": 0,
         "json_span": None,
         "score": None,
+        "breakdown": None,
         "notes": [],
         "certivity_commit": ref.commit,
     }
@@ -253,6 +254,7 @@ def check(
         return result
     try:
         result["score"] = _tool("score_local").score(data, expected)
+        result["breakdown"] = breakdown(data, expected)
     except Exception as exc:
         # The scorer assumes a well-formed file; on a broken one the validation problems say why.
         notes.append(
@@ -270,3 +272,40 @@ def check(
         "platform-only."
     )
     return result
+
+
+def breakdown(submission: dict[str, Any], expected: dict[str, Any]) -> list[dict[str, Any]]:
+    """The score split by regulation, so a person sees which regulation was missed or extra and
+    where the pages went: a missed regulation costs every requirement in it, and the totals alone
+    do not say which one. Uses score_local's own matching (a page counts if the page or a
+    paragraph on it is right), so the rows add up to its totals. Shown to people only: the agent's
+    tool gets no score (with_score=False), and this comes with the score."""
+    scorer = _tool("score_local")
+    cited, wanted = scorer._cited(submission), scorer._cited(expected)
+    sub_on_page, sub_anywhere = scorer._paragraphs(submission)
+    gold_on_page, gold_anywhere = scorer._paragraphs(expected)
+    sub_pages, gold_pages = set(cited), set(wanted)
+    correct = {
+        p
+        for p in sub_pages
+        if p in gold_pages or sub_on_page.get(p, set()) & gold_anywhere.get(p[:2], set())
+    }
+    found = {
+        p
+        for p in gold_pages
+        if p in sub_pages or gold_on_page.get(p, set()) & sub_anywhere.get(p[:2], set())
+    }
+    rows: list[dict[str, Any]] = []
+    for reg in sorted({r for r, _, _ in cited} | {r for r, _, _ in wanted}):
+        rows.append(
+            {
+                "regulation": reg,
+                "requirements": sum(r == reg for r, _, _ in cited),
+                "expected_requirements": sum(r == reg for r, _, _ in wanted),
+                "pages": sum(p[0] == reg for p in sub_pages),
+                "pages_correct": sum(p[0] == reg for p in correct),
+                "expected_pages": sum(p[0] == reg for p in gold_pages),
+                "expected_pages_found": sum(p[0] == reg for p in found),
+            }
+        )
+    return rows

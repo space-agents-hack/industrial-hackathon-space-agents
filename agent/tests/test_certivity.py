@@ -169,9 +169,38 @@ def test_without_the_reference_in_the_database_the_check_says_so() -> None:
     assert any("regulation library is empty" in note for note in result["notes"])
 
 
+def test_the_score_is_split_by_regulation(ref: certivity.Reference) -> None:
+    # Which regulation was missed, and where the pages went: the totals alone do not say.
+    data = _expected()
+    data["requirements"] = data["requirements"][:2]  # UN R901 is missed
+    data["requirements"][1]["source"]["page"] = 9  # a wrong page; its paragraph still counts
+    data["requirements"].append(
+        {
+            "id": "R-009",
+            "text": "Extra.",
+            "source": {"regulation": "UN R902", "version": "1", "page": 1},
+        }
+    )
+
+    rows = {r["regulation"]: r for r in certivity.check(json.dumps(data), ref)["breakdown"]}
+
+    assert rows["UN R900"] == {
+        "regulation": "UN R900",
+        "requirements": 2,
+        "expected_requirements": 2,
+        "pages": 2,
+        "pages_correct": 2,
+        "expected_pages": 2,
+        "expected_pages_found": 2,
+    }
+    assert (rows["UN R901"]["requirements"], rows["UN R901"]["expected_pages_found"]) == (0, 0)
+    assert (rows["UN R902"]["expected_requirements"], rows["UN R902"]["pages_correct"]) == (0, 0)
+
+
 def test_the_agent_tool_never_sees_the_score(ref: certivity.Reference) -> None:
     # A model shown the dev score can tune its answer to the one case that has an answer key.
-    assert certivity.check(json.dumps(_expected()), ref, with_score=False)["score"] is None
+    checked = certivity.check(json.dumps(_expected()), ref, with_score=False)
+    assert (checked["score"], checked["breakdown"]) == (None, None)
 
 
 @pytest.mark.anyio

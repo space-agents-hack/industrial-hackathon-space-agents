@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
   type CheckResult,
   type Level,
+  type RegulationRow,
   downloadName,
   formatRatio,
   parseCheckResult,
@@ -133,6 +134,8 @@ function Result({ text, result }: { text: string; result: CheckResult }) {
         </table>
       ) : null}
 
+      {result.breakdown.length > 0 ? <Breakdown rows={result.breakdown} /> : null}
+
       {result.notes.length > 0 ? (
         <ul className="grid gap-0.5 text-xs text-muted-foreground">
           {result.notes.map((note) => (
@@ -144,6 +147,43 @@ function Result({ text, result }: { text: string; result: CheckResult }) {
         Certivity&apos;s validate.py and score_local.py, package commit {result.certivityCommit}.
       </p>
     </>
+  );
+}
+
+// Per regulation, so a missed regulation (cited 0, expected some) or an extra one (expected 0)
+// shows at a glance: the totals above cannot say which one it was.
+function Breakdown({ rows }: { rows: RegulationRow[] }) {
+  return (
+    <table className="w-fit text-xs tabular-nums">
+      <thead className="text-muted-foreground">
+        <tr>
+          <th className="pr-4 text-left font-normal">Regulation</th>
+          <th className="pr-4 text-right font-normal">Requirements cited / expected</th>
+          <th className="pr-4 text-right font-normal">Pages cited / right</th>
+          <th className="pr-4 text-right font-normal">Expected pages found</th>
+          <th className="text-left font-normal" />
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.regulation}>
+            <td className="pr-4">{row.regulation}</td>
+            <td className="pr-4 text-right">
+              {row.requirements} / {row.expected_requirements}
+            </td>
+            <td className="pr-4 text-right">
+              {row.pages} / {row.pages_correct}
+            </td>
+            <td className="pr-4 text-right">
+              {row.expected_pages_found} / {row.expected_pages}
+            </td>
+            <td className={row.requirements === 0 || row.expected_requirements === 0 ? "text-danger" : ""}>
+              {row.requirements === 0 ? "missed" : row.expected_requirements === 0 ? "not expected" : ""}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

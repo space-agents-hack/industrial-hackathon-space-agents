@@ -27,6 +27,21 @@ test("parseCheckResult reads the agent's answer", () => {
   assert.equal(result.score?.page.n_expected, 4);
 });
 
+test("the per-regulation breakdown is read, and a malformed row dropped", () => {
+  const row = {
+    regulation: "UN R148",
+    requirements: 0,
+    expected_requirements: 12,
+    pages: 0,
+    pages_correct: 0,
+    expected_pages: 5,
+    expected_pages_found: 0,
+  };
+  const result = parseCheckResult({ ...AGENT_ANSWER, breakdown: [row, { regulation: "UN R48" }] });
+  assert.deepEqual(result?.breakdown, [row]);
+  assert.deepEqual(parseCheckResult(AGENT_ANSWER)?.breakdown, []);
+});
+
 test("parsing an already parsed result loses the case, the commit and the score", () => {
   // What production showed on 2026-10-24 when /api/checks returned the parsed result and the
   // browser parsed it again. The route must hand the browser the agent's own body.
