@@ -1,5 +1,5 @@
 """The writer tools around the model calls: what a call that never answers leaves, and what a
-failed window hands back for a retry (#36, #37). Made-up library (tests/fakes.py); the models are
+failed window hands back for a retry (#36, #39). Made-up library (tests/fakes.py); the models are
 pydantic-ai's FunctionModel, so no provider is reached."""
 
 import asyncio
@@ -78,3 +78,18 @@ async def test_a_window_whose_call_never_answers_fails_alone_and_the_rest_is_sto
     assert failed["pages"] == "20"
     assert failed["error"].startswith("TimeoutError: no answer within 0.2 s")
     assert len(await store.run_requirements(d.run.id)) == 1
+
+
+async def test_a_failed_window_names_its_labels_and_they_retry_it(store, settings) -> None:
+    d = deps(store, settings.model_copy(update={"subagent_timeout_s": 0.2}))
+    first = await tools.write_requirements(ctx(d, stalls_on("obsolete")), ["UN R148"])
+    [failed] = first["failed_windows"]
+    assert failed["paragraphs"] == ["6.1"]
+    assert "unnumbered_paragraphs" not in failed
+
+    again = await tools.write_for_paragraphs(
+        ctx(d, stalls_on("no marker")), failed["regulation"], failed["paragraphs"]
+    )
+
+    assert again == {"requirements": 1, "failed": [], "labels_not_found": []}
+    assert len(await store.run_requirements(d.run.id)) == 2

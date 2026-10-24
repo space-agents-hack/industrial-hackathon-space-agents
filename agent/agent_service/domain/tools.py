@@ -327,7 +327,7 @@ async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> d
     results = await _write_windows(ctx, jobs)
 
     written: dict[str, dict[str, Any]] = {}
-    failed: list[dict[str, str]] = []
+    failed: list[dict[str, Any]] = []
     for window, (count, error) in zip(jobs, results, strict=True):
         entry = written.setdefault(
             window.version.regulation,
@@ -336,9 +336,18 @@ async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> d
         entry["windows"] += 1
         entry["requirements"] += count
         if error is not None:
-            failed.append(
-                {"regulation": window.version.regulation, "pages": window.pages, "error": error}
-            )
+            # The labels are what write_for_paragraphs takes: with pages only, the orchestrator had
+            # nothing to retry a failed window with (#39). Unnumbered text has no label to pass.
+            labels = [p.label for p in window.paragraphs if p.label]
+            report: dict[str, Any] = {
+                "regulation": window.version.regulation,
+                "pages": window.pages,
+                "error": error,
+                "paragraphs": labels,
+            }
+            if unlabelled := len(window.paragraphs) - len(labels):
+                report["unnumbered_paragraphs"] = unlabelled
+            failed.append(report)
     return {"written": written, "failed_windows": failed, "refused": refused}
 
 
@@ -347,7 +356,7 @@ async def write_for_paragraphs(
     ctx: RunContext[Deps], regulation: str, paragraphs: list[str]
 ) -> dict[str, Any]:
     """Write requirements for specific paragraphs of one regulation: the obligations the check
-    found uncovered, or a window that failed. Only those paragraphs are read.
+    found uncovered, or the `paragraphs` of a window that failed. Only those paragraphs are read.
 
     Args:
         regulation: The regulation code, as `list_regulations` gives it.
