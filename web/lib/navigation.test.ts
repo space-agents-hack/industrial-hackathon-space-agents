@@ -25,7 +25,7 @@ test("the project's tabs mark the one open, and Cases covers a case page", () =>
   const tabs = projectTabs("p1");
   assert.deepEqual(
     tabs.map((t) => t.label),
-    ["Parts", "Draft requirements", "Regulations", "Review requirements", "Checks"],
+    ["Parts", "Regulations", "Draft requirements", "Review requirements", "Checks"],
   );
   const cases = tabs.find((t) => t.label === "Parts")!;
   assert.equal(cases.href, "/projects/p1");

@@ -24,14 +24,15 @@ export function needsProject(pathname: string): boolean {
 
 export type Tab = { href: string; label: string; matches: (path: string) => boolean };
 
-// In the order of the work: the project's cases, the runs on them, the regulations they cite, then
-// the tools that act on a regulation change or on a file.
+// In the order of the work (Ramón, 2026-10-24): a draft needs both a part and the regulations it
+// cites, so Parts and Regulations come before Draft requirements; then the tools that act on a
+// regulation change or on a file.
 export function projectTabs(projectId: string): Tab[] {
   const home = `/projects/${projectId}`;
   return [
     { href: home, label: "Parts", matches: (path) => path === home || path.startsWith(`${home}/cases`) },
-    { href: "/runs", label: "Draft requirements", matches: (path) => path === "/runs" || path.startsWith("/runs/") },
     { href: "/regulations", label: "Regulations", matches: (path) => path.startsWith("/regulations") },
+    { href: "/runs", label: "Draft requirements", matches: (path) => path === "/runs" || path.startsWith("/runs/") },
     { href: "/changes", label: "Review requirements", matches: (path) => path.startsWith("/changes") },
     { href: "/checks", label: "Checks", matches: (path) => path.startsWith("/checks") },
   ];
