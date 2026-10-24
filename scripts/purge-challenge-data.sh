@@ -36,4 +36,6 @@ Still to do by hand:
   [ ] Model provider: check the data retention of the account that was used.
   [ ] Your machine: downloads, screenshots, coding-agent transcripts that quote the material.
   [ ] The repository: confirm nothing from the partner was committed (git log -p -- data/).
+  [ ] The repository: Certivity's index.json and expected files ARE committed, in agent/certivity/
+      (AGENTS.md). Deleting the folder leaves them in git history: delete or archive the repo.
 NEXT

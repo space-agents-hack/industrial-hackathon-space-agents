@@ -8,6 +8,8 @@ dependencies = [
     # Used directly (provider checks and model lists), not only through the libraries below.
     "genai-prices>=0.1.11",
     "httpx>=0.28",
+    # The one dependency of Certivity's validate.py (certivity/README.md).
+    "jsonschema>=4.23",
     "pydantic-ai-slim[anthropic,openai,openrouter]>=2.55",
     "pydantic-settings>=2.15",
     "supabase>=2.32",
@@ -34,6 +36,8 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+# Certivity's code, copied unchanged (certivity/README.md): not ours to reformat.
+extend-exclude = ["certivity"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC"]

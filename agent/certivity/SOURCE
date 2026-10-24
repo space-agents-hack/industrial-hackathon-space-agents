@@ -1,0 +1,12 @@
+# Copied by scripts/sync-certivity.sh from the Certivity package at commit 2104a8e.
+# agent/tests/test_certivity.py fails if a file below differs from its hash: edit upstream, not here.
+ef7c488b000662c7513138646ddbfc9b9a7552754c99b980c6cd456d79541b1e  LICENSE
+60c693c38ca3ac146593c93fa101dedb2844f5fec95288576a7c080a0432446d  LICENSE-DATA.md
+e00a6e75aa168f2d9616f61652eaf1c866825736ecea22a4731b368b7fc96012  cases/dev-rear-lamp/expected.json
+899a3fa428e3cf6fd3d4f66afd7d6646ba266256176b77e28b9cf53f72e5ae15  regulations/index.json
+500391f4b4f940e1f896784e3ecf373b4d14e31520ba4076af47ed5c920bcab7  schemas/submission_main.schema.json
+23d698672cce0653941befed86017ff1ddb44c5bd8b77cab728f4141a0c295b2  schemas/submission_subgoal.schema.json
+cecc4f000fcfce1344e50dae96c6c38501de66d4af8db922c9c2a5283bf7cdb9  subgoal/dev/expected.json
+75f6ad5bc4a205ccf813cf858c4ed2e3f56291d4a941788e1f19038c46162ef4  subgoal/dev/requirements_old.json
+6de0fe1e07632bb7ec85c877a761c6fab800188b181bdae1d666d91ffad2b148  tools/score_local.py
+f6f59b86b91221a22d6a4f5d20ce66f8dc383bbc62871b68b85c4391acb671b2  tools/validate.py

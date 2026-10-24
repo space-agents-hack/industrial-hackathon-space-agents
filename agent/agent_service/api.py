@@ -17,7 +17,7 @@ import logging
 import os
 import re
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 import httpx
@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from supabase_auth.errors import AuthApiError
 
 from agent_service import providers, runner
+from agent_service.domain import certivity
 from agent_service.providers import Provider
 from agent_service.settings import Settings, get_settings
 from agent_service.store import RunStore, SupabaseRunStore
@@ -253,3 +254,18 @@ async def list_provider_models(
     finally:
         await store.aclose()
     return {"models": [vars(o) for o in options]}
+
+
+# ------------------------------------------------------------------------------------------
+# Certivity: validate a submission and score it where an expected file exists. No database and no
+# model: the web sends the text (a run's output or a file someone dropped) and shows the answer.
+# ------------------------------------------------------------------------------------------
+
+
+class SubmissionText(BaseModel):
+    text: str
+
+
+@app.post("/checks", dependencies=[Depends(require_secret)])
+def certivity_checks(body: SubmissionText) -> dict[str, Any]:
+    return certivity.check(body.text)

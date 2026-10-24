@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApprovalCard } from "@/components/approval-card";
+import { CertivityChecks } from "@/components/certivity-checks";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusBadge } from "@/components/status-badge";
 import { Timeline } from "@/components/timeline";
 import { Button } from "@/components/ui/button";
+import { looksLikeSubmission } from "@/lib/certivity";
 import { fetchApprovals, fetchRun, fetchRunEvents } from "@/lib/runs";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -297,6 +299,8 @@ export function RunTrace({
           </p>
         </section>
       ) : null}
+
+      {run.status === "succeeded" && looksLikeSubmission(run.output) ? <CertivityChecks text={run.output} /> : null}
 
       <section className="grid gap-1">
         <h2 className="text-xs font-medium text-muted-foreground">

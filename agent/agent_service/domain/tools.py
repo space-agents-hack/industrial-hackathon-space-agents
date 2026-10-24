@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from pydantic_ai import FunctionToolset, ModelRetry, RunContext
 
+from agent_service.domain import certivity
 from agent_service.domain.systems import Systems, UnknownRecord
 
 
@@ -76,6 +77,19 @@ def erp_open_orders(ctx: RunContext[Deps], part_id: str) -> list[dict[str, Any]]
         return ctx.deps.systems.open_orders(part_id)
     except UnknownRecord as exc:
         raise ModelRetry(str(exc)) from exc
+
+
+@toolset.tool
+def certivity_check(ctx: RunContext[Deps], submission_json: str) -> dict[str, Any]:
+    """Check a Certivity submission file the way the submission platform does, before giving it
+    as your answer. Returns `valid`, and every problem with its JSON path and how to fix it. Fix
+    every problem and check again; give your answer only when it is valid.
+
+    Args:
+        submission_json: The whole submission, as JSON text.
+    """
+    # No score here on purpose (certivity.check): it would let the model tune to the worked example.
+    return certivity.check(submission_json, with_score=False)
 
 
 @toolset.tool(requires_approval=True)
