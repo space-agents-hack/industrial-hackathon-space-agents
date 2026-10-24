@@ -85,3 +85,8 @@ Source: CR4.
 **N-12 Shows its weakness.** *The jury wants to see where the solution is weak and how that was
 measured.* S-2. Source: Brief 07 ("shows in the pitch where it is weak and how that was
 measured").
+
+**N-13 Load a regulation set once, reuse it.** *Certivity needs to load a set of regulations
+(an index of regulations and versions) without manual work, and connect it to any customer or
+use it for the model.* S-3. Source: Clemente, 2026-10-24 (our product direction, not stated by
+Certivity).

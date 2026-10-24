@@ -53,10 +53,15 @@ Changed 2026-10-24: was "case profile" with fixed fields.
 Why: CR1; the platform runs the same check on upload, and a file that fails does not count.
 Serves N-7. Allocated: regs, checks. Interface: IF-4. Verify: T. Issue: #4. Status: proposed.
 
-**SYS-5 Citation validity.** Every requirement shall cite a regulation present in
-`regulations/index.json`, with the `version_label` of its **base** version, and a page of that
-version's PDF.
+**SYS-5 Citation validity.** Every requirement shall cite a regulation from our regulation
+catalogue (the database, loaded from Certivity's `index.json` by SYS-23), with the
+`version_label` of its **base** version, and a page of that version's PDF.
 Why: CR2; a page of the `latest` version counts as a different page (README section 2).
+Same-name risk: Certivity's `validate.py` checks citations against the `index.json` file, not
+against our database. If the catalogue ever differs from that file (a renamed regulation, a
+re-typed version label), our run looks valid and the platform rejects the upload. So the
+catalogue keeps the exact `regulation` and `version_label` strings from `index.json`, and the
+original file stays available to `validate.py` (IF-5).
 Serves N-2, N-7. Allocated: regs. Verify: T. Issue: #3, #4. Status: proposed.
 
 **SYS-6 Paragraph.** Every requirement shall also cite the paragraph label.
@@ -82,14 +87,18 @@ Serves N-5. Allocated: regs. Verify: I. Issue: none yet. Status: proposed.
 
 ## Checks on our side
 
-**SYS-10 Validate on every run.** When a run produces a submission, the system shall run
-`validate.py`, unchanged from Certivity's copy, and show the result with each problem's JSON path.
+**SYS-10 Validate on every run.** When a run produces a submission (the one output JSON of that
+run), the system shall automatically run `validate.py`, unchanged from Certivity's copy, and show
+the result with each problem's JSON path. No person approves this step: it is a check, it writes
+nothing.
 Why: catching an invalid file before upload saves one of 5 uploads per hour. Serves N-7.
 Allocated: checks, web. Interface: IF-5. Verify: T. Issue: none yet (validate/score design in
 progress). Status: proposed.
 
 **SYS-11 Local score where an answer exists.** For a case with an expected answer (only the dev
-case), the system shall show `score_local.py`'s regulation and page scores.
+case), the system shall compare the run's output JSON with Certivity's expected answer for that
+case (`cases/dev-rear-lamp/expected.json`) using `score_local.py`, and show the regulation and
+page scores. `index.json` plays no part in this.
 Why: the only offline measure we have. Serves N-1, N-12. Allocated: checks, web. Interface: IF-5.
 Verify: D. Issue: none yet. Status: proposed.
 
@@ -101,7 +110,10 @@ Why: Brief 07 names it under the UI criterion. Serves N-2. Allocated: web. Verif
 Status: proposed.
 
 **SYS-13 Approval before export.** Exporting or submitting the requirements shall be a tool
-marked `requires_approval=True`, so a person approves before anything leaves the system.
+marked `requires_approval=True`, so a person approves before anything leaves the system. One
+approval covers the whole list ("approve all"), not one per requirement or per file.
+Per-requirement review (accept or reject each line) is future work: useful for an engineer at a
+client, not something we can do for 200 lines during the hackathon.
 Why: AGENTS.md rule for writes, and the deployability story. Serves N-9. Allocated: regs, web.
 Verify: T (the run pauses before it). Issue: #6. Status: proposed.
 
@@ -132,6 +144,15 @@ proposed.
 **SYS-18 Export to requirements tools.** The system may export requirements in a format
 importable by Polarion or Jama (for example ReqIF or CSV). ("May": not graded.)
 Serves N-10. Allocated: web. Verify: D. Issue: none. Status: proposed.
+
+**SYS-23 Automatic regulation ingestion.** Given a regulations `index.json`, the system shall
+download each listed PDF, verify its checksum, and store the regulation, its versions and its
+text by page and paragraph in the database, with no manual step, ready to be linked to
+organisations or retrieved by the model.
+Why: the same mechanism then loads any customer's regulation set, not only this hackathon's
+(Clemente, 2026-10-24). Serves N-13, N-1, N-2. Allocated: regs, db. Interface: IF-3.
+Verify: T (a small index ingests end to end), I (row counts per regulation against the index).
+Issue: #3. Status: proposed.
 
 ## Sub-goal
 
