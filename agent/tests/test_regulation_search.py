@@ -2,6 +2,7 @@
 API is httpx.MockTransport, the summary model is pydantic-ai's TestModel, and the store is
 tests/search_fakes.py. The PDFs are made up here, not challenge material."""
 
+import asyncio
 import json
 from collections.abc import Iterator
 from typing import Any
@@ -467,3 +468,73 @@ async def test_any_other_refusal_still_stops_the_slice(index_settings: Settings)
     async with Provider(status=400).client as http:
         with pytest.raises(EmbeddingError):
             await index_library(store, http, index_settings, ORG)
+
+
+# ---------------------------------------------------------------------------------- side by side
+
+
+async def test_embedding_requests_go_out_several_at_once(
+    index_settings: Settings, summary_model: TestModel
+) -> None:
+    active, peak = 0, 0
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        texts = json.loads(request.content)["input"]
+        data = [{"index": i, "embedding": [0.0] * DIMENSIONS} for i in range(len(texts))]
+        return httpx.Response(200, json={"data": data})
+
+    store = InMemorySearchStore(keys={"openai": KEY}, inputs=[f"t{i}" for i in range(2000)])
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        progress = await index_library(store, http, index_settings, ORG)
+
+    assert progress.embedded == 2000 and len(store.vectors) == 2000
+    assert peak == index_settings.embedding_concurrency
+
+
+async def test_a_busy_provider_is_waited_out_instead_of_failing_the_slice(
+    index_settings: Settings, summary_model: TestModel
+) -> None:
+    calls = 0
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(429, headers={"retry-after": "0"}, text="slow down")
+        texts = json.loads(request.content)["input"]
+        data = [{"index": i, "embedding": [0.0] * DIMENSIONS} for i in range(len(texts))]
+        return httpx.Response(200, json={"data": data})
+
+    store = InMemorySearchStore(keys={"openai": KEY}, inputs=["a", "b"])
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        progress = await index_library(store, http, index_settings, ORG)
+
+    assert progress.embedded == 2 and calls == 2
+
+
+async def test_a_provider_that_stays_busy_still_stops_the_slice(index_settings: Settings) -> None:
+    def handle(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, headers={"retry-after": "0"}, text="unavailable")
+
+    store = InMemorySearchStore(keys={"openai": KEY}, inputs=["a"])
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        with pytest.raises(EmbeddingError, match="503"):
+            await index_library(store, http, index_settings, ORG)
+
+
+async def test_summaries_are_written_even_when_the_embedding_key_is_refused(
+    index_settings: Settings, summary_model: TestModel
+) -> None:
+    # Side by side, not one after the other: in production 16,256 vectors were written before the
+    # first summary was even tried (#43).
+    store = InMemorySearchStore(keys={"openai": KEY}, inputs=["a"])
+    version = store.add_version("UN R7", "1.0.0", text_pdf("Rear position lamps"))
+    async with Provider(status=401).client as http:
+        with pytest.raises(EmbeddingError, match="rejected the API key"):
+            await index_library(store, http, index_settings, ORG)
+    assert version.id in store.summaries

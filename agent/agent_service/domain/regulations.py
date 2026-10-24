@@ -50,6 +50,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from agent_service.domain.paragraphs import EXTRACTOR, Extraction, ExtractionProblem, extract
 from agent_service.settings import Settings
+from agent_service.slices import each_until
 
 log = logging.getLogger(__name__)
 
@@ -487,27 +488,57 @@ async def _execute(
             return "failed"
         await store.add_files(job.id, planned)
 
-    for file in await store.pending_files(job.id):
-        if time.monotonic() >= deadline:
-            await store.end_import(job.id, "paused")
-            return "paused"
+    # Several at once (#43; settings.import_concurrency). The import's heartbeat goes with each
+    # file started, as it did one at a time, so a cancellation stops new files within one file.
+    cancelled = False
+
+    async def store_file(file: PlannedFile) -> bool:
+        nonlocal cancelled
         if not await store.touch_import(job.id):
-            return "cancelled"
+            cancelled = True
+            return False
         status, error = await _store_one(store, http, settings, job, file, resolve)
         await store.set_file(job.id, file.position, status, error)
+        return True
+
+    stored = await each_until(
+        await store.pending_files(job.id),
+        store_file,
+        limit=settings.import_concurrency,
+        deadline=deadline,
+    )
+    if cancelled:
+        return "cancelled"
+    if not stored:
+        await store.end_import(job.id, "paused")
+        return "paused"
 
     # Paragraphs, for the whole library and not only this import's files (module docstring).
     # A version that fails for a reason that may pass (the bucket did not answer) is skipped for
-    # the rest of this slice and not recorded, so the next import tries it again.
+    # the rest of this slice and not recorded, so the next import tries it again. Fewer at once
+    # than downloads (settings.split_concurrency says why).
     skipped: list[str] = []
-    for version in await store.versions_to_split(job.organization_id, EXTRACTOR):
-        if time.monotonic() >= deadline:
-            await store.end_import(job.id, "paused")
-            return "paused"
+
+    async def split_version(version: VersionToSplit) -> bool:
+        nonlocal cancelled
         if not await store.touch_import(job.id):
-            return "cancelled"
+            cancelled = True
+            return False
         if not await _split_one(store, version, split):
             skipped.append(version.name)
+        return True
+
+    split_all = await each_until(
+        await store.versions_to_split(job.organization_id, EXTRACTOR),
+        split_version,
+        limit=settings.split_concurrency,
+        deadline=deadline,
+    )
+    if cancelled:
+        return "cancelled"
+    if not split_all:
+        await store.end_import(job.id, "paused")
+        return "paused"
 
     problems: list[str] = []
     failed = await store.failed_count(job.id)

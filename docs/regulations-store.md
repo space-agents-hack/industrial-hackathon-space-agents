@@ -134,6 +134,10 @@ an index file in the challenge's `regulations/index.json` format. The rest is au
    while open, sends it back for the next slice. Measured locally on 2026-10-24: the challenge's 92
    PDFs (214 MB) were stored in under a minute, in one slice; importing the same file again
    downloaded nothing.
+5. Within a slice, `IMPORT_CONCURRENCY` files (6) download at once and `SPLIT_CONCURRENCY`
+   versions (2) are split into paragraphs at once (#43). The split is lower on purpose: it is CPU
+   work on one core however many run, and saving one version's paragraphs already took up to 6.4 s
+   in production against the 8 s statement timeout.
 
 Everyone in the organisation sees its library on the same page and opens a PDF through a signed
 link valid for one hour.
@@ -252,6 +256,15 @@ Paragraph keys are added 1,000 per call (`add_regulation_embedding_keys`, #41): 
 hashed the whole library in one statement, about 25 s for 48,487 paragraphs on the hosted database
 (measured 2026-10-24), which cancels any statement after 8 s, so production could not be indexed
 at all. A key made stale by a change of a regulation's title is not rebuilt by the batches.
+Once every paragraph had a key, the call that confirms none is missing walked every paragraph of
+both organisations in primary-key order (17.6 s in production) and indexing stopped at 65%; a
+partial index on current paragraphs (migration `20261024340000`) brought it to 2.2 s there.
+Within a slice, vectors and summaries run side by side, `EMBEDDING_CONCURRENCY` embedding requests
+(4) and `SUMMARY_CONCURRENCY` summary calls (4) at once (#43). One after the other, summaries only
+started once every vector was written. A provider that answers 429 or 5xx is asked again, up to
+3 times, after the wait it asks for or 2, 4 and 8 s, so a concurrency above what the key's tier
+allows makes indexing slower, not failed. Two indexers on the same organisation at once still
+duplicate work: open the Regulations page in one tab.
 `make regulations-search Q="..." MODE=text|vector|hybrid` shows what a query finds. That is also
 how to compare full text, vectors and both on the dev case.
 

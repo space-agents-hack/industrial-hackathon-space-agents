@@ -4,6 +4,7 @@ lookups to a fake resolver, so nothing here touches the network. The PDFs are a 
 not challenge material; the splitter is replaced by `split_fake` except where a test says so, and
 there it reads the made-up regulation in tests/fixtures/regulation."""
 
+import asyncio
 import hashlib
 import json
 from collections.abc import Callable
@@ -538,13 +539,18 @@ async def test_splitting_pauses_when_the_slice_ends_and_resumes_where_it_stopped
     monkeypatch.setattr(regulations.time, "monotonic", lambda: clock[0])
 
     def slow(data: bytes) -> Extraction:
-        clock[0] += settings.import_slice_s  # the first version uses up the whole slice
+        clock[0] += settings.import_slice_s  # the first versions use up the whole slice
         return split_fake(data)
 
     import_id = library.add_import(INDEX)
 
+    # The versions started together before the slice ran out finish; no other one starts.
+    started = settings.split_concurrency
+    assert 0 < started < len(library.versions)
     assert await run(library, settings, import_id, Server(), split=slow) == "paused"
-    assert [v.extracted_with for v in library.versions] == [EXTRACTOR, None, None]
+    assert [v.extracted_with for v in library.versions] == [EXTRACTOR] * started + [None] * (
+        len(library.versions) - started
+    )
 
     assert await run(library, settings, import_id, Server()) == "succeeded"
     assert all(v.extracted_with == EXTRACTOR for v in library.versions)
@@ -584,3 +590,21 @@ def test_advancing_an_import_streams_accepted_then_done(
     assert lines[-1] == {"event": "done", "status": "succeeded"}
     assert library.closed
     assert client.post(f"/regulations/imports/{import_id}/advance", headers=AUTH).status_code == 409
+
+
+async def test_files_are_downloaded_several_at_once(
+    library: InMemoryLibraryStore, settings: Settings
+) -> None:
+    # A download is network time: one at a time, a slice spent most of its 150 s waiting (#43).
+    class SlowServer(Server):
+        active = peak = 0
+
+        async def __call__(self, request: httpx.Request) -> httpx.Response:  # pyright: ignore[reportIncompatibleMethodOverride]
+            SlowServer.active += 1
+            SlowServer.peak = max(SlowServer.peak, SlowServer.active)
+            await asyncio.sleep(0.01)
+            SlowServer.active -= 1
+            return super().__call__(request)
+
+    assert await run(library, settings, library.add_import(INDEX), SlowServer()) == "succeeded"
+    assert SlowServer.peak == min(len(BODIES), settings.import_concurrency) > 1

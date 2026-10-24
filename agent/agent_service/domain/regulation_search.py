@@ -11,6 +11,7 @@ this runs), write the per-paragraph AI context line (step 4 of the design, only 
 is needed), or rerank results with a second model (the agent's model reads the results itself).
 """
 
+import asyncio
 import io
 import logging
 import os
@@ -28,6 +29,7 @@ from pypdf import PdfReader
 from agent_service import metering, providers
 from agent_service.metering import Credential, Meter
 from agent_service.settings import Settings
+from agent_service.slices import each_until
 
 log = logging.getLogger(__name__)
 
@@ -51,14 +53,21 @@ _KEY_ENV: dict[EmbeddingProvider, str] = {
 # stays well under the token limit and one slow request does not eat the slice.
 _MAX_INPUTS = 256
 _MAX_CHARS = 400_000
-# What one database round trip hands over. A write of 250 vectors is about 2.5 MB of JSON.
-_FETCH = 500
+# A write of 250 vectors is about 2.5 MB of JSON.
 _WRITE = 250
 
 
 class EmbeddingError(Exception):
     """The embedding provider could not be reached, refused, or answered something unusable. The
     message never contains the key."""
+
+
+class EmbeddingBusy(EmbeddingError):
+    """The provider asked to slow down (429) or failed on its side (5xx): worth asking again."""
+
+    def __init__(self, message: str, retry_after_s: float | None) -> None:
+        super().__init__(message)
+        self.retry_after_s = retry_after_s
 
 
 @dataclass(frozen=True)
@@ -114,6 +123,12 @@ async def embed(
         raise EmbeddingError(f"Could not reach {model.provider} ({reason}).") from None
     if response.status_code in (401, 403):
         raise EmbeddingError(f"{model.provider} rejected the API key.")
+    if response.status_code == 429 or response.status_code >= 500:
+        detail = providers.scrub(response.text, api_key)[:300]
+        raise EmbeddingBusy(
+            f"{model.provider} answered {response.status_code}: {detail}",
+            _retry_after(response),
+        )
     if response.is_error:
         detail = providers.scrub(response.text, api_key)[:300]
         raise EmbeddingError(f"{model.provider} answered {response.status_code}: {detail}")
@@ -141,6 +156,13 @@ async def embed(
     return vectors
 
 
+def _retry_after(response: httpx.Response) -> float | None:
+    try:
+        return float(response.headers["retry-after"])
+    except (KeyError, ValueError):
+        return None
+
+
 def _prompt_tokens(response: httpx.Response) -> int:
     # OpenAI and OpenRouter both answer {"usage": {"prompt_tokens": n, "total_tokens": n}}. An
     # answer without it is still a request; it is recorded with 0 tokens rather than guessed.
@@ -158,6 +180,11 @@ def _prompt_tokens(response: httpx.Response) -> int:
 _TOO_LONG = re.compile(r"input\[(\d+)\]'?: maximum input length")
 # Each retry halves the input it names; past this a paragraph is not worth more requests.
 _MIN_INPUT_CHARS = 1000
+# A busy provider is asked again this many times, waiting what it says or 2, 4, 8 s. Several
+# requests at once (#43) make a 429 likely on a low tier; failing the slice for it would lose more
+# time than the wait.
+_BUSY_RETRIES = 3
+_MAX_WAIT_S = 30.0
 
 
 async def embed_fitting(
@@ -173,9 +200,18 @@ async def embed_fitting(
     then of the input's first part; its key is still the full input's, so the paragraph is not
     embedded again on every slice. A refused request is not billed."""
     texts = list(texts)
+    busy = 0
     while True:
         try:
             return await embed(http, model, api_key, texts, meter=meter, credential=credential)
+        except EmbeddingBusy as exc:
+            busy += 1
+            if busy > _BUSY_RETRIES:
+                raise
+            wait = 2.0**busy if exc.retry_after_s is None else exc.retry_after_s
+            wait = min(wait, _MAX_WAIT_S)
+            log.warning("%s; asking again in %.0f s", exc, wait)
+            await asyncio.sleep(wait)
         except EmbeddingError as exc:
             match = _TOO_LONG.search(str(exc))
             i = int(match.group(1)) if match else -1
@@ -376,12 +412,23 @@ async def index_library(
     progress = Progress()
     meter = Meter(org)
     try:
-        vectors_done = await _index_vectors(store, http, settings, org, deadline, progress, meter)
-        summaries_done = await _summarize(store, settings, org, deadline, progress, meter)
+        # Side by side (#43): they write different tables (regulation_embeddings and
+        # regulation_versions) and wait on different providers. One after the other, summaries
+        # started only once every vector was written: production had 16,256 vectors and 0 of 92
+        # summaries after two slices. Both run to the end, so a refused embedding key does not
+        # throw away the summaries written meanwhile, and the first error is raised after.
+        vectors_done, summaries_done = await asyncio.gather(
+            _index_vectors(store, http, settings, org, deadline, progress, meter),
+            _summarize(store, settings, org, deadline, progress, meter),
+            return_exceptions=True,
+        )
     finally:
         # Also when a provider refuses halfway: the batches before it were billed.
         await meter.flush(store)
-    progress.done = vectors_done and summaries_done
+    for outcome in (vectors_done, summaries_done):
+        if isinstance(outcome, BaseException):
+            raise outcome
+    progress.done = vectors_done is True and summaries_done is True
     return progress
 
 
@@ -409,27 +456,29 @@ async def _index_vectors(
         # Thousands of new rows and no statistics yet make the planner pick plans that take
         # minutes (migration 20261024210000, analyze_regulation_search).
         await store.analyze()
+
+    async def embed_batch(batch: list[tuple[str, str]]) -> bool:
+        vectors = await embed_fitting(
+            http, model, api_key, [text for _, text in batch], meter=meter, credential=credential
+        )
+        pairs = [(sha, vec) for (sha, _), vec in zip(batch, vectors, strict=True)]
+        for start in range(0, len(pairs), _WRITE):
+            await store.save_embeddings(org, model.key, pairs[start : start + _WRITE])
+        progress.embedded += len(batch)
+        return True
+
+    # One fetch per round, a full request for each lane: the texts still to embed are the ones
+    # without a vector, so the next fetch has to wait for this round's writes or it would hand out
+    # the same texts again.
+    lanes = max(settings.embedding_concurrency, 1)
     while True:
         if time.monotonic() >= deadline:
             return False
-        rows = await store.texts_to_embed(org, model.key, _FETCH)
+        rows = await store.texts_to_embed(org, model.key, _MAX_INPUTS * lanes)
         if not rows:
             break
-        for batch in _batches(rows):
-            vectors = await embed_fitting(
-                http,
-                model,
-                api_key,
-                [text for _, text in batch],
-                meter=meter,
-                credential=credential,
-            )
-            pairs = [(sha, vec) for (sha, _), vec in zip(batch, vectors, strict=True)]
-            for start in range(0, len(pairs), _WRITE):
-                await store.save_embeddings(org, model.key, pairs[start : start + _WRITE])
-            progress.embedded += len(batch)
-            if time.monotonic() >= deadline:
-                return False
+        if not await each_until(_batches(rows), embed_batch, limit=lanes, deadline=deadline):
+            return False
     # Last, so a slice that runs out of time never spends it deleting. A pruned vector is never
     # one a paragraph still points to, so the order does not matter for correctness.
     progress.pruned = await store.prune_embeddings(org, model.key)
@@ -463,11 +512,13 @@ async def _summarize(
         Credential.of(provider or "", api_key),
     )
     unread = 0
-    for version in await store.versions_to_summarize(org):
-        if time.monotonic() >= deadline:
-            return False
+    stopped = False
+
+    async def summarize_one(version: VersionToSummarize) -> bool:
+        nonlocal unread, stopped
         try:
-            text = opening_text(await store.download(version.pdf_path))
+            # In a thread: reading a PDF is CPU work, and the vectors run in this same loop.
+            text = await asyncio.to_thread(opening_text, await store.download(version.pdf_path))
         except Exception as exc:
             # One unreadable PDF must not stop the other 91; it stays in the list and is tried
             # again on the next slice.
@@ -476,7 +527,7 @@ async def _summarize(
                 f"{version.code} {version.version_label}: PDF not read ({type(exc).__name__})."
             )
             unread += 1
-            continue
+            return True
         heading = f"{version.code}, version {version.version_label}"
         if version.title:
             heading += f": {version.title}"
@@ -485,16 +536,27 @@ async def _summarize(
         except Exception as exc:
             # A missing or refused key fails every version the same way: say it once and stop,
             # so the vectors written in this slice still count and the page shows why (#37).
+            # Once: the calls already in flight fail the same way.
             log.exception("Summary of %s %s failed", version.code, version.version_label)
-            reason = providers.scrub(f"{type(exc).__name__}: {exc}", api_key)[:300]
-            progress.notes.append(f"Summaries stopped at {version.code} with {name}: {reason}")
+            if not stopped:
+                stopped = True
+                reason = providers.scrub(f"{type(exc).__name__}: {exc}", api_key)[:300]
+                progress.notes.append(f"Summaries stopped at {version.code} with {name}: {reason}")
             return False
         summary = result.output
         summary.summary = summary.summary[:_SUMMARY_MAX_CHARS]
         summary.keywords = [k[:100] for k in summary.keywords[:_MAX_KEYWORDS]]
         await store.save_summary(version.id, summary, name, version.sha256)
         progress.summarized += 1
-    return unread == 0
+        return True
+
+    complete = await each_until(
+        await store.versions_to_summarize(org),
+        summarize_one,
+        limit=settings.summary_concurrency,
+        deadline=deadline,
+    )
+    return complete and unread == 0
 
 
 # ------------------------------------------------------------------------------------------

@@ -68,6 +68,15 @@ class Settings(BaseSettings):
     import_stale_after_s: float = 150
     # The bucket's limit, which is the Supabase free plan's limit per file.
     import_max_file_bytes: int = 50 * 1024 * 1024
+    # Files downloaded at once in an import slice (#43): a download is network time, and one at a
+    # time a slice of 92 PDFs spent most of its 150 s waiting. The bucket and the source sites
+    # take a few at once without complaint; tens would look like abuse to a public site.
+    import_concurrency: int = 6
+    # Versions split into paragraphs at once. Lower than downloads on purpose: the split is CPU
+    # (one core, whatever the number), and saving one version's paragraphs already took up to
+    # 6.4 s in production against the 8 s statement timeout, so several large saves at once could
+    # pass it. 2 lets one version download or save while the other is split.
+    split_concurrency: int = 2
 
     # Regulation search (domain/regulation_search.py). "openai:<model>" or "openrouter:<model>";
     # changing it starts the vectors from nothing, because vectors of two models are never compared.
@@ -79,6 +88,14 @@ class Settings(BaseSettings):
     summary_model: str = "anthropic:claude-haiku-5-5"
     # Same budget as an import slice, for the same reason: it fits Vercel Hobby and Pro alike.
     index_slice_s: float = 150
+    # Embedding requests in flight at once (#43). One at a time, production wrote about 110
+    # vectors a second, most of it waiting on the provider. A refusal for rate (429) is waited out
+    # and retried, so a value too high for the key's tier is slower, not a failed slice.
+    embedding_concurrency: int = 4
+    # Summary calls in flight at once. Each sends about 8,000 tokens, so 4 at once is about the
+    # input-tokens-per-minute of a low Anthropic tier (an estimate: the tier is per key); the
+    # Anthropic client waits out a 429 and retries by itself.
+    summary_concurrency: int = 4
 
     # The assistant's model (domain/assistant.py), where the organisation chose none (Admin,
     # Models, process "chat"). Not the run's model: an answer reads the project's rows and a few
