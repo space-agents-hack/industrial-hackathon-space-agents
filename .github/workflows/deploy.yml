@@ -212,6 +212,9 @@ jobs:
       SUPABASE_POOLER_URL: ${{ vars.SUPABASE_POOLER_URL }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The head check compares this commit with newer ones on main, so it needs history.
+          fetch-depth: 0
 
       - name: What is configured
         id: config
@@ -272,9 +275,18 @@ jobs:
             exit 1
           fi
           if [[ "$current_sha" != "$EXPECTED_SHA" ]]; then
-            echo "current=false" >> "$GITHUB_OUTPUT"
-            echo "Release skipped: main is now at $current_sha." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+            git fetch --quiet origin main
+            # A push that touches only paths-ignore files (Markdown, docs/) starts no workflow, so
+            # skipping for it leaves this release undone with nothing coming after it. That kept
+            # production on an old version on 2026-10-24. Release anyway when every newer commit
+            # is docs only: the code is the same as at the head.
+            if ! git merge-base --is-ancestor "$EXPECTED_SHA" "$current_sha" \
+              || git diff --name-only "$EXPECTED_SHA" "$current_sha" | grep -qvE '(\.md$|^docs/)'; then
+              echo "current=false" >> "$GITHUB_OUTPUT"
+              echo "Release skipped: main is now at $current_sha." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "main is at $current_sha, newer only in docs: releasing $EXPECTED_SHA." >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "current=true" >> "$GITHUB_OUTPUT"
 
