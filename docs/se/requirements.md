@@ -82,7 +82,7 @@ SYS-23 to SYS-33 are numbered out of order because they were added later. Ids ar
 | SYS-11 | Only `dev-rear-lamp` has an answer file. On the held-out case the web shows validation (SYS-10) and says no local score exists; the score comes only from the platform. `index.json` plays no part in this check |
 | SYS-13 | One click for the whole list. Per-requirement accept/reject is future work for client engineers |
 | SYS-15 | Vercel Pro (Clemente, 2026-10-24): `maxDuration` 800 in `agent/vercel.json` and the three web routes that hold the connection; 30 s margin so a slow run ends as `failed`, not killed. Regulation ingestion (SYS-23) never runs inside a run. Not measured. Fallback beyond 800 s: the `agent/Dockerfile` container on the Raspberry Pi or Ramón's VPS |
-| SYS-16 | Clemente's decision (2026-10-24): `index.json`, `expected.json` and `requirements_old.json` live in the database (table `certivity_reference`), so purging them is deleting rows; from ac791c2 until the move they were in git, so history still holds them until the repository is deleted or archived. Case files stay out of git; the purge script must also empty the `case-files` bucket (#16) |
+| SYS-16 | Clemente's decision (2026-10-24): `expected.json` and `requirements_old.json` live in the database (table `certivity_reference`; the regulation list is in the organisation's library since d1b2c15), so purging them is deleting rows; from ac791c2 until the move they were in git, so history still holds them until the repository is deleted or archived. Case files stay out of git; the purge script must also empty the `case-files` bucket (#16) |
 | SYS-20 | The **last** valid upload counts, not the best. Procedure in `docs/hackathon.md` |
 
 ## Traceability: needs to requirements
