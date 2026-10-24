@@ -11,7 +11,8 @@ the rest; nothing is dropped silently (SYS-2).
 
 What this does NOT do:
 - OCR. A PDF page with almost no text (a drawing, a scan) is rendered and sent as an image, which
-  needs a vision model.
+  needs a vision model. So is a page that has text AND a drawing or picture (`_drawn_pages`): its
+  text goes as text, and the page also as an image.
 - Interpret CAD geometry. STEP and IGES are read for their header, part names and assembly
   structure; STL for its name, triangle count and bounding box.
 - Read .doc, .ppt, .pptx or ZIP. The database refuses those formats (run_files.format).
@@ -51,6 +52,16 @@ EXTENSIONS: dict[str, Format] = {
 MAX_IMAGE_SIDE = 1568
 # Below this many characters a PDF page is taken to be a drawing or a scan, and rendered.
 MIN_PAGE_TEXT = 200
+# A page with more text than that is rendered too when it carries a picture or a drawing: a
+# datasheet page with a dimensioned drawing and a title block has plenty of text, and the text
+# alone loses the drawing (Certivity, 2026-10-24: "getting 95% of a PDF is easy, the last 5% is
+# tables and pictures"). A picture counts when it covers this share of the page: a logo in a
+# header does not, a photo or a figure does. Vector line art counts by its number of path
+# objects: a dimensioned drawing has hundreds to thousands, a text page with a few rules or a
+# small bordered table has tens. A large bordered table may reach it; rendering it costs one image
+# and its transcription, and the table reads better from the image than from loose cells.
+MIN_PICTURE_SHARE = 0.15
+MIN_DRAWING_PATHS = 300
 
 
 @dataclass(frozen=True)
@@ -185,18 +196,64 @@ def _pdf(data: bytes, report: FileReport) -> list[_Block]:
 
     reader = PdfReader(io.BytesIO(data))
     report.pages = len(reader.pages)
+    try:
+        with_drawing = _drawn_pages(data)
+    except Exception as exc:
+        # Only the extra images are lost; the text and the text-less pages are read as before.
+        with_drawing = set[int]()
+        report.notes.append(f"Pictures not looked for: {type(exc).__name__}: {exc}"[:300])
     blocks: list[_Block] = []
     drawn: list[int] = []
+    mixed: list[int] = []
     for number, page in enumerate(reader.pages, start=1):
         text = (page.extract_text() or "").strip()
         if text:
             blocks.append(Block(text, f"page {number}", number, "pypdf"))
         if len(text) < MIN_PAGE_TEXT:
             drawn.append(number)
-            blocks.append(Block(PdfPage(data, number), f"page {number}", number, "pdfium-render"))
+        elif number in with_drawing:
+            mixed.append(number)
+        else:
+            continue
+        blocks.append(Block(PdfPage(data, number), f"page {number}", number, "pdfium-render"))
     if drawn:
         report.notes.append(f"Little or no text on page(s) {_ranges(drawn)}; read as images.")
+    if mixed:
+        report.notes.append(
+            f"Page(s) {_ranges(mixed)} have a picture or drawing next to their text; read as text "
+            "and as images."
+        )
     return blocks
+
+
+def _drawn_pages(data: bytes) -> set[int]:
+    """The pages (from 1) that carry a picture covering MIN_PICTURE_SHARE of the page, or at least
+    MIN_DRAWING_PATHS vector paths. Objects inside form XObjects count too: drawings exported from
+    CAD are often wrapped in one."""
+    import pypdfium2 as pdfium
+    import pypdfium2.raw as raw
+
+    found: set[int] = set()
+    with PDFIUM:
+        pdf = pdfium.PdfDocument(data)
+        try:
+            for index in range(len(pdf)):
+                page = pdf[index]
+                width, height = page.get_size()
+                area = max(width * height, 1.0)
+                picture = 0.0
+                paths = 0
+                for obj in page.get_objects(filter=[raw.FPDF_PAGEOBJ_IMAGE, raw.FPDF_PAGEOBJ_PATH]):
+                    if not isinstance(obj, pdfium.PdfImage):
+                        paths += 1
+                        continue
+                    left, bottom, right, top = obj.get_bounds()
+                    picture += max(right - left, 0) * max(top - bottom, 0)
+                if picture / area >= MIN_PICTURE_SHARE or paths >= MIN_DRAWING_PATHS:
+                    found.add(index + 1)
+        finally:
+            pdf.close()
+    return found
 
 
 def _render_pdf_page(data: bytes, number: int) -> ImageData:

@@ -21,21 +21,31 @@ def png(width: int, height: int) -> bytes:
     return out.getvalue()
 
 
-def pdf(pages: list[str]) -> bytes:
-    """A minimal PDF with one text line per page; an empty string makes a page with no text."""
+def pdf(pages: list[str], drawings: dict[int, bytes] | None = None) -> bytes:
+    """A minimal PDF with one text line per page; an empty string makes a page with no text.
+    `drawings` adds content to a page (by index from 0) after its text; it may paint the image
+    `/Im1`, a 1 x 1 grey pixel that `cm` scales to any size."""
+    drawings = drawings or {}
     objects: list[bytes] = []
     kids = " ".join(f"{3 + 2 * i} 0 R" for i in range(len(pages)))
     objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
     objects.append(f"<< /Type /Pages /Kids [{kids}] /Count {len(pages)} >>".encode())
     font = 3 + 2 * len(pages)
+    image = font + 1
     for i, text in enumerate(pages):
         stream = f"BT /F1 10 Tf 20 700 Td ({text}) Tj ET".encode() if text else b""
+        stream += drawings.get(i, b"")
+        resources = f"<< /Font << /F1 {font} 0 R >> /XObject << /Im1 {image} 0 R >> >>"
         objects.append(
             f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {4 + 2 * i} 0 R "
-            f"/Resources << /Font << /F1 {font} 0 R >> >> >>".encode()
+            f"/Resources {resources} >>".encode()
         )
         objects.append(b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream")
     objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    objects.append(
+        b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray "
+        b"/BitsPerComponent 8 /Length 1 >>\nstream\n\x80\nendstream"
+    )
     out = io.BytesIO()
     out.write(b"%PDF-1.4\n")
     offsets = []
@@ -109,6 +119,32 @@ def test_pdf_text_keeps_its_page_and_a_page_without_text_goes_as_an_image() -> N
     report = content.reports[0]
     assert report.pages == 2
     assert any("page(s) 2" in n for n in report.notes)
+
+
+def picture(width: int, height: int) -> bytes:
+    return f" q {width} 0 0 {height} 50 50 cm /Im1 Do Q".encode()
+
+
+def lines(count: int) -> bytes:
+    return b"".join(b" %d 100 m %d 400 l S" % (20 + i % 500, 30 + i % 500) for i in range(count))
+
+
+def test_a_pdf_page_with_text_and_a_picture_or_drawing_goes_as_text_and_as_an_image() -> None:
+    # Page 1: text and a photo over a third of the page. Page 2: text and a line drawing.
+    # Page 3: text and a logo. Page 4: text and a few rules. Only the first two are drawings.
+    data = pdf(
+        [LONG] * 4,
+        {0: picture(400, 300), 1: lines(ingest.MIN_DRAWING_PATHS), 2: picture(60, 30), 3: lines(8)},
+    )
+
+    content = read_case([CaseFile("datasheet.pdf", "pdf", data)])
+
+    assert [i.identifier for i in images(content.parts)] == [
+        "datasheet.pdf page 1",
+        "datasheet.pdf page 2",
+    ]
+    assert texts(content.parts).count("The rear lamp housing") == 4 * 4
+    assert any("Page(s) 1-2 have a picture or drawing" in n for n in content.reports[0].notes)
 
 
 def test_word_keeps_headings_tables_and_embedded_images() -> None:
