@@ -1,7 +1,7 @@
 import "server-only";
 
 import { type EndpointInput, type ModelOption, type ProviderId, parseModelList } from "@/lib/admin";
-import { type CheckResult, parseCheckResult } from "@/lib/certivity";
+import { parseCheckResult } from "@/lib/certivity";
 import {
   type ChangesRequest,
   type ChangesResult,
@@ -198,15 +198,16 @@ export async function agentHealth(): Promise<AgentHealth | null> {
 // Certivity's validate.py and score_local.py, run by the agent on this text (a run's output or a
 // file someone dropped). Not an admin action, but the same server-to-server call: the web cannot
 // run Python, and the checks must be Certivity's own code to mean "accepted on upload".
-export async function runCertivityChecks(text: string, organizationId: string | null): Promise<CheckResult> {
+// Returns the agent's own body, not the parsed CheckResult: the browser parses it again with
+// parseCheckResult, and a camelCase result fed to it lost case_id, the commit and the score.
+export async function runCertivityChecks(text: string, organizationId: string | null): Promise<unknown> {
   const body = await call("/checks", {
     method: "POST",
     body: { text, organization_id: organizationId },
     messages: { 404: "This version of the agent cannot run Certivity's checks yet. Deploy the agent again." },
   });
-  const result = parseCheckResult(body);
-  if (!result) throw new AgentAdminError("The agent answered the checks in an unexpected form.", 200);
-  return result;
+  if (!parseCheckResult(body)) throw new AgentAdminError("The agent answered the checks in an unexpected form.", 200);
+  return body;
 }
 
 // The sub-goal cases whose requirements_old.json is loaded (certivity_reference). Never throws:

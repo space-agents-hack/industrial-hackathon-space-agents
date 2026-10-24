@@ -27,6 +27,16 @@ test("parseCheckResult reads the agent's answer", () => {
   assert.equal(result.score?.page.n_expected, 4);
 });
 
+test("parsing an already parsed result loses the case, the commit and the score", () => {
+  // What production showed on 2026-10-24 when /api/checks returned the parsed result and the
+  // browser parsed it again. The route must hand the browser the agent's own body.
+  const twice = parseCheckResult(JSON.parse(JSON.stringify(parseCheckResult(AGENT_ANSWER))));
+  assert.ok(twice);
+  assert.equal(twice.caseId, null);
+  assert.equal(twice.score, null);
+  assert.equal(twice.certivityCommit, "unknown");
+});
+
 test("parseCheckResult refuses what is not a check result", () => {
   assert.equal(parseCheckResult(null), null);
   assert.equal(parseCheckResult({ detail: "Not found" }), null);
