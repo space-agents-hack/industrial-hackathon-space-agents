@@ -91,6 +91,37 @@ One quota for everything: the 5 valid uploads per hour cover every goal and case
 challenge, dev and held-out, main goal and sub-goal (Clemente, 2026-10-24). So nobody uploads
 the dev case on Sunday morning, and each sub-goal upload takes a slot from the main goal's hour.
 
+### Sub-goal upload procedure
+
+The same workflow as the main goal (#42, SYS-45). It shares the upload quota and the 11:00
+freeze.
+
+1. After the held-out release, run Actions > Deploy > Run workflow (or `make certivity-load` for a
+   zip). Nothing in the run needs it: the Checks only use it to check requirement ids against
+   Certivity's copy of `requirements_old.json`.
+2. In the project, open **Changes**, then **New sub-goal case**. Name it exactly as the case id
+   Certivity gives, which is `subgoal-heldout` per the brief. The name is the file's `case_id`.
+3. Drop the whole `subgoal/<folder>` folder onto the case's Files. `requirements_old.json` and
+   `files.json` are enough. Dropping `old.pdf` and `new.pdf` as well (after
+   `fetch_regulations.py`) avoids depending on Certivity's links. An `expected.json`, if there is
+   one, is held back and never reaches the run.
+4. **Find changes.** The trace shows each step:
+   - the requirements count;
+   - each PDF fetched, with its checksum checked;
+   - both versions' pages and printed version;
+   - the rules' counts;
+   - the reviewer batches.
+
+   A rewritten regulation takes a few minutes, most of it the reviewer.
+5. On the run page, check that validation passes, then **Download** and upload to the platform.
+   Log the upload on #7 like a main-goal one.
+
+If the reviewer fails (no key, provider down), the run still succeeds with the rules' answer, and
+the trace says which requirements were not reviewed. That is the answer that scored 7/7 and
+16/17 on dev. If the web is down, the rules alone run from a laptop:
+`uv run python -m agent_service.domain.regdiff old.pdf new.pdf requirements_old.json --team-id
+<team> --case-id subgoal-heldout --out changes.json`.
+
 ### Demo freeze
 
 | When, Sunday | What |

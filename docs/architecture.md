@@ -83,6 +83,29 @@ row to `audit_events`.
    the output is Certivity's submission file, built by code from the run's rows that were not
    rejected (approved, or still draft if the export was denied).
 
+### A sub-goal run (#42, SYS-45)
+
+A case with `kind = 'subgoal'` lives under Changes, not in the project's case list. It holds
+Certivity's sub-goal folder, uploaded the same way. The web calls the same two endpoints. What
+differs is inside the agent:
+
+- **Ingest** (`domain/subgoal.py`) only recognises each file: the requirements, `files.json`,
+  a PDF and its printed version. It refuses an answer key. No model is called and no blocks are
+  stored.
+- **The run** is a fixed sequence of steps, written as `tool_call`/`tool_result` events:
+  - read the case: PDFs named in `files.json` that the case lacks are fetched, their sha256
+    checked, and kept as case files;
+  - extract both versions;
+  - the rules diff (`domain/regdiff.py`);
+  - reviewer agents (`domain/subgoal_review.py`), in parallel batches, on the requirements whose
+    cited paragraph changed. Code keeps a verdict only if its quotes are found in the PDFs' text.
+- **No pause** and no saved conversation. The output is the changes file, which the run page
+  checks and offers for download like any submission.
+
+Code orchestrates rather than a model, because every choice between the steps has a rule that
+can be tested. The reviewer runs on the organisation's `check` model, else the run's model. With
+`SUBGOAL_REVIEW=false`, or when the reviewer fails, the rules' answer stands, and the trace says so.
+
 ## Where things live
 
 | To change | Edit |
