@@ -32,9 +32,10 @@ from pydantic_ai import Agent, ModelRetry, RunContext, ToolOutput
 
 from agent_service.records import LibraryVersion, NewRequirement, Paragraph, Requirement
 
-# A window ends at whichever comes first. 15 pages is the measured density of the dev case's
-# answers (190 requirements on 53 of 372 pages) read at a pace a model does not skim; 60k
-# characters is about 15k tokens, for annexes that are mostly dense tables.
+# A window ends at whichever comes first. 15 pages is a length a model reads in well under a
+# minute without skimming, and it keeps a long regulation to a few dozen parallel calls; 60k
+# characters is about 15k tokens, for annexes that are mostly dense tables. Not tuned to any
+# case's answers (SYS-42).
 WINDOW_PAGES = 15
 WINDOW_CHARS = 60_000
 

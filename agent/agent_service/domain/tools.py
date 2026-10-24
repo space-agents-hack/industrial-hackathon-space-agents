@@ -25,7 +25,7 @@ from pydantic_ai import CachePoint, FunctionToolset, ModelRetry, RunContext, Usa
 from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
 
-from agent_service.domain import certivity, ingest, regulation_search, writer
+from agent_service.domain import certivity, ingest, regulation_search, screen, writer
 from agent_service.domain.writer import UnknownRegulation, Window
 from agent_service.metering import Meter, MeteredModel
 from agent_service.records import LibraryVersion, Paragraph, Requirement, Run
@@ -144,6 +144,85 @@ async def record_product_profile(
         named_in_case=named_in_case,
     )
     return {"recorded": True, "read_by": "every writer and the check"}
+
+
+@toolset.tool
+async def screen_regulations(ctx: RunContext[Deps]) -> dict[str, Any]:
+    """Judge EVERY regulation of the library against the product profile, from its scope section
+    and its transitional provisions: `applies`, `possibly` or `does_not`, each with the sentence it
+    rests on. Unlike a search, it cannot miss a regulation because no query was written for it.
+    Also lists the profile entries that several applying regulations cover, and what their own
+    texts say about replacing one another. Call it once, after `record_product_profile`."""
+    deps = ctx.deps
+    profile = await _require_profile(deps)
+    library = await _library(deps)
+    versions: list[LibraryVersion] = []
+    for code in dict.fromkeys(v.regulation for v in library):
+        try:
+            versions.append(writer.citable_version(library, code))
+        except UnknownRegulation:
+            continue
+    semaphore = asyncio.Semaphore(deps.concurrency)
+
+    async def read(version: LibraryVersion) -> screen.Candidate:
+        async with semaphore:
+            return screen.candidate(version, await _paragraphs(deps, version.id))
+
+    candidates = list(await asyncio.gather(*(read(v) for v in versions)))
+    batches = screen.batches(candidates)
+    await _progress(
+        deps, f"Screening the scope of {len(candidates)} regulations in {len(batches)} call(s)."
+    )
+    head = ["# The case\n\nThe engineer's note:\n" + deps.run.task, profile.render()]
+
+    async def judge(batch: list[screen.Candidate]) -> list[screen.Verdict] | str:
+        async with semaphore:
+            try:
+                result = await screen.screen_agent.run(
+                    [*head, CachePoint(), "\n\n".join(c.render() for c in batch)],
+                    model=cast(Model, ctx.model),
+                    deps=batch,
+                    usage_limits=UsageLimits(request_limit=_SUB_REQUESTS),
+                )
+            except Exception as exc:
+                codes = ", ".join(c.version.regulation for c in batch)
+                return f"{codes}: {f'{type(exc).__name__}: {exc}'[:300]}"
+            _add_tokens(ctx.usage, result.usage)
+            return result.output
+
+    verdicts: list[screen.Verdict] = []
+    errors: list[str] = []
+    for outcome in await asyncio.gather(*(judge(b) for b in batches)):
+        if isinstance(outcome, str):
+            errors.append(outcome)
+        else:
+            verdicts += outcome
+    titles = {v.regulation: v.title for v in versions}
+
+    def row(v: screen.Verdict) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "regulation": v.regulation,
+            "title": titles.get(v.regulation),
+            "reason": v.reason,
+            "scope_quote": v.scope_quote,
+            "profile_entries": v.profile_entries,
+        }
+        if v.replacement:
+            out["replacement"] = v.replacement
+        return out
+
+    return {
+        "applies": [row(v) for v in verdicts if v.verdict == "applies"],
+        "possibly": [row(v) for v in verdicts if v.verdict == "possibly"],
+        "does_not": [
+            {"regulation": v.regulation, "reason": v.reason}
+            for v in verdicts
+            if v.verdict == "does_not"
+        ],
+        "shared_profile_entries": screen.shared_entries(verdicts),
+        # A batch that failed is not a verdict of does_not: search those regulations instead.
+        "not_screened": errors,
+    }
 
 
 @toolset.tool

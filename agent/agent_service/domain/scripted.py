@@ -91,6 +91,8 @@ def _orchestrate(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
             "named_in_case": [],
         }
         return "Recording what the part is.", [("record_product_profile", profile)]
+    if "screen_regulations" not in returns:
+        return "Screening every regulation's scope.", [("screen_regulations", {})]
     if "search_regulations" not in returns:
         # Any long word of the engineer's note: "rear position lamp" finds the lamp regulations
         # and not the one about glazing. A real model reads the case; this only keeps the
@@ -101,7 +103,9 @@ def _orchestrate(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
             ("search_regulations", {"query": query, "limit": 50})
         ]
     hits = returns["search_regulations"][0]
-    codes = [c for c in codes if any(h["regulation"] == c for h in hits)]
+    screened = returns["screen_regulations"][0]
+    kept = {v["regulation"] for v in screened["applies"] + screened["possibly"]}
+    codes = [c for c in codes if c in kept or any(h["regulation"] == c for h in hits)]
     if not codes:
         summary = "No regulation in the library speaks about this product."
         return summary, [("submit", {"summary": summary})]
@@ -150,6 +154,34 @@ def _write(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
             )
             current = None
     return "", [("record_requirements", {"response": drafts})]
+
+
+# A regulation as screen.Candidate.render() heads it: "## UN R1: Title (version 00)".
+_CANDIDATE = re.compile(r"^## (.+?): ", re.M)
+
+
+def _screen(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
+    """`applies` when the scope section shares a word of five letters or more with the part's
+    one-line description, else `does_not`: enough to test the plumbing, not a judgement."""
+    text = _prompt_text(messages)
+    part = re.search(r"^The part: (.*)$", text, re.M)
+    words = {w.lower() for w in re.findall(r"[A-Za-z]{5,}", part.group(1) if part else "")}
+    words -= _NOT_THE_PRODUCT
+    verdicts: list[dict[str, Any]] = []
+    blocks = _CANDIDATE.split(text)[1:]
+    for code, block in zip(blocks[::2], blocks[1::2], strict=True):
+        scope = block.split("Scope section:", 1)[-1].split("Transitional provisions", 1)[0]
+        found = sorted(w for w in words if w in scope.lower())
+        verdicts.append(
+            {
+                "regulation": code,
+                "verdict": "applies" if found else "does_not",
+                "reason": f"Its scope mentions {', '.join(found)}." if found else "No match.",
+                "scope_quote": scope.strip()[:200],
+                "profile_entries": [],
+            }
+        )
+    return "", [("report_screen", {"response": verdicts})]
 
 
 def _check(messages: list[ModelMessage]) -> tuple[str, list[Call]]:
@@ -208,6 +240,8 @@ def _next_step(messages: list[ModelMessage], info: AgentInfo) -> tuple[str, list
         return _write(messages)
     if "report_findings" in outputs:
         return _check(messages)
+    if "report_screen" in outputs:
+        return _screen(messages)
     return _orchestrate(messages)
 
 

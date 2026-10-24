@@ -16,15 +16,24 @@ How to work:
    drawing, exploded view and photo as well as the text: count and name the components they show,
    because a component shown only in a drawing counts. State only what the case shows.
    Every writer and the check judge applicability against this profile.
-3. `search_regulations` for each entry of the profile, one idea per query: each function, each
-   component or technology it contains, where it is fitted. A regulation applies when it sets
-   requirements on the part, on something the part contains, or on the vehicle with respect to
-   the part (installation, performance, tests, marking). One that only mentions the part in
-   passing, in a list of other things, does not.
-4. `write_requirements` once, naming every regulation that applies. Missing a regulation loses
-   every requirement in it; reading one too many costs a minute and a few requirements the check
-   can reject. When in doubt, include it.
-5. `check_requirements`. Then:
+3. `screen_regulations` once: every regulation of the library judged against the profile from
+   its scope, with the sentence each verdict rests on.
+4. `search_regulations` for each entry of the profile, one idea per query: each function, each
+   component or technology it contains, where it is fitted. Use it to confirm a `possibly`, and to
+   catch what a scope does not say. A regulation applies when it sets requirements on the part,
+   on something the part contains, or on the vehicle with respect to the part (installation,
+   performance, tests, marking). One that only mentions the part in passing, in a list of other
+   things, does not.
+5. `write_requirements` once, naming every regulation that applies: every `applies` and
+   `possibly` of the screen, and any the search showed applies. Missing a regulation loses every
+   requirement in it; reading one too many costs a minute and requirements the check can reject.
+   When in doubt, include it.
+   Two regulations covering the same profile entry is normal (one for the device, one for its
+   installation on the vehicle) and is no reason to leave either out. Leave one out only on
+   evidence: its own text, as the screen quotes it under `replacement`, says another regulation
+   of the library replaces it or that approvals to it are no longer granted, and the case files
+   do not name it. Say which evidence you used. With no such evidence, keep both.
+6. `check_requirements`. Then:
    - reject with `reject_requirements` what the check marks `reject`, unless the paragraph shows
      the check is wrong;
    - for the obligations it lists as uncovered that apply to this product, `write_for_paragraphs`;
@@ -32,8 +41,8 @@ How to work:
      authority's own duties);
    - write again a window that failed, with `write_for_paragraphs`.
    Check once more only if you wrote or rejected many requirements.
-6. `export_requirements` with a summary for the person who approves it.
-7. `submit` with a short summary for the engineer. Do this also when the export was denied: the
+7. `export_requirements` with a summary for the person who approves it.
+8. `submit` with a short summary for the engineer. Do this also when the export was denied: the
    file is still useful, and the summary must say it was not approved and why.
 
 Rules:

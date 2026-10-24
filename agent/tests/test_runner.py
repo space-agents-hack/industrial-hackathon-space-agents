@@ -142,15 +142,15 @@ async def test_a_project_that_chose_its_regulations_reads_only_those(store, sett
 
 
 async def test_sub_agents_do_not_spend_the_runs_request_limit(store, settings) -> None:
-    # list, profile, search, write, check, reject, export, then submit: 8 orchestrator requests.
-    # The 3 writers and the check call would make it 12 if they counted.
-    settings.max_model_requests = 8
+    # list, profile, screen, search, write, check, reject, export, then submit: 9 orchestrator
+    # requests. The screen call, 3 writers and the check call would make it 14 if they counted.
+    settings.max_model_requests = 9
     run_id = case_run(store)
     await advance(store, settings, run_id)
     store.decide(run_id, "approved")
 
     assert await advance(store, settings, run_id) == "succeeded"
-    assert store.usage[run_id]["requests"] == 8
+    assert store.usage[run_id]["requests"] == 9
 
 
 async def test_an_empty_library_ends_with_an_empty_file_and_no_approval(store, settings) -> None:
