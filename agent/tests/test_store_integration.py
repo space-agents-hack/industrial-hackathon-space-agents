@@ -258,7 +258,8 @@ async def test_the_assistant_reads_a_project_through_the_real_schema(
         project = await projects.project(project_id)
         assert project is not None and str(project.organization_id) == org
         [summary] = await projects.project_cases(project_id)
-        assert summary.id == case and summary.files
+        # seed_case adds no files; the case is listed all the same.
+        assert str(summary.id) == case and summary.files == []
         [listed] = await projects.project_runs(project_id, 10)
         assert listed.id == run_id and listed.status == "awaiting_approval"
         assert (await projects.project_scope(project_id)).all_regulations
