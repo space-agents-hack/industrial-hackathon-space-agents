@@ -1016,6 +1016,7 @@ export type Database = {
           page: number
           paragraph: string | null
           paragraph_hash: string
+          paragraph_superseded_at: string | null
           paragraph_id: string | null
           regulation: string
           run_id: string
@@ -1036,6 +1037,7 @@ export type Database = {
           page: number
           paragraph?: string | null
           paragraph_hash: string
+          paragraph_superseded_at?: string | null
           paragraph_id?: string | null
           regulation: string
           run_id: string
@@ -1056,6 +1058,7 @@ export type Database = {
           page?: number
           paragraph?: string | null
           paragraph_hash?: string
+          paragraph_superseded_at?: string | null
           paragraph_id?: string | null
           regulation?: string
           run_id?: string

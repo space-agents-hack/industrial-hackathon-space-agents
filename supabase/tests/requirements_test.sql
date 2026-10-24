@@ -7,7 +7,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(13);
+select plan(17);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000c1', 'member1@example.test'),
@@ -135,6 +135,38 @@ select is(
   'a paragraph whose text changed keeps the link to the superseded text and the citation as written');
 select is((select count(*) from public.requirements), 2::bigint,
   'no requirement is lost to a re-extraction');
+select is(
+  (select string_agg(ext_id, ', ' order by ext_id) from public.requirements
+   where paragraph_superseded_at is not null),
+  'R-002', 'only the requirement whose paragraph changed is flagged for re-check');
+
+-- An hour later the next import purges what nobody cites, and keeps what R-002 cites.
+update public.regulation_paragraphs set superseded_at = now() - interval '2 hours'
+where superseded_at is not null;
+select public.record_regulation_version('40000000-0000-0000-0000-000000000001', null, 'UN R148',
+  'UN_R148', 'UN R', null, null, '00', 'base', null, null, 'UN_R148_base.pdf', repeat('a', 64),
+  1000, '40000000-0000-0000-0000-000000000001/UN_R148/00/UN_R148_00.pdf');
+select is(
+  (select string_agg(p.text, ' | ') from public.regulation_paragraphs p where p.superseded_at is not null),
+  '5.4.3. The intensity shall not exceed 30 cd.',
+  'the purge keeps a superseded paragraph a requirement cites, and only that one');
+
+-- A different file under the version: both requirements are flagged until a split brings their
+-- text back.
+select public.record_regulation_version('40000000-0000-0000-0000-000000000001', null, 'UN R148',
+  'UN_R148', 'UN R', null, null, '00', 'base', null, null, 'UN_R148_base.pdf', repeat('b', 64),
+  1000, '40000000-0000-0000-0000-000000000001/UN_R148/00/UN_R148_00.pdf');
+select is((select count(*) from public.requirements where paragraph_superseded_at is not null),
+  2::bigint, 'a new file under the version flags every requirement on it');
+select public.replace_regulation_paragraphs((select id from v), repeat('b', 64), 'paragraphs-2', 80,
+  '[{"position": 0, "label": "5.4.2", "number": "5.4.2", "kind": "paragraph",
+     "heading": "5. General specifications", "page_start": 12, "page_end": 12,
+     "text": "5.4.2. The rear position lamp shall be visible from the rear.",
+     "content_hash": "1111111111111111111111111111111111111111111111111111111111111111"}]'::jsonb);
+select is(
+  (select string_agg(ext_id, ', ' order by ext_id) from public.requirements
+   where paragraph_superseded_at is not null),
+  'R-002', '... and the split of the new file clears it where the text came back');
 
 select * from finish();
 rollback;

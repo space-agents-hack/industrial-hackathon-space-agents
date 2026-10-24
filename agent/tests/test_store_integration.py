@@ -582,4 +582,5 @@ async def test_requirements_and_the_library_through_the_real_schema(
     # The changed paragraph's requirement keeps the superseded row, which the check no longer
     # finds among the current paragraphs (SYS-34).
     assert ten.paragraph_id == second.id and ten.paragraph == "5.4.3"
+    assert ten.paragraph_superseded_at is not None and nine.paragraph_superseded_at is None
     assert second.id not in {p.id for p in await store.version_paragraphs(version.id)}

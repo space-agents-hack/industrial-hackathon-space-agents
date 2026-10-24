@@ -162,5 +162,8 @@ class Requirement(NewRequirement):
     # version_paragraphs does not return.
     version_id: UUID | None = None  # pyright: ignore[reportIncompatibleVariableOverride]
     paragraph_id: UUID | None = None  # pyright: ignore[reportIncompatibleVariableOverride]
+    # When a re-extraction superseded the cited paragraph and brought no paragraph back with the
+    # same label and text (20261024280000_purge_superseded_paragraphs). None while it is current.
+    paragraph_superseded_at: datetime | None = None
     status: RequirementStatus = "draft"
     findings: list[dict[str, Any]] = []

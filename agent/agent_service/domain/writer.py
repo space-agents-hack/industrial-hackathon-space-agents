@@ -269,7 +269,12 @@ def code_findings(rows: Sequence[Requirement], cited: dict[UUID, Paragraph]) -> 
     seen: dict[tuple[UUID | None, str], str] = {}
     for r in rows:
         p = cited.get(r.paragraph_id) if r.paragraph_id else None
-        if p is None:
+        if r.paragraph_superseded_at is not None:
+            found[r.ext_id] = (
+                "Its paragraph was re-extracted with different text on"
+                f" {r.paragraph_superseded_at:%Y-%m-%d}: check it against the current text."
+            )
+        elif p is None:
             found[r.ext_id] = "Its paragraph is no longer in the library (re-extracted or deleted)."
         elif (p.page_start, p.label, p.content_hash) != (r.page, r.paragraph, r.paragraph_hash):
             found[r.ext_id] = "Its citation no longer matches the paragraph in the library."

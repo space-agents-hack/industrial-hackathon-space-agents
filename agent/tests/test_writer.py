@@ -1,6 +1,7 @@
 """The code around the writer and the check (domain/writer.py), without the loop."""
 
 import hashlib
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -129,11 +130,13 @@ def test_code_finds_duplicates_and_stale_citations() -> None:
         row(a, "R-002", "The lamp  shall be RED."),
         row(b, "R-003", page=99),
         row(b, "R-004", paragraph_id=None),
+        row(b, "R-005", "It is green.", paragraph_superseded_at=datetime(2026, 10, 24, tzinfo=UTC)),
     ]
 
     found = writer.code_findings(rows, {a.id: a, b.id: b})
 
-    assert set(found) == {"R-002", "R-003", "R-004"}
+    assert set(found) == {"R-002", "R-003", "R-004", "R-005"}
+    assert "re-extracted with different text on 2026-10-24" in found["R-005"]
     assert found["R-002"].startswith("Duplicate of R-001")
     assert "no longer matches" in found["R-003"]
     assert "no longer in the library" in found["R-004"]

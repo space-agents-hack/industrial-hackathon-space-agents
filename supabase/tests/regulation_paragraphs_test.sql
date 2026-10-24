@@ -7,7 +7,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(25);
+select plan(27);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000b1', 'member1@example.test'),
@@ -143,6 +143,20 @@ select throws_ok(
      values ((select id from v), '10000000-0000-0000-0000-0000000000b1', 0, 'text', 'Twice.', 1, 1,
        repeat('5', 64)) $$,
   '23505', null, '... but two current paragraphs cannot share a position');
+
+-- An hour later, the next import purges the superseded rows nobody cites.
+select public.record_regulation_version('10000000-0000-0000-0000-0000000000b1', null, 'UN R150', 'UN_R150',
+  'UN R', null, null, '1.2.1', 'base', null, null, 'UN_R150_base.pdf', repeat('b', 64), 1000,
+  '10000000-0000-0000-0000-0000000000b1/UN_R150/1.2.1/UN_R150_1.2.1.pdf');
+select is((select count(*) from public.regulation_paragraphs where superseded_at is not null),
+  3::bigint, 'a paragraph superseded less than an hour ago is kept, for a run that just read it');
+update public.regulation_paragraphs set superseded_at = now() - interval '2 hours'
+where superseded_at is not null;
+select public.record_regulation_version('10000000-0000-0000-0000-0000000000b1', null, 'UN R150', 'UN_R150',
+  'UN R', null, null, '1.2.1', 'base', null, null, 'UN_R150_base.pdf', repeat('b', 64), 1000,
+  '10000000-0000-0000-0000-0000000000b1/UN_R150/1.2.1/UN_R150_1.2.1.pdf');
+select is((select string_agg(text, ' | ') from public.regulation_paragraphs where version_id = (select id from v)),
+  '1. Scope.', 'after that, superseded paragraphs no requirement cites are deleted');
 
 select * from finish();
 rollback;

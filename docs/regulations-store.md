@@ -299,8 +299,16 @@ is now filters `superseded_at is null`: `match_regulation_paragraphs`, the embed
 `version_paragraphs`, the version diff and the web paragraph list. A new reader has to do the same,
 or it finds every paragraph once per split.
 
-What this does not do: purge superseded rows (each full re-split of the challenge library adds
-about 48,000), flag a requirement for re-check, or re-run the check on its own.
+Superseded rows that no requirement cites are deleted once they are an hour old, by the next
+import (`record_regulation_version`) or split (Ramón, 2026-10-24; migration
+`20261024280000_purge_superseded_paragraphs.sql`). Each full re-split supersedes about 48,000 rows,
+so without the purge they would add up against the free plan's 500 MB. The hour covers a run that
+read the paragraphs just before a re-split and stores requirements with those ids a few minutes
+later. A requirement whose paragraph was superseded with no match gets `paragraph_superseded_at`,
+cleared again if a later split brings its text back, and the check reports it with that date.
+
+What this does not do: re-run the check on its own. A flagged requirement is reported the next
+time a run's check reads it.
 
 How it works: pypdfium2 (already a dependency) gives the text of each page and the font size and
 weight of each line. The PDFs were rendered from HTML by headless Chrome, so headings are bigger

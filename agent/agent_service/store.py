@@ -525,7 +525,7 @@ class SupabaseRunStore:
                 .select(
                     "id, case_id, organization_id, run_id, ext_id, text, test_case, version_id,"
                     " paragraph_id, paragraph_hash, regulation, version_label, page, paragraph,"
-                    " status, findings"
+                    " paragraph_superseded_at, status, findings"
                 )
                 .eq("run_id", str(run_id))
                 .order("id")
