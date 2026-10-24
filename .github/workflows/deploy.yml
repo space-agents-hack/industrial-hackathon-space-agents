@@ -38,6 +38,7 @@ jobs:
   repo:
     name: Check scripts, workflows and migrations
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 5
     concurrency:
       group: ${{ github.workflow }}-repo-${{ github.ref }}
       cancel-in-progress: true
@@ -77,6 +78,7 @@ jobs:
   agent:
     name: Check agent (Python)
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 10
     concurrency:
       group: ${{ github.workflow }}-agent-${{ github.ref }}
       cancel-in-progress: true
@@ -115,6 +117,7 @@ jobs:
   web:
     name: Check web (Next.js)
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 10
     concurrency:
       group: ${{ github.workflow }}-web-${{ github.ref }}
       cancel-in-progress: true
@@ -152,6 +155,13 @@ jobs:
   database:
     name: Check database (migrations, RLS, contract)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # The CLI tries Amazon's public registry first. From GitHub's runners it answers
+      # "toomanyrequests: Data limit exceeded" and the CLI falls back to ghcr.io only after
+      # retrying for 12 s, once for the stack and again for pg_prove: about 30 s of every run on
+      # 2026-10-24. Set, the CLI pulls from this registry only, with no fallback.
+      SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr.io
     concurrency:
       group: ${{ github.workflow }}-database-${{ github.ref }}
       cancel-in-progress: true
@@ -165,9 +175,13 @@ jobs:
       # Starting from nothing applies every migration in order, which is the test that a fresh
       # project can be built from this repo. Services the checks do not use are left out because
       # pulling their images is most of the start-up time. Storage stays: the regulations
-      # migration creates a bucket and the integration tests write to it.
+      # migration creates a bucket and the integration tests write to it. Realtime and
+      # postgres-meta are left out too: the `supabase_realtime` publication the migrations alter
+      # lives in Postgres itself, and nothing here reads through pg-meta (checked 2026-10-24:
+      # pgTAP, db lint and the contract tests all pass without them). `make db-start` keeps
+      # realtime, because the web's live trace needs it.
       - name: Start Supabase
-        run: supabase start -x edge-runtime,logflare,vector,imgproxy,supavisor,studio,mailpit
+        run: supabase start -x edge-runtime,logflare,vector,imgproxy,supavisor,studio,mailpit,realtime,postgres-meta
 
       - name: RLS tests (pgTAP)
         run: supabase test db --local
@@ -197,6 +211,9 @@ jobs:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: [repo, agent, web, database]
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    # A release takes about three minutes. A hung one holds the production-release queue, and
+    # every push behind it, until this runs out (GitHub's default is six hours).
+    timeout-minutes: 20
     environment: production
     # One release at a time, none cancelled half-way. The queue starts after the checks, so a push
     # whose checks fail never delays a green one.
@@ -385,9 +402,24 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      # Installing the CLI from npm took 24 s of every release; restored from the cache it is a
+      # couple of seconds. Its own folder, so the cache holds the CLI and nothing else.
+      - uses: actions/cache@v5
+        if: steps.head.outputs.current == 'true'
+        with:
+          path: ~/.vercel-cli
+          key: vercel-cli-${{ env.VERCEL_CLI_VERSION }}-node${{ env.NODE_VERSION }}-${{ runner.os }}-${{ runner.arch }}
+
       - name: Install Vercel CLI
         if: steps.head.outputs.current == 'true'
-        run: npm install --global "vercel@${VERCEL_CLI_VERSION}"
+        shell: bash
+        run: |
+          prefix="$HOME/.vercel-cli"
+          installed="$(node -p "require('$prefix/lib/node_modules/vercel/package.json').version" 2>/dev/null || true)"
+          if [[ "$installed" != "$VERCEL_CLI_VERSION" ]]; then
+            npm install --global --prefix "$prefix" "vercel@${VERCEL_CLI_VERSION}"
+          fi
+          echo "$prefix/bin" >> "$GITHUB_PATH"
 
       # GitHub holds the settings (setup and Admin > Deployment write them there); every release
       # copies the ones the two projects read at run time to Vercel, so the deployments below start
@@ -423,6 +455,25 @@ jobs:
             *) key_name="" ;;
           esac
           [[ -z "$key_name" ]] || set_env "$AGENT_PROJECT_ID" "$key_name" "$PROVIDER_API_KEY"
+
+      # The web's build needs nothing from the new agent, only the settings copied above, so it
+      # runs on this machine while Vercel builds the agent: that saves its 35 to 40 s. It is
+      # waited for in "Build web", before the agent is promoted, so a web that does not build
+      # leaves both sides as they were. A background process lives until the job ends, not just
+      # until this step does. The status file is written under another name and moved, so the
+      # wait never reads it half-written.
+      - name: Start the web build
+        if: steps.head.outputs.current == 'true'
+        shell: bash
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_WEB_PROJECT_ID }}
+        run: |
+          status="$RUNNER_TEMP/web-build.status"
+          rm -f "$status"
+          nohup bash -c '
+            vercel pull --cwd web --yes --environment=production && vercel build --cwd web --prod
+            echo $? > "$1.tmp" && mv "$1.tmp" "$1"
+          ' _ "$status" < /dev/null > "$RUNNER_TEMP/web-build.log" 2>&1 &
 
       # The agent is built by Vercel from source, not prebuilt here: its compiled Python packages
       # have to match the machine they run on (docs/adr/0003-deploy-topology.md).
@@ -467,7 +518,27 @@ jobs:
             exit 1
           fi
 
-      # The agent goes live before the web is built: the new web's smoke test checks the chain
+      - name: Build web
+        if: steps.head.outputs.current == 'true'
+        shell: bash
+        run: |
+          status="$RUNNER_TEMP/web-build.status"
+          for _ in $(seq 600); do
+            [[ -f "$status" ]] && break
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/web-build.log"
+          if [[ ! -f "$status" ]]; then
+            echo "::error::The web build did not finish within 10 minutes. Nothing promoted."
+            exit 1
+          fi
+          code="$(cat "$status")"
+          if [[ "$code" != "0" ]]; then
+            echo "::error::The web build failed (exit code $code, log above). Nothing promoted."
+            exit 1
+          fi
+
+      # The agent goes live before the web is deployed: the new web's smoke test checks the chain
       # through the production agent, and may call something only the new agent has. Migrations
       # and the agent must therefore work with the web that is still live (AGENTS.md, Limits).
       - name: Promote agent
@@ -475,14 +546,6 @@ jobs:
         env:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_AGENT_PROJECT_ID }}
         run: vercel promote "${{ steps.agent.outputs.url }}" --cwd agent --yes
-
-      - name: Build web
-        if: steps.head.outputs.current == 'true'
-        env:
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_WEB_PROJECT_ID }}
-        run: |
-          vercel pull --cwd web --yes --environment=production
-          vercel build --cwd web --prod
 
       - name: Deploy web (not yet live)
         id: web

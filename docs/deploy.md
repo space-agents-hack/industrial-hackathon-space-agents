@@ -16,11 +16,18 @@ off in both Vercel projects, so the only path is `.github/workflows/deploy.yml`.
       `certivity_reference` from a fresh clone of their package (`vars.CERTIVITY_REPO`, default
       Certivity's public repository), through `scripts/load-certivity.sql`. A failure is a
       warning, not a stopped release: the checks then say the files are not loaded.
-   4. Deploy the agent **without** the production domain, smoke-test it, promote it.
-   5. Build and deploy the web **without** the production domain, then smoke-test it, including
+   4. Deploy the agent **without** the production domain and smoke-test it. The web is built on
+      the runner at the same time; the agent is promoted only once that build has succeeded.
+   5. Deploy the web **without** the production domain, then smoke-test it, including
       `/api/health/deep`, which checks the web reaches the agent with the shared secret and the
       agent reaches the database.
    6. Promote the web.
+
+On 2026-10-24 a push with nothing else queued took about 5 minutes to reach production: checks
+2 to 2.5 min (the database job is the slowest, mostly pulling Supabase's images) and the release
+about 3 min. That was before the web build ran alongside the agent's and the CLI was cached.
+Two pushes close together take longer: a newer push cancels the older one's checks, and a
+release waits for the one already running.
 
 To follow a release job by job and step by step, with the reason when one fails: the Setup page
 under `make dev` (read with your `gh` sign-in), or **Admin › Releases** in production for platform
