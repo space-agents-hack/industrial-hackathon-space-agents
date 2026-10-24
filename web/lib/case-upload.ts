@@ -4,10 +4,10 @@ import { CASE_FILES_BUCKET, casePath, formatOf, isSettled } from "@/lib/case-fil
 import { type CaseFileView, fetchCaseFiles } from "@/lib/cases";
 import type { Database } from "@/lib/database.types";
 
-// What the browser does with a case's files, shared by the quick-run form on the home page and
-// the case page: upload to the private bucket as the signed-in user, add the rows, ask the agent
-// to parse, wait. Files go straight to Storage because a Vercel function refuses bodies over
-// 4.5 MB (issue #8).
+// What the browser does with a case's files: upload to the private bucket as the signed-in user,
+// add the rows, ask the agent to parse, wait. The case page does all of it; the run form on Runs
+// only parses what is left unread before it starts a run (#46). Files go straight to Storage
+// because a Vercel function refuses bodies over 4.5 MB (issue #8).
 type Client = SupabaseClient<Database>;
 
 // How long to wait for the parse before giving up waiting. The files keep their status; the page

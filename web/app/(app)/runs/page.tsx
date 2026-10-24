@@ -15,8 +15,8 @@ import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Runs" };
 
-// The runs on the current project's cases (SYS-36), and a quick run that puts a case together and
-// starts it in one step. A run without a case (made before cases existed, or whose case was
+// The runs on the current project's cases (SYS-36), and a form that starts one on a case of the
+// project. Files are managed on the case page only (#46). A run without a case (made before cases existed, or whose case was
 // deleted) belongs to no project and is not listed here; its own page still opens.
 export default function RunsPage() {
   return (
@@ -51,7 +51,7 @@ async function Runs() {
       .maybeSingle(),
     supabase.from("regulations").select("id", { count: "exact", head: true }).eq("organization_id", current.id),
   ]);
-  // The regulation side of lib/run-readiness.ts; the form itself requires a file.
+  // The regulation side of lib/run-readiness.ts; the form checks the chosen case's files.
   const blockers = runBlockers({
     files: 1,
     library: library.count ?? 0,
@@ -66,9 +66,8 @@ async function Runs() {
         <NewRunForm
           key={project.id}
           organizationId={current.id}
-          projects={[{ id: project.id, name: project.name }]}
+          projectId={project.id}
           cases={cases.cases.filter((c) => c.project_id === project.id)}
-          fixedProject
           blockers={blockers}
         />
       ) : (

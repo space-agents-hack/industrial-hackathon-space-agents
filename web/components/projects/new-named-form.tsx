@@ -11,8 +11,8 @@ import type { CaseKind } from "@/lib/subgoal";
 import { createClient } from "@/lib/supabase/client";
 
 // "New project" on the projects page, "New case" on a project page and "New sub-goal case" on
-// Changes. The id is made here, as in the quick-run form: a case's id names its Storage folder, and
-// the page to open next needs it.
+// Changes. The id is made here: a case's id names its Storage folder, and the page to open next
+// needs it.
 export function NewNamedForm({
   kind,
   caseKind = "main",
