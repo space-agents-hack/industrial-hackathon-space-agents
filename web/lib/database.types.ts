@@ -1185,6 +1185,44 @@ export type Database = {
           },
         ]
       }
+      run_checks: {
+        Row: {
+          agent_version: string | null
+          certivity_commit: string
+          checked_at: string
+          result: Json
+          run_id: string
+          source: string
+          submission_sha256: string
+        }
+        Insert: {
+          agent_version?: string | null
+          certivity_commit: string
+          checked_at?: string
+          result: Json
+          run_id: string
+          source: string
+          submission_sha256: string
+        }
+        Update: {
+          agent_version?: string | null
+          certivity_commit?: string
+          checked_at?: string
+          result?: Json
+          run_id?: string
+          source?: string
+          submission_sha256?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "run_checks_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       run_events: {
         Row: {
           created_at: string
@@ -1299,6 +1337,7 @@ export type Database = {
       }
       runs: {
         Row: {
+          agent_version: string | null
           case_id: string | null
           created_at: string
           created_by: string
@@ -1314,6 +1353,7 @@ export type Database = {
           usage: Json
         }
         Insert: {
+          agent_version?: string | null
           case_id?: string | null
           created_at?: string
           created_by?: string
@@ -1329,6 +1369,7 @@ export type Database = {
           usage?: Json
         }
         Update: {
+          agent_version?: string | null
           case_id?: string | null
           created_at?: string
           created_by?: string

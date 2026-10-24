@@ -341,7 +341,7 @@ export function RunTrace({
         <StoredSubmission runId={run.id} organizationId={run.organization_id ?? null} />
       ) : null}
 
-      {run.status === "succeeded" && looksLikeSubmission(run.output) ? <CertivityChecks text={run.output} organizationId={run.organization_id ?? null} /> : null}
+      {run.status === "succeeded" && looksLikeSubmission(run.output) ? <CertivityChecks text={run.output} organizationId={run.organization_id ?? null} runId={run.id} /> : null}
 
       <section className="grid gap-1">
         <h2 className="text-xs font-medium text-muted-foreground">

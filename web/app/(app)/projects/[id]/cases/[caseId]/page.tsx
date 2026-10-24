@@ -6,6 +6,7 @@ import { NoAccess } from "@/components/no-access";
 import { KeepProject } from "@/components/projects/keep-project";
 import { Breadcrumb } from "@/components/projects/breadcrumb";
 import { CaseWorkspace } from "@/components/projects/case-workspace";
+import { DraftScores } from "@/components/projects/draft-scores";
 import { RunRows } from "@/components/projects/run-rows";
 import { TitleActions } from "@/components/projects/title-actions";
 import { hasNoAccess, permissionsIn } from "@/lib/access";
@@ -13,6 +14,7 @@ import { agentHealth } from "@/lib/agent-admin";
 import { fetchCaseFiles } from "@/lib/cases";
 import { getAccess } from "@/lib/current-org";
 import { getCurrentProject } from "@/lib/current-project";
+import { latestChecks } from "@/lib/run-checks";
 import { fetchReadiness, runBlockers } from "@/lib/run-readiness";
 import { caseKind } from "@/lib/subgoal";
 import { createClient } from "@/lib/supabase/server";
@@ -64,7 +66,7 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
     }),
     supabase
       .from("runs")
-      .select("id, created_at, updated_at, status, model, task")
+      .select("id, created_at, updated_at, status, model, task, agent_version")
       .eq("case_id", caseId)
       .order("created_at", { ascending: false })
       .limit(20),
@@ -72,6 +74,18 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
     agentHealth(),
     fetchReadiness(supabase, caseId),
   ]);
+  // The latest check stored with each of these drafts (#51). A failed read leaves the table
+  // without scores, never the page without its drafts.
+  const runIds = (runs.data ?? []).map((run) => run.id);
+  const { data: checkRows, error: checksError } =
+    runIds.length > 0
+      ? await supabase
+          .from("run_checks")
+          .select("run_id, source, checked_at, agent_version, certivity_commit, result")
+          .in("run_id", runIds)
+      : { data: [], error: null };
+  if (checksError) console.error("Case: stored checks read failed", checksError);
+  const checks = latestChecks(checkRows ?? []);
   const kind = caseKind(found.kind);
   // Only the regulation side: the files are counted live in the workspace as they are added. A
   // sub-goal case has none (lib/run-readiness.ts): runBlockers reads the kind from readiness.
@@ -125,6 +139,15 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
         </h2>
         <RunRows runs={(runs.data ?? []).map(summarizeRun)} empty="No drafts for this part yet." />
       </section>
+
+      {(runs.data ?? []).some((run) => run.status === "succeeded") ? (
+        <section className="grid gap-2" aria-labelledby="case-scores-heading">
+          <h2 id="case-scores-heading" className="text-lg font-semibold tracking-tight">
+            Compare drafts
+          </h2>
+          <DraftScores runs={runs.data ?? []} checks={checks} subgoal={subgoal} />
+        </section>
+      ) : null}
 
       {/* A sub-goal run writes changes, not requirements; its file is on the run page. */}
       {subgoal ? null : (

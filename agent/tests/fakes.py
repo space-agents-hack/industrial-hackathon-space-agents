@@ -43,6 +43,8 @@ class InMemoryRunStore:
     def __init__(self) -> None:
         self.runs: dict[UUID, Run] = {}
         self.reference: list[dict[str, Any]] = []
+        # run_checks rows by (run_id, source), as the agent stores them.
+        self.checks: dict[tuple[UUID, str], dict[str, Any]] = {}
         # Per organisation, in the shape regulation_index returns.
         self.library: dict[UUID, list[dict[str, Any]]] = {}
         self.settings: dict[UUID, OrganizationSettings] = {}
@@ -311,6 +313,9 @@ class InMemoryRunStore:
 
     async def replace_certivity_reference(self, rows: list[dict[str, Any]]) -> None:
         self.reference = list(rows)
+
+    async def save_check(self, row: dict[str, Any]) -> None:
+        self.checks[(UUID(row["run_id"]), row["source"])] = row
 
     async def regulation_index(self, organization_id: UUID) -> list[dict[str, Any]]:
         derived: dict[str, list[dict[str, str]]] = {}

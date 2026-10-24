@@ -189,9 +189,15 @@ texts are the regulation's wording as printed.
   `model_usage` as process `chat`, through the same model wrapper as everything else (SYS-40,
   IF-7). The conversation lasts as long as the tab: it is not shared between tabs, devices or
   people.
-- **Certivity checks are not stored.** `POST /checks` on the agent runs Certivity's `validate.py`
-  and, for a case with an `expected.json`, `score_local.py`, on text the web sends (a succeeded
-  run's output, or a file pasted on the Checks page). They take milliseconds, so they are
-  recomputed on each view. What they compare against (the regulation index, the answer files) is
-  read from the table `certivity_reference`, which only the agent can read. The agent's own `certivity_check` tool gets
-  validation without the score, so the model cannot tune to the one case that has an answer key.
+- **Certivity checks are stored per draft, and only per draft.** `POST /checks` on the agent runs
+  Certivity's `validate.py` and, for a case with an `expected.json`, `score_local.py`, on text the
+  web sends (a run's file, or a file pasted on the Checks page). They take milliseconds, so they
+  are recomputed on each view. When the web names the run and the text is that run's output (or
+  the file built from its stored rows), the agent keeps the latest result in `run_checks`, one row
+  per run and source, with the hash of the text, Certivity's package commit and the agent version
+  (#51). The part's page reads those rows to compare its drafts side by side. A pasted file, or a
+  score against an answer key someone chose, is never stored. What the checks compare against (the
+  regulation index, the answer files) is read from the table `certivity_reference`, which only the
+  agent can read. The agent's own `certivity_check` tool gets validation without the score, and no
+  tool reads `run_checks`, so the model cannot tune to the one case that has an answer key
+  (SYS-42).

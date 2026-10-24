@@ -126,3 +126,9 @@ test("a malformed sub-goal score is dropped, and an older agent sends none", () 
   assert.equal(parseCheckResult({ ...AGENT_ANSWER, subgoal_score: { flagged: {} } })?.subgoalScore, null);
   assert.equal(parseCheckResult(AGENT_ANSWER)?.subgoalScore, null);
 });
+
+test("the result says whether it was saved with a draft", () => {
+  assert.equal(parseCheckResult({ ...AGENT_ANSWER, saved_as: "output" })?.savedAs, "output");
+  assert.equal(parseCheckResult({ ...AGENT_ANSWER, saved_as: null })?.savedAs, null);
+  assert.equal(parseCheckResult({ ...AGENT_ANSWER, saved_as: "elsewhere" })?.savedAs, null);
+});

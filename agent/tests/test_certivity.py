@@ -366,6 +366,68 @@ async def test_another_organisations_library_is_not_used(
     assert any("regulation library is empty" in note for note in result["notes"])
 
 
+def test_a_runs_output_is_stored_with_its_check(
+    client: TestClient, store: InMemoryRunStore
+) -> None:
+    # What lets two drafts of a part be compared without opening each (run_checks, #51).
+    store.library[ORG] = _library()
+    run_id = store.add_run("Write.", status="succeeded", org=ORG)
+    text = json.dumps(_expected())
+    store.outputs[run_id] = text
+    other = UUID("30000000-0000-0000-0000-000000000002")
+    # The organisation sent is ignored: the run's own library is the one its citations name.
+    body = {"text": text, "run_id": str(run_id), "organization_id": str(other)}
+
+    result = client.post("/checks", headers=AUTH, json=body).json()
+
+    assert result["saved_as"] == "output"
+    assert not any("regulation library is empty" in note for note in result["notes"])
+    row = store.checks[(run_id, "output")]
+    assert row["submission_sha256"] == hashlib.sha256(text.encode()).hexdigest()
+    assert row["result"]["valid"] is True
+    assert row["certivity_commit"] == result["certivity_commit"]
+
+
+def test_a_check_is_stored_only_next_to_the_file_it_was_computed_on(
+    client: TestClient, store: InMemoryRunStore
+) -> None:
+    run_id = store.add_run("Write.", status="succeeded")
+    store.outputs[run_id] = json.dumps(_expected())
+    edited = {**_expected(), "requirements": _expected()["requirements"][:1]}
+
+    edited_text = {"text": json.dumps(edited), "run_id": str(run_id)}
+    own_key = {"text": store.outputs[run_id], "run_id": str(run_id), "expected": edited}
+
+    assert client.post("/checks", headers=AUTH, json=edited_text).json()["saved_as"] is None
+    # A score against an answer key someone chose is not the draft's score.
+    assert client.post("/checks", headers=AUTH, json=own_key).json()["saved_as"] is None
+    assert store.checks == {}
+
+
+def test_a_check_for_an_unknown_run_is_404(client: TestClient) -> None:
+    body = {"text": "{}", "run_id": "30000000-0000-0000-0000-0000000000ff"}
+    assert client.post("/checks", headers=AUTH, json=body).status_code == 404
+
+
+@pytest.mark.anyio
+async def test_a_check_still_answers_when_it_cannot_be_stored(
+    client: TestClient, store: InMemoryRunStore
+) -> None:
+    run_id = store.add_run("Write.", status="succeeded")
+    store.outputs[run_id] = json.dumps(_expected())
+
+    async def broken(row: dict[str, Any]) -> None:
+        raise RuntimeError("database down")
+
+    store.save_check = broken  # type: ignore[method-assign]
+    body = {"text": store.outputs[run_id], "run_id": str(run_id)}
+
+    response = client.post("/checks", headers=AUTH, json=body)
+
+    assert response.status_code == 200
+    assert response.json()["saved_as"] is None
+
+
 def test_an_index_row_from_before_adr_0006_is_ignored() -> None:
     rows = [
         {

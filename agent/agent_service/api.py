@@ -12,12 +12,13 @@ agent works. Nothing the UI needs travels in the body; it reads the database.
 """
 
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
-import os
 import re
 from collections.abc import AsyncIterator, Callable
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
@@ -44,7 +45,8 @@ from agent_service.domain.regulation_search import SearchStore
 from agent_service.domain.regulations import LibraryStore
 from agent_service.domain.search_store import SupabaseSearchStore
 from agent_service.providers import AuthScheme, Provider
-from agent_service.settings import Settings, effective, get_settings
+from agent_service.records import Run
+from agent_service.settings import Settings, agent_version, effective, get_settings
 from agent_service.store import RunStore, SupabaseRunStore
 
 log = logging.getLogger(__name__)
@@ -114,7 +116,7 @@ def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, ob
     return {
         "status": "ok",
         "model": settings.agent_model,
-        "version": os.environ.get("VERCEL_GIT_COMMIT_SHA", "unknown"),
+        "version": agent_version() or "unknown",
         # What each process uses where an organisation chose nothing, for the Admin page's
         # "deployment default" (organization_models, SYS-33). Model names only, never a key.
         "processes": {
@@ -616,6 +618,12 @@ class SubmissionText(BaseModel):
     # stored (the release reloads certivity_reference from Certivity's package and would delete
     # it). Like score_local.py --expected: it is used whatever case_id the submission names.
     expected: dict[str, Any] | None = None
+    # The run the text comes from, which the web has checked the caller can read. The citations
+    # are then checked against the run's own organisation, and the result is stored with the run
+    # (run_checks, #51) when the text is that run's file: its output, or for a run without one the
+    # file its stored requirements make now. Anything else is checked and not stored, so a score
+    # sits only next to the file it was computed on.
+    run_id: UUID | None = None
 
 
 @app.post("/checks", dependencies=[Depends(require_secret)])
@@ -623,10 +631,59 @@ async def certivity_checks(
     body: SubmissionText, store: Annotated[RunStore, Depends(get_store)]
 ) -> dict[str, Any]:
     try:
-        reference = await certivity.load_reference(store, body.organization_id)
+        run = await store.get_run(body.run_id) if body.run_id else None
+        if body.run_id and run is None:
+            raise HTTPException(404, "No such run.")
+        organization_id = run.organization_id if run else body.organization_id
+        reference = await certivity.load_reference(store, organization_id)
+        result = certivity.check(body.text, reference, expected=body.expected)
+        source = None
+        # A score against an answer key someone chose is theirs to read, not the draft's score.
+        if run and body.expected is None:
+            source = await _save_run_check(store, run, body.text, reference.commit, result)
     finally:
         await store.aclose()
-    return certivity.check(body.text, reference, expected=body.expected)
+    return {**result, "saved_as": source}
+
+
+async def _save_run_check(
+    store: RunStore, run: Run, text: str, certivity_commit: str, result: dict[str, Any]
+) -> Literal["output", "stored"] | None:
+    """Store the check with the run when `text` is one of its files. A failure here is logged and
+    the check still answers: the person came for the result, the stored copy is for later."""
+    try:
+        source = await _run_source(store, run, text)
+        if source:
+            await store.save_check(
+                {
+                    "run_id": str(run.id),
+                    "source": source,
+                    "checked_at": datetime.now(UTC).isoformat(),
+                    "submission_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                    "certivity_commit": certivity_commit,
+                    "agent_version": agent_version(),
+                    "result": result,
+                }
+            )
+        return source
+    except Exception:
+        log.exception("Could not store the check of run %s", run.id)
+        return None
+
+
+async def _run_source(store: RunStore, run: Run, text: str) -> Literal["output", "stored"] | None:
+    """Which of the run's files `text` is, if any. The stored file is compared as JSON, not as
+    text: the web formats it (JSON.stringify) and Python would space it differently."""
+    outcome = await store.run_outcome(run.id)
+    if outcome and outcome.output is not None:
+        return "output" if outcome.output == text else None
+    if run.case_id is None:
+        return None
+    try:
+        sent = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return "stored" if sent == await domain.stored_submission(store, run) else None
 
 
 # ------------------------------------------------------------------------------------------

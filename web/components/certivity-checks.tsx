@@ -23,14 +23,18 @@ type Answer = { text: string } & ({ phase: "done"; result: CheckResult } | { pha
 // a warning on the run, not a failed run: the requirements are still worth reading and fixing.
 // `organizationId` picks the regulation library the citations are checked against (ADR-0006).
 // `expected` is the text of an expected.json the user chose; the score is then against it.
+// `runId` is the run `text` belongs to: the agent then keeps the result with that draft, so the
+// part's page can compare its drafts (#51).
 export function CertivityChecks({
   text,
   organizationId,
   expected = null,
+  runId = null,
 }: {
   text: string;
   organizationId: string | null;
   expected?: string | null;
+  runId?: string | null;
 }) {
   const [answer, setAnswer] = useState<Answer | null>(null);
 
@@ -45,6 +49,7 @@ export function CertivityChecks({
             text,
             organization_id: organizationId,
             expected: expected === null ? null : (JSON.parse(expected) as unknown),
+            run_id: runId,
           }),
           signal: controller.signal,
         });
@@ -68,7 +73,7 @@ export function CertivityChecks({
       }
     })();
     return () => controller.abort();
-  }, [text, organizationId, expected]);
+  }, [text, organizationId, expected, runId]);
 
   const state = answer?.text === text ? answer : null;
   return (
@@ -154,6 +159,7 @@ function Result({ text, result }: { text: string; result: CheckResult }) {
       <p className="text-xs text-muted-foreground">
         Certivity&apos;s validate.py and {result.kind === "subgoal" ? "our sub-goal scorer" : "score_local.py"}, package
         commit {result.certivityCommit}.
+        {result.savedAs ? " Saved with this draft, for comparing it with the part's other drafts." : ""}
       </p>
     </>
   );

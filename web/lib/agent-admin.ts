@@ -194,14 +194,17 @@ export async function agentHealth(): Promise<AgentHealth | null> {
 // run Python, and the checks must be Certivity's own code to mean "accepted on upload".
 // Returns the agent's own body, not the parsed CheckResult: the browser parses it again with
 // parseCheckResult, and a camelCase result fed to it lost case_id, the commit and the score.
+// With `runId` (a run the caller can read, checked by the caller) the agent stores the result with
+// that run when `text` is the run's file (run_checks, #51), and says so in `saved_as`.
 export async function runCertivityChecks(
   text: string,
   organizationId: string | null,
   expected: Record<string, unknown> | null = null,
+  runId: string | null = null,
 ): Promise<unknown> {
   const body = await call("/checks", {
     method: "POST",
-    body: { text, organization_id: organizationId, expected },
+    body: { text, organization_id: organizationId, expected, run_id: runId },
     messages: { 404: "This version of the agent cannot run Certivity's checks yet. Deploy the agent again." },
   });
   if (!parseCheckResult(body)) throw new AgentAdminError("The agent answered the checks in an unexpected form.", 200);

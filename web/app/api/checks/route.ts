@@ -6,11 +6,12 @@ import { fetchAccess } from "@/lib/current-org";
 import { createClient, getSessionUser } from "@/lib/supabase/server";
 import { isUuid, readJson } from "@/lib/validation";
 
-// Body { text, organization_id }: a run's output or the contents of a dropped file, and the
+// Body { text, organization_id, run_id? }: a run's output or the contents of a dropped file, and the
 // organisation whose regulation library the citations are checked against (ADR-0006). Anyone who
-// can read that organisation may check, viewers included: it writes nothing, and the text never
-// reaches the database. The agent reads the library with its secret key, so the role is checked
-// here.
+// can read that organisation may check, viewers included. A dropped file never reaches the
+// database. With run_id the agent stores the result with that run if the text is the run's own
+// file (run_checks, #51): the latest check of a draft, which anyone who can read the draft could
+// recompute anyway. The agent reads with its secret key, so access is checked here.
 export async function POST(request: Request) {
   const supabase = await createClient();
   if (!(await getSessionUser(supabase))) return fail("Not signed in.", 401);
@@ -19,10 +20,11 @@ export async function POST(request: Request) {
   if (typeof body !== "object" || body === null || typeof (body as { text?: unknown }).text !== "string") {
     return fail('Expected a JSON body like { "text": "..." }.', 400);
   }
-  const { text, organization_id: org, expected } = body as {
+  const { text, organization_id: org, expected, run_id: runId } = body as {
     text: string;
     organization_id?: unknown;
     expected?: unknown;
+    run_id?: unknown;
   };
   // An expected.json the user chose, scored against for this check only and never stored.
   if (expected !== undefined && expected !== null && !isExpectedFile(expected)) {
@@ -34,6 +36,15 @@ export async function POST(request: Request) {
   if (typeof org === "string" && !permissionsIn(await fetchAccess(supabase), org).read) {
     return fail("You cannot read this organisation.", 403);
   }
+  if (runId !== undefined && runId !== null && !(typeof runId === "string" && isUuid(runId))) {
+    return fail("run_id must be a run id.", 400);
+  }
+  // Asked as the caller: RLS hides a run of an organisation they cannot read. Only the id, since
+  // the output is already in the body.
+  if (typeof runId === "string") {
+    const { data: run } = await supabase.from("runs").select("id").eq("id", runId).maybeSingle();
+    if (!run) return fail("Unknown run.", 404);
+  }
   if (new TextEncoder().encode(text).length > SUBMISSION_MAX_BYTES) {
     return fail("The file is over Certivity's 5 MB limit.", 413);
   }
@@ -44,6 +55,7 @@ export async function POST(request: Request) {
         text,
         typeof org === "string" ? org : null,
         (expected as Record<string, unknown> | null | undefined) ?? null,
+        typeof runId === "string" ? runId : null,
       ),
     );
   } catch (error) {

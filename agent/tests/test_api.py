@@ -88,6 +88,25 @@ def test_a_run_that_never_submitted_still_hands_over_its_stored_requirements(
     assert store.closed
 
 
+def test_the_check_of_the_file_built_from_stored_rows_is_kept_with_the_run(
+    client: TestClient, store: InMemoryRunStore
+) -> None:
+    # The web formats the built file with JSON.stringify, so it is compared as JSON (#51).
+    store.organization_names[ORG] = "team-09"
+    run_id = case_run(store)
+    client.post(f"/runs/{run_id}/advance", headers=AUTH)
+    built = client.get(f"/runs/{run_id}/submission", headers=AUTH).json()["submission"]
+    text = json.dumps(built, indent=2, separators=(",", ": "))
+
+    body = client.post("/checks", headers=AUTH, json={"text": text, "run_id": str(run_id)}).json()
+
+    assert body["saved_as"] == "stored"
+    row = store.checks[(run_id, "stored")]
+    assert row["result"]["case_id"] == "dev-rear-lamp"
+    assert "saved_as" not in row["result"]
+    assert (run_id, "output") not in store.checks
+
+
 def test_the_stored_submission_needs_the_secret_and_a_known_run(client: TestClient) -> None:
     assert client.get(f"/runs/{uuid4()}/submission").status_code == 401
     assert client.get(f"/runs/{uuid4()}/submission", headers=AUTH).status_code == 404

@@ -32,6 +32,7 @@ from agent_service.records import (
     RunOutcome,
     RunStatus,
 )
+from agent_service.settings import agent_version
 
 if TYPE_CHECKING:
     from agent_service.domain.regulation_search import SearchStore
@@ -172,6 +173,11 @@ class RunStore(Protocol):
 
     async def replace_certivity_reference(self, rows: list[dict[str, Any]]) -> None: ...
 
+    async def save_check(self, row: dict[str, Any]) -> None:
+        """Store a run's latest check (table run_checks, #51), replacing the one for the same run
+        and source. People read it; the agent's model never does (SYS-42)."""
+        ...
+
     async def regulation_index(self, organization_id: UUID) -> list[dict[str, Any]]:
         """The organisation's regulation library in the shape of Certivity's index.json, as much
         of it as validate.py reads: each regulation's code and its versions' label and role."""
@@ -254,7 +260,14 @@ class SupabaseRunStore:
         # matches a row.
         res = (
             await self._db.table("runs")
-            .update({"status": "running", "model": model, "error": None})
+            .update(
+                {
+                    "status": "running",
+                    "model": model,
+                    "error": None,
+                    "agent_version": agent_version(),
+                }
+            )
             .eq("id", str(run_id))
             .eq("status", expected)
             .execute()
@@ -656,6 +669,9 @@ class SupabaseRunStore:
                     .eq("case_id", r["case_id"])
                     .execute()
                 )
+
+    async def save_check(self, row: dict[str, Any]) -> None:
+        await self._db.table("run_checks").upsert(row, on_conflict="run_id,source").execute()
 
     async def set_status(
         self,

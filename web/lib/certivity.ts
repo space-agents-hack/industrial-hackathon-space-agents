@@ -56,6 +56,9 @@ export type CheckResult = {
   subgoalScore: SubgoalScore | null;
   notes: string[];
   certivityCommit: string;
+  // Which of a run's files this result was stored with (run_checks, #51), or null when it was not
+  // stored: a pasted file, a chosen answer key, or text that is not the run's file.
+  savedAs: "output" | "stored" | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -146,6 +149,7 @@ export function parseCheckResult(body: unknown): CheckResult | null {
     subgoalScore: parseSubgoalScore(body.subgoal_score),
     notes: Array.isArray(body.notes) ? body.notes.filter((n): n is string => typeof n === "string") : [],
     certivityCommit: typeof body.certivity_commit === "string" ? body.certivity_commit : "unknown",
+    savedAs: body.saved_as === "output" || body.saved_as === "stored" ? body.saved_as : null,
   };
 }
 

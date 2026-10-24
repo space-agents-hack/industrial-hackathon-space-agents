@@ -30,7 +30,7 @@ export function StoredSubmission({ runId, organizationId }: { runId: string; org
     return (
       <>
         <RunResult output={state.text} runId={runId} title="Requirements stored so far" />
-        <CertivityChecks text={state.text} organizationId={organizationId} />
+        <CertivityChecks text={state.text} organizationId={organizationId} runId={runId} />
       </>
     );
   }

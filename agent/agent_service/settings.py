@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Literal
@@ -163,3 +164,10 @@ def effective(settings: Settings, org: OrganizationSettings | None) -> RunSettin
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def agent_version() -> str | None:
+    """The commit this deployment was built from, as Vercel sets it; None locally. Stored with a
+    run and with a check (run_checks, #51), so two drafts can be told apart by the code behind
+    them."""
+    return os.environ.get("VERCEL_GIT_COMMIT_SHA") or None

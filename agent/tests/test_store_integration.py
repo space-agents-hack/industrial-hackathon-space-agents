@@ -288,6 +288,34 @@ async def test_a_run_reads_its_organisation(
     assert str(run.organization_id) == org
 
 
+async def test_a_runs_check_is_stored_once_per_source_and_its_version_kept(
+    db: AsyncClient, store: SupabaseRunStore, org: str, user_id: str, monkeypatch
+) -> None:
+    # run_checks and runs.agent_version (#51): the claim records the build, a second check of the
+    # same source replaces the first.
+    monkeypatch.setenv("VERCEL_GIT_COMMIT_SHA", "abc1234")
+    run_id = await insert_run(db, org, user_id)
+    assert await store.claim(run_id, "queued", "scripted")
+    row = rows(await db.table("runs").select("agent_version").eq("id", str(run_id)).execute())[0]
+    assert row["agent_version"] == "abc1234"
+
+    def check(valid: bool) -> dict[str, Any]:
+        return {
+            "run_id": str(run_id),
+            "source": "output",
+            "checked_at": datetime.now(UTC).isoformat(),
+            "submission_sha256": "a" * 64,
+            "certivity_commit": "test",
+            "agent_version": "abc1234",
+            "result": {"valid": valid},
+        }
+
+    await store.save_check(check(False))
+    await store.save_check(check(True))
+    stored = rows(await db.table("run_checks").select("result").eq("run_id", str(run_id)).execute())
+    assert stored == [{"result": {"valid": True}}]
+
+
 async def test_organisation_settings_hold_only_what_was_changed(
     db: AsyncClient, store: SupabaseRunStore, org: str
 ) -> None:

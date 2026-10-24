@@ -14,7 +14,7 @@ run only in a release. CI runs the same.
 |---|---|---|
 | Domain logic | `agent/tests/test_systems.py` | A wrong number: the fit rule, the minimum clearance, an unknown id answered with an empty list |
 | Case ingestion | `agent/tests/test_ingest.py` | A format read wrongly (page labels, CAD structure), a file dropped without a trace note, a limit applied silently. Fixtures are built in the test, never challenge data |
-| Certivity checks | `agent/tests/test_certivity.py` | A copy of `validate.py` that drifted from Certivity's (hash test); their data committed to the repo again |
+| Certivity checks | `agent/tests/test_certivity.py` | A copy of `validate.py` that drifted from Certivity's (hash test); their data committed to the repo again; a score stored next to a file it was not computed on (`run_checks`, #51) |
 | Regulation library | `agent/tests/test_regulations.py`, `test_regdiff.py` | An index file read wrongly, a PDF stored without its checksum, a sub-goal diff that misses a change |
 | Agent loop | `agent/tests/test_runner.py` | A risky tool that runs without approval; a denied tool that runs anyway; a tool logged twice; a run that never ends |
 | HTTP | `agent/tests/test_api.py` | An endpoint that is open when the secret is unset; wrong status codes |
