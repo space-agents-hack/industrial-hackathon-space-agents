@@ -140,7 +140,7 @@ export function ImportPanel({
 
   return (
     <section className="grid gap-3">
-      <h2 className="text-sm font-semibold">Import</h2>
+      <h2 className="text-base font-semibold">Import</h2>
       <p className="max-w-prose text-muted-foreground">
         Upload an index file in the challenge&apos;s <code>regulations/index.json</code> format. The agent downloads
         every PDF it lists, checks each against its sha256 and stores it in this organisation&apos;s library, where
@@ -149,7 +149,7 @@ export function ImportPanel({
       </p>
 
       {latest ? (
-        <div className="grid gap-2 rounded-md border bg-card p-3">
+        <div className="grid gap-2 rounded-xl border bg-card p-4">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span className="font-medium">{latest.sourceName}</span>
             <span className="text-xs text-muted-foreground">
@@ -268,7 +268,7 @@ function ImportProgress({ counts, active }: { counts: FileCounts; active: boolea
         className="h-2 overflow-hidden rounded-sm bg-muted"
       >
         <div
-          className={`h-full bg-primary transition-[width] duration-500 ${counts.total === 0 && active ? "w-1/4 animate-pulse" : ""}`}
+          className={`h-full bg-tint transition-[width] duration-500 ${counts.total === 0 && active ? "w-1/4 animate-pulse" : ""}`}
           style={counts.total === 0 ? undefined : { width: `${percent}%` }}
         />
       </div>

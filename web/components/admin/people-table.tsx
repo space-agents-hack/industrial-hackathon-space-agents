@@ -24,10 +24,10 @@ export type Person = {
 
 export function PeopleTable({ org, people }: { org: string; people: Person[] }) {
   if (people.length === 0) {
-    return <p className="rounded-md border border-dashed px-3 py-6 text-center text-muted-foreground">Nobody yet.</p>;
+    return <p className="rounded-xl border border-dashed px-3 py-6 text-center text-muted-foreground">Nobody yet.</p>;
   }
   return (
-    <ul className="divide-y rounded-md border bg-card">
+    <ul className="divide-y overflow-hidden rounded-xl border bg-card">
       {people.map((person) => (
         <PersonRow key={person.userId} org={org} person={person} />
       ))}

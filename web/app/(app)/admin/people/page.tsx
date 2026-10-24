@@ -70,11 +70,11 @@ async function People() {
   return (
     <div className="grid gap-5">
       <section className="grid gap-2">
-        <h2 className="text-sm font-semibold">Asking to join {org.name}</h2>
+        <h2 className="text-base font-semibold">Asking to join {org.name}</h2>
         <AccessRequests kind="join" requests={requests.data ?? []} />
       </section>
       <section className="grid gap-2">
-        <h2 className="text-sm font-semibold">People in {org.name}</h2>
+        <h2 className="text-base font-semibold">People in {org.name}</h2>
         <PeopleTable org={org.id} people={people} />
         <ul className="grid gap-0.5 text-xs text-muted-foreground">
           {ROLES.map((role) => (
@@ -93,7 +93,7 @@ async function People() {
         </ul>
       </section>
       <section className="grid gap-2">
-        <h2 className="text-sm font-semibold">Add a person</h2>
+        <h2 className="text-base font-semibold">Add a person</h2>
         <AddPersonForm org={org.id} />
       </section>
     </div>

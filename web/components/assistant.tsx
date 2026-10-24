@@ -210,7 +210,7 @@ export function Assistant({ projectId, projectName }: { projectId: string; proje
             {turns.length === 0 ? (
               <div className="grid gap-2">
                 <p className="text-muted-foreground">
-                  Answers come from this project&apos;s regulations, cases and runs, and the page you are on. The
+                  Answers come from this project&apos;s regulations, parts and drafts, and the page you are on. The
                   conversation stays while you move between pages.
                 </p>
                 {suggestionsFor(page).map((s) => (

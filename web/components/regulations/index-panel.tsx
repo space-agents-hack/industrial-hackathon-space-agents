@@ -82,10 +82,10 @@ export function IndexPanel({
 
   return (
     <section className="grid gap-2" aria-labelledby="search-index-heading">
-      <h2 id="search-index-heading" className="text-sm font-semibold">
+      <h2 id="search-index-heading" className="text-base font-semibold">
         Search index
       </h2>
-      <div className="grid gap-2 rounded-md border bg-card p-3">
+      <div className="grid gap-2 rounded-xl border bg-card p-4">
         <p className={search.tone === "ok" ? "" : "font-medium text-attention"}>{search.text}</p>
         <div
           role="progressbar"
@@ -95,7 +95,7 @@ export function IndexPanel({
           aria-valuenow={index.embedded}
           className="h-2 overflow-hidden rounded-sm bg-muted"
         >
-          <div className="h-full bg-primary transition-[width] duration-500" style={{ width: `${percent}%` }} />
+          <div className="h-full bg-tint transition-[width] duration-500" style={{ width: `${percent}%` }} />
         </div>
         <dl className="grid gap-x-4 gap-y-0.5 text-xs sm:grid-cols-[max-content_1fr]">
           <dt className="text-muted-foreground">Vectors</dt>

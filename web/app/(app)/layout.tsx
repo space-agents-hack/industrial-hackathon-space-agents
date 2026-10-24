@@ -1,11 +1,12 @@
 import { Suspense } from "react";
 
-import { AppHeader } from "@/components/app-header";
+import { AppShell } from "@/components/app-shell";
+import { AppSidebar } from "@/components/app-sidebar";
 import { Assistant } from "@/components/assistant";
 import { getCurrentProject } from "@/lib/current-project";
 
 // Everything in this group needs a session. proxy.ts enforces that; this layout only adds the
-// header that the login page does not have.
+// sidebar that the login page does not have.
 //
 // Who belongs to no organisation is decided by each page inside its own Suspense boundary
 // (components/no-access.tsx), not here: a layout that waits for the request before rendering
@@ -13,8 +14,7 @@ import { getCurrentProject } from "@/lib/current-project";
 export default function AppLayout({ children }: LayoutProps<"/">) {
   return (
     <>
-      <AppHeader />
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-5">{children}</main>
+      <AppShell sidebar={<AppSidebar />}>{children}</AppShell>
       <Suspense fallback={null}>
         <ProjectAssistant />
       </Suspense>

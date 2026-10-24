@@ -205,7 +205,7 @@ function Instructions({ id, context }: { id: StepId; context: Context }) {
       // /login works in both states: signed out it asks, signed in it goes straight to Runs.
       return (
         <p>
-          <Link href="/login" className="text-primary underline underline-offset-2">Open the app</Link>
+          <Link href="/login" className="text-tint underline underline-offset-2">Open the app</Link>
           {database === "hosted" ? (
             " (sign in with your own account if asked)"
           ) : (
@@ -471,7 +471,7 @@ function Block({ children }: { children: React.ReactNode }) {
 
 function Ext({ href, children }: { href: string; children: React.ReactNode }) {
   return (
-    <a href={href} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">
+    <a href={href} target="_blank" rel="noreferrer" className="text-tint underline underline-offset-2">
       {children}
     </a>
   );

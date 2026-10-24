@@ -25,13 +25,13 @@ test("the project's tabs mark the one open, and Cases covers a case page", () =>
   const tabs = projectTabs("p1");
   assert.deepEqual(
     tabs.map((t) => t.label),
-    ["Cases", "Runs", "Regulations", "Changes", "Checks"],
+    ["Parts", "Draft requirements", "Regulations", "Review requirements", "Checks"],
   );
-  const cases = tabs.find((t) => t.label === "Cases")!;
+  const cases = tabs.find((t) => t.label === "Parts")!;
   assert.equal(cases.href, "/projects/p1");
   assert.equal(cases.matches("/projects/p1/cases/c1"), true);
   assert.equal(cases.matches("/projects/p2"), false);
-  assert.equal(tabs.find((t) => t.label === "Runs")!.matches("/runs/r1"), true);
+  assert.equal(tabs.find((t) => t.label === "Draft requirements")!.matches("/runs/r1"), true);
 });
 
 test("Settings holds the former Admin and Setup", () => {

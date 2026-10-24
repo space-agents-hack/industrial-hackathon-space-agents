@@ -379,7 +379,7 @@ function Secret({
 
 function Ext({ href, children }: { href: string; children: React.ReactNode }) {
   return (
-    <a href={href} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">
+    <a href={href} target="_blank" rel="noreferrer" className="text-tint underline underline-offset-2">
       {children}
     </a>
   );

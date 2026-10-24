@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   }
   // Every run is on a case now (Clemente, 2026-10-24): the app only starts runs on a case, and a
   // run without one belongs to no project and cannot be scoped to its regulations.
-  return Response.json({ error: "A run needs a case: create one in a project and add its files." }, { status: 400 });
+  return Response.json({ error: "A draft needs a part: create one in a project and add its files." }, { status: 400 });
 }
 
 // A run on a case (ADR-0006) is a plain insert as the user: the case's files are already in
@@ -39,7 +39,7 @@ async function startOnCase(
     supabase.from("cases").select("name").eq("id", caseId).maybeSingle(),
     fetchReadiness(supabase, caseId),
   ]);
-  if (!found || !readiness) return Response.json({ error: "That case does not exist here." }, { status: 404 });
+  if (!found || !readiness) return Response.json({ error: "That part does not exist here." }, { status: 404 });
   const blockers = runBlockers(readiness);
   if (blockers.length > 0) return Response.json({ error: blockers.join(" ") }, { status: 409 });
   const { data, error } = await supabase
@@ -55,7 +55,7 @@ async function startOnCase(
   if (error || !data) {
     if (error?.code === "42501" || error?.code === "23503") {
       return Response.json(
-        { error: "You cannot start runs on this case. It needs the member role in its organisation." },
+        { error: "You cannot draft requirements for this part. It needs the member role in its organisation." },
         { status: 403 },
       );
     }

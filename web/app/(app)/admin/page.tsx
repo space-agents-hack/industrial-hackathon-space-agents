@@ -62,13 +62,13 @@ async function Settings() {
         connected={connections.data.map((c) => c.provider).filter(isProviderId)}
       />
       <section className="grid gap-2" aria-labelledby="process-models-heading">
-        <h2 id="process-models-heading" className="text-base font-semibold">
+        <h2 id="process-models-heading" className="text-lg font-semibold tracking-tight">
           Other agents and processes
         </h2>
         <p className="max-w-prose text-muted-foreground">
           The model above writes the requirements. Each process below can use its own; an empty field follows
           the deployment&apos;s default. A member can also pick another writer model for a single run, on the
-          case page.
+          part page.
         </p>
         <ProcessModelsForm
           key={org.id}

@@ -9,14 +9,14 @@ export const maxDuration = 800;
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  if (!isUuid(id)) return Response.json({ error: "Not a case id." }, { status: 400 });
+  if (!isUuid(id)) return Response.json({ error: "Not a part id." }, { status: 400 });
 
   const supabase = await createClient();
   if (!(await getSessionUser(supabase))) {
     return Response.json({ error: "Not signed in." }, { status: 401 });
   }
   const acts = await actsInCaseOrganization(supabase, id);
-  if (acts === "missing") return Response.json({ error: "That case does not exist here." }, { status: 404 });
+  if (acts === "missing") return Response.json({ error: "That part does not exist here." }, { status: 404 });
   if (acts === "no") {
     return Response.json({ error: "Only admins and members of this organisation can add files." }, { status: 403 });
   }

@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "Join an organisation" };
 export default function WelcomePage() {
   return (
     <div className="grid max-w-2xl gap-4">
-      <h1 className="text-base font-semibold">Join an organisation</h1>
+      <h1 className="page-title">Join an organisation</h1>
       <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>
         <Welcome />
       </Suspense>
@@ -52,12 +52,12 @@ async function Welcome() {
       {hasNoAccess(access) ? (
         <p className="max-w-prose">
           You are signed in as <span className="font-medium">{user.email}</span>, but not part of an organisation yet.
-          Projects, cases and regulations belong to an organisation, so start by getting into one.
+          Projects, parts and regulations belong to an organisation, so start by getting into one.
         </p>
       ) : (
         <p className="max-w-prose">
           You are already in {access.organizations.map((o) => o.name).join(", ")}.{" "}
-          <Link href="/projects" className="text-primary underline-offset-4 hover:underline">
+          <Link href="/projects" className="text-tint underline-offset-4 hover:underline">
             Go to your projects
           </Link>
           , or ask to join another organisation below.

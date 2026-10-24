@@ -130,7 +130,7 @@ export function SettingsForm({
         void save();
       }}
     >
-      <fieldset className="grid gap-2 rounded-md border bg-card p-3">
+      <fieldset className="grid gap-2 rounded-xl border bg-card p-4">
         <legend className="px-1 text-sm font-semibold">Model</legend>
         <div className="grid gap-1.5 sm:grid-cols-[10rem_1fr] sm:items-center">
           <Label htmlFor="source">Provider</Label>
@@ -242,7 +242,7 @@ export function SettingsForm({
         ) : null}
       </fieldset>
 
-      <fieldset className="grid gap-3 rounded-md border bg-card p-3">
+      <fieldset className="grid gap-3 rounded-xl border bg-card p-4">
         <legend className="px-1 text-sm font-semibold">Limits</legend>
         <div className="grid gap-1 sm:grid-cols-[10rem_8rem_1fr] sm:items-center sm:gap-x-3">
           <Label htmlFor="requests">Model requests per run</Label>

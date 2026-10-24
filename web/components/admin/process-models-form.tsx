@@ -15,7 +15,7 @@ import { MODEL_PATTERN } from "@/lib/validation";
 export const PROCESSES = [
   {
     id: "transcription",
-    label: "Case transcription",
+    label: "Part transcription",
     help: "Reads what the parsers cannot: scanned pages, drawings, pictures. It transcribes, it does not reason, so a small model is enough.",
     used: true,
   },
@@ -40,7 +40,7 @@ export const PROCESSES = [
   {
     id: "embedding",
     label: "Embeddings",
-    help: "Turns paragraphs and the case text into vectors for the regulation search. Vectors are kept per model: after a change the library has to be indexed again before vector search uses the new model (full-text search keeps working meanwhile), and changing back reuses the old vectors.",
+    help: "Turns paragraphs and the part's text into vectors for the regulation search. Vectors are kept per model: after a change the library has to be indexed again before vector search uses the new model (full-text search keeps working meanwhile), and changing back reuses the old vectors.",
     used: true,
   },
 ] as const;
@@ -97,7 +97,7 @@ export function ProcessModelsForm({
   }, [org, connected.join(",")]);
 
   return (
-    <ul className="divide-y rounded-md border bg-card">
+    <ul className="divide-y overflow-hidden rounded-xl border bg-card">
       {PROCESSES.map((p) => (
         <ProcessRow
           key={p.id}

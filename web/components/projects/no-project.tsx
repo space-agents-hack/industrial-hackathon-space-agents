@@ -7,7 +7,7 @@ export function NoProject() {
   return (
     <p className="text-muted-foreground">
       This section belongs to a project.{" "}
-      <Link href="/projects" className="text-primary underline-offset-4 hover:underline">
+      <Link href="/projects" className="text-tint underline-offset-4 hover:underline">
         Choose a project
       </Link>
     </p>

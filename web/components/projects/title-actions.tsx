@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { deleteCase, deleteProject } from "@/lib/case-upload";
-import { nameTakenMessage } from "@/lib/cases";
+import { nameTakenMessage, nounOf } from "@/lib/cases";
 import { createClient } from "@/lib/supabase/client";
 
 // The page title of a project or a case, with Rename and Delete for members (SYS-31). Delete asks
@@ -45,11 +45,11 @@ export function TitleActions({
     const { error: e, count } = await createClient().from(table).update({ name: next }, { count: "exact" }).eq("id", id);
     setBusy(false);
     if (e) {
-      setError(nameTakenMessage(e.code, kind, next) ?? `The ${kind} could not be renamed: ${e.message}`);
+      setError(nameTakenMessage(e.code, kind, next) ?? `The ${nounOf(kind)} could not be renamed: ${e.message}`);
       return;
     }
     if (count === 0) {
-      setError(`The ${kind} could not be renamed: it needs the member role in this organisation.`);
+      setError(`The ${nounOf(kind)} could not be renamed: it needs the member role in this organisation.`);
       return;
     }
     setEditing(false);
@@ -57,7 +57,7 @@ export function TitleActions({
   }
 
   async function remove() {
-    if (!window.confirm(`Delete ${kind} "${name}"? ${deleteWarning}`)) return;
+    if (!window.confirm(`Delete ${nounOf(kind)} "${name}"? ${deleteWarning}`)) return;
     setBusy(true);
     setError(null);
     try {
@@ -84,7 +84,7 @@ export function TitleActions({
             }}
           >
             <Input
-              aria-label={`New ${kind} name`}
+              aria-label={`New ${nounOf(kind)} name`}
               autoFocus
               maxLength={200}
               value={draft}
@@ -115,14 +115,14 @@ export function TitleActions({
             </Button>
           </form>
         ) : (
-          <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{name}</h1>
+          <h1 className="min-w-0 flex-1 truncate page-title">{name}</h1>
         )}
         {canEdit && !editing ? (
           <div className="flex gap-1">
             <Button size="sm" variant="outline" disabled={busy} onClick={() => setEditing(true)}>
               Rename
             </Button>
-            <Button size="sm" variant="destructive" disabled={busy} onClick={() => void remove()}>
+            <Button size="sm" variant="ghost" className="text-danger hover:bg-danger-surface hover:text-danger" disabled={busy} onClick={() => void remove()}>
               Delete
             </Button>
           </div>

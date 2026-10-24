@@ -9,15 +9,15 @@ import type { RunSummary } from "@/lib/trace";
 // page's list is, and a run opened from here shows its own progress.
 export function RunRows({ runs, empty }: { runs: (RunSummary & { where?: string })[]; empty: string }) {
   if (runs.length === 0) {
-    return <p className="rounded-md border border-dashed px-3 py-4 text-center text-muted-foreground">{empty}</p>;
+    return <p className="rounded-xl border border-dashed px-3 py-4 text-center text-muted-foreground">{empty}</p>;
   }
   return (
-    <ul className="divide-y rounded-md border bg-card">
+    <ul className="divide-y overflow-hidden rounded-xl border bg-card">
       {runs.map((run) => (
         <li key={run.id}>
           <Link
             href={`/runs/${run.id}`}
-            className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 px-3 py-2 outline-none hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:grid-cols-[9.5rem_1fr_auto_auto]"
+            className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-3 outline-none hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:grid-cols-[9.5rem_1fr_auto_auto]"
           >
             <StatusBadge status={run.status} />
             <span className="order-last col-span-2 min-w-0 truncate sm:order-none sm:col-span-1">

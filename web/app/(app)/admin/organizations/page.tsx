@@ -66,7 +66,7 @@ async function Organizations() {
         Starting runs and deciding approvals in one still needs a membership there.
       </p>
       <section className="grid gap-2">
-        <h2 className="text-sm font-semibold">Asking for a new organisation</h2>
+        <h2 className="text-base font-semibold">Asking for a new organisation</h2>
         <AccessRequests kind="create" requests={requests.data ?? []} />
         <p className="max-w-prose text-xs text-muted-foreground">
           Approve only someone you expect: a new organisation runs on the deployment&apos;s model keys, with no

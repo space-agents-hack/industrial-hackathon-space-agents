@@ -63,7 +63,7 @@ export function ProductionStatus() {
             }
           >
             {up ? "Production is up. " : `Production is not fully up: ${status.detail} `}
-            <a href={status.url} target="_blank" rel="noreferrer" className="font-medium text-primary underline underline-offset-2">
+            <a href={status.url} target="_blank" rel="noreferrer" className="font-medium text-tint underline underline-offset-2">
               Open {status.url.replace("https://", "")}
             </a>
           </p>

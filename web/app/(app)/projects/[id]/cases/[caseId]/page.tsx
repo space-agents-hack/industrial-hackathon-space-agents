@@ -19,12 +19,12 @@ import { createClient } from "@/lib/supabase/server";
 import { summarizeRun } from "@/lib/trace";
 import { isUuid } from "@/lib/validation";
 
-export const metadata: Metadata = { title: "Case" };
+export const metadata: Metadata = { title: "Part" };
 
 export default function CasePage({ params }: PageProps<"/projects/[id]/cases/[caseId]">) {
   return (
     <div className="grid gap-5">
-      <Suspense fallback={<p className="text-muted-foreground">Loading the case…</p>}>
+      <Suspense fallback={<p className="text-muted-foreground">Loading the part…</p>}>
         <Case params={params} />
       </Suspense>
     </div>
@@ -50,7 +50,7 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
     console.error("Case: read failed", error);
     return (
       <p role="alert" className="text-danger">
-        The case could not be loaded. Check that the database is reachable and reload.
+        The part could not be loaded. Check that the database is reachable and reload.
       </p>
     );
   }
@@ -89,7 +89,7 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
             { label: found.projects?.organizations?.name ?? "Organisation", href: "/projects" },
             { label: projectName, href: `/projects/${found.project_id}` },
             // A sub-goal case is listed on Changes, not under the project's Cases (#42).
-            ...(subgoal ? [{ label: "Changes", href: "/changes" }] : []),
+            ...(subgoal ? [{ label: "Review requirements", href: "/changes" }] : []),
             { label: found.name },
           ]}
         />
@@ -98,7 +98,7 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
           id={found.id}
           name={found.name}
           canEdit={canEdit}
-          deleteWarning="Its files and what was read from them are deleted. Its runs stay, without their case."
+          deleteWarning="Its files and what was read from them are deleted. Its drafts stay, without their part."
           afterDelete={subgoal ? "/changes" : `/projects/${found.project_id}`}
         />
       </div>
@@ -115,25 +115,25 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
         />
       ) : (
         <p role="alert" className="text-danger">
-          The case&apos;s files could not be loaded. Reload the page.
+          The part&apos;s files could not be loaded. Reload the page.
         </p>
       )}
 
       <section className="grid gap-2" aria-labelledby="case-runs-heading">
-        <h2 id="case-runs-heading" className="text-base font-semibold">
-          Runs
+        <h2 id="case-runs-heading" className="text-lg font-semibold tracking-tight">
+          Drafts
         </h2>
-        <RunRows runs={(runs.data ?? []).map(summarizeRun)} empty="No runs on this case yet." />
+        <RunRows runs={(runs.data ?? []).map(summarizeRun)} empty="No drafts for this part yet." />
       </section>
 
       {/* A sub-goal run writes changes, not requirements; its file is on the run page. */}
       {subgoal ? null : (
         <section className="grid gap-1" aria-labelledby="requirements-heading">
-          <h2 id="requirements-heading" className="text-base font-semibold">
+          <h2 id="requirements-heading" className="text-lg font-semibold tracking-tight">
             Requirements
           </h2>
           <p className="text-sm text-muted-foreground">
-            Not stored per case yet: each run&apos;s result is on its run page. The list with a link from each
+            Not stored per part yet: each draft&apos;s result is on its own page. The list with a link from each
             requirement to its regulation paragraph comes with the requirements table (issue #4).
           </p>
         </section>
@@ -145,8 +145,8 @@ async function Case({ params }: Pick<PageProps<"/projects/[id]/cases/[caseId]">,
 function Missing() {
   return (
     <p className="text-muted-foreground">
-      This case does not exist, or it belongs to an organisation you are not in.{" "}
-      <Link href="/projects" className="text-primary underline-offset-4 hover:underline">
+      This part does not exist, or it belongs to an organisation you are not in.{" "}
+      <Link href="/projects" className="text-tint underline-offset-4 hover:underline">
         All projects
       </Link>
     </p>

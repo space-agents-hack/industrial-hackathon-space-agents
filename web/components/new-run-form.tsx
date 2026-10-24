@@ -73,7 +73,7 @@ export function NewRunForm({
       if (unsettled) {
         const rows = await parseCase(createClient(), caseId, (rows) => setLoaded({ caseId, rows }), setPending);
         if (!rows.some((f) => f.status === "parsed")) {
-          setError("No file of this case could be read, so there is nothing to run on. Open the case to see why.");
+          setError("No file of this part could be read, so there is nothing to run on. Open the part to see why.");
           return;
         }
       }
@@ -90,14 +90,14 @@ export function NewRunForm({
 
   if (cases.length === 0) {
     return (
-      <div className="grid gap-1 rounded-md border bg-card p-3">
-        <h2 className="text-sm font-semibold">Find the requirements for a product</h2>
+      <div className="grid gap-1 rounded-xl border bg-card p-4">
+        <h2 className="text-base font-semibold">Draft the requirements for a part</h2>
         <p className="text-sm text-muted-foreground">
-          This project has no case yet. Create one and add its files under{" "}
+          This project has no part yet. Create one and add its files under{" "}
           <Link href={`/projects/${projectId}`} className="underline underline-offset-4">
-            Cases
+            Parts
           </Link>
-          , then start the run here.
+          , then start the draft here.
         </p>
       </div>
     );
@@ -107,23 +107,23 @@ export function NewRunForm({
 
   return (
     <form
-      className="grid gap-3 rounded-md border bg-card p-3"
+      className="grid gap-3 rounded-xl border bg-card p-4"
       onSubmit={(event) => {
         event.preventDefault();
         void startRun();
       }}
     >
       <div className="grid gap-1">
-        <h2 className="text-sm font-semibold">Find the requirements for a product</h2>
+        <h2 className="text-base font-semibold">Draft the requirements for a part</h2>
         <p className="text-xs text-muted-foreground">
-          The agent reads the case&apos;s files and lists the requirements the product must fulfil under the UN
+          The agent reads the part&apos;s files and lists the requirements the product must fulfil under the UN
           Regulations, each with its regulation, page and paragraph. Files are added and removed on the
-          case&apos;s own page, under Cases.
+          part&apos;s own page, under Parts.
         </p>
       </div>
 
       <div className="grid gap-1.5 sm:max-w-md">
-        <Label htmlFor="case">Case</Label>
+        <Label htmlFor="case">Part</Label>
         <select
           id="case"
           className="h-8 rounded-md border bg-background px-2 text-sm"
@@ -138,9 +138,9 @@ export function NewRunForm({
           ))}
         </select>
         <p className="text-xs text-muted-foreground">
-          {caseFiles === null ? "Reading the case's files… " : `${describeFiles(files.length, parsed, failed, unsettled)} `}
+          {caseFiles === null ? "Reading the part's files… " : `${describeFiles(files.length, parsed, failed, unsettled)} `}
           <Link href={casePage} className="underline underline-offset-4">
-            {files.length === 0 && caseFiles !== null ? "Add files to the case" : "Open the case"}
+            {files.length === 0 && caseFiles !== null ? "Add files to the part" : "Open the part"}
           </Link>
         </p>
       </div>
@@ -174,10 +174,10 @@ export function NewRunForm({
       <div className="flex items-center gap-2">
         {pending ? <span className="text-xs text-muted-foreground">{pending}</span> : null}
         {caseFiles !== null && !hasContent && blockers.length === 0 ? (
-          <span className="text-xs text-muted-foreground">The case needs at least one readable file to start.</span>
+          <span className="text-xs text-muted-foreground">The part needs at least one readable file to start.</span>
         ) : null}
         <Button type="submit" className="ml-auto" disabled={!canStart}>
-          {pending ? "Working…" : "Find requirements"}
+          {pending ? "Working…" : "Draft requirements"}
         </Button>
       </div>
       {error ? (

@@ -99,7 +99,7 @@ async function Regulation({ params, searchParams }: PageProps<"/regulations/[id]
             { label: regulation.code },
           ]}
         />
-        <h1 className="text-lg font-semibold">
+        <h1 className="page-title">
           {regulation.code}
           {regulation.title ? <span className="font-normal text-muted-foreground"> · {regulation.title}</span> : null}
         </h1>
@@ -134,7 +134,7 @@ async function Regulation({ params, searchParams }: PageProps<"/regulations/[id]
                 ? "Not split into paragraphs yet."
                 : `${version.paragraph_count} paragraphs.`}{" "}
             {pdfLink ? (
-              <a href={pdfLink} target="_blank" rel="noreferrer" className="text-primary underline-offset-4 hover:underline">
+              <a href={pdfLink} target="_blank" rel="noreferrer" className="text-tint underline-offset-4 hover:underline">
                 Open the PDF
               </a>
             ) : null}
@@ -166,7 +166,7 @@ async function Regulation({ params, searchParams }: PageProps<"/regulations/[id]
                   The first {SHOWN} {q ? "matches" : "paragraphs"}. Search to narrow them.
                 </p>
               ) : null}
-              <ol className="divide-y rounded-md border bg-card">
+              <ol className="divide-y overflow-hidden rounded-xl border bg-card">
                 {paragraphs.map((p) => (
                   <li key={p.id} className="grid gap-1 px-3 py-2">
                     <p className="flex flex-wrap items-baseline gap-x-2 text-sm">
@@ -205,7 +205,7 @@ function Missing() {
   return (
     <p className="text-muted-foreground">
       This regulation is not in the library of an organisation you are in.{" "}
-      <Link href="/regulations" className="text-primary underline-offset-4 hover:underline">
+      <Link href="/regulations" className="text-tint underline-offset-4 hover:underline">
         The library
       </Link>
     </p>

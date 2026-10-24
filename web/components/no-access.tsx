@@ -10,11 +10,11 @@ export function NoAccess({ failed }: { failed: boolean }) {
   }
   return (
     <div className="grid max-w-prose gap-2">
-      <h1 className="text-base font-semibold">No access yet</h1>
+      <h1 className="page-title">No access yet</h1>
       <p>
         You are signed in, but you do not belong to any organisation, or your membership is
         suspended.{" "}
-        <a href="/welcome" className="text-primary underline-offset-4 hover:underline">
+        <a href="/welcome" className="text-tint underline-offset-4 hover:underline">
           Ask to join one
         </a>
         , or ask an admin of yours to add you in Settings, People.

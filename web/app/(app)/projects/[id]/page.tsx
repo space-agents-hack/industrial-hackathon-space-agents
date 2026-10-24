@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ChevronRight, Package } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 
@@ -91,43 +92,49 @@ async function Project({ params }: Pick<PageProps<"/projects/[id]">, "params">) 
           id={project.id}
           name={project.name}
           canEdit={canEdit}
-          deleteWarning={`Its ${cases.length} cases${subgoalCount > 0 ? ` and ${subgoalCount} sub-goal ${subgoalCount === 1 ? "case" : "cases"}` : ""}, their files and what was read from them are deleted. Runs stay, without their case.`}
+          deleteWarning={`Its ${cases.length} ${cases.length === 1 ? "part" : "parts"}${subgoalCount > 0 ? ` and ${subgoalCount} ${subgoalCount === 1 ? "review" : "reviews"}` : ""}, their files and what was read from them are deleted. Drafts stay, without their part.`}
           afterDelete="/projects"
         />
       </div>
 
       <section className="grid gap-2" aria-labelledby="cases-heading">
-        <h2 id="cases-heading" className="text-base font-semibold">
-          Cases
+        <h2 id="cases-heading" className="text-lg font-semibold tracking-tight">
+          Parts
         </h2>
         {canEdit ? (
           <NewNamedForm
             kind="case"
             organizationId={project.organization_id}
             projectId={project.id}
-            placeholder="e.g. Housing, revision B"
+            placeholder="e.g. Rear lamp housing, revision B"
           />
         ) : null}
         {cases.length === 0 ? (
-          <p className="rounded-md border border-dashed px-3 py-4 text-center text-muted-foreground">
-            No cases yet.{canEdit ? " A case is one product's documents: create one, then add its files." : ""}
+          <p className="rounded-xl border border-dashed px-3 py-4 text-center text-muted-foreground">
+            No parts yet.{canEdit ? " A part is one product's documents: create one, then add its files." : ""}
           </p>
         ) : (
-          <ul className="divide-y rounded-md border bg-card">
+          <ul className="divide-y overflow-hidden rounded-xl border bg-card">
             {cases.map((c) => {
               const failedFiles = c.case_files.filter((f) => f.status === "failed").length;
               return (
                 <li key={c.id}>
                   <Link
                     href={`/projects/${project.id}/cases/${c.id}`}
-                    className="grid gap-0.5 px-3 py-2 outline-none hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:grid-cols-[1fr_auto] sm:items-baseline sm:gap-3"
+                    className="flex items-center gap-3 px-4 py-3 outline-none hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                   >
-                    <span className="font-medium">{c.name}</span>
-                    <span className="text-sm text-muted-foreground">
-                      {c.case_files.length} {c.case_files.length === 1 ? "file" : "files"}
-                      {failedFiles > 0 ? <span className="text-danger"> ({failedFiles} not read)</span> : null} ·
-                      created <RelativeTime iso={c.created_at} />
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
+                      <Package aria-hidden className="size-4.5" strokeWidth={1.75} />
                     </span>
+                    <span className="grid min-w-0 flex-1 gap-0.5">
+                      <span className="truncate font-medium">{c.name}</span>
+                      <span className="text-[0.8125rem] text-muted-foreground">
+                        {c.case_files.length} {c.case_files.length === 1 ? "file" : "files"}
+                        {failedFiles > 0 ? <span className="text-danger"> ({failedFiles} not read)</span> : null} ·
+                        created <RelativeTime iso={c.created_at} />
+                      </span>
+                    </span>
+                    <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                   </Link>
                 </li>
               );
@@ -137,13 +144,13 @@ async function Project({ params }: Pick<PageProps<"/projects/[id]">, "params">) 
       </section>
 
       <section className="grid gap-2" aria-labelledby="regulations-heading">
-        <h2 id="regulations-heading" className="text-base font-semibold">
+        <h2 id="regulations-heading" className="text-lg font-semibold tracking-tight">
           Regulations
         </h2>
         {regulations.length === 0 ? (
-          <p className="rounded-md border border-dashed px-3 py-4 text-center text-muted-foreground">
+          <p className="rounded-xl border border-dashed px-3 py-4 text-center text-muted-foreground">
             The library of this organisation is empty. An admin imports an index file on the{" "}
-            <Link href="/regulations" className="text-primary underline-offset-4 hover:underline">
+            <Link href="/regulations" className="text-tint underline-offset-4 hover:underline">
               Regulations
             </Link>{" "}
             page.
@@ -163,18 +170,18 @@ async function Project({ params }: Pick<PageProps<"/projects/[id]">, "params">) 
           <Link href="/regulations" className="underline-offset-4 hover:underline">
             Regulations
           </Link>{" "}
-          page (admins). The regulation search keeps to this choice for every case of the project; runs use it
+          page (admins). The regulation search keeps to this choice for every part of the project; drafts use it
           once the requirement writer is built (issue #4).
         </p>
       </section>
 
       <section className="grid gap-2" aria-labelledby="runs-heading">
-        <h2 id="runs-heading" className="text-base font-semibold">
-          Runs
+        <h2 id="runs-heading" className="text-lg font-semibold tracking-tight">
+          Draft requirements
         </h2>
         <RunRows
           runs={(runs.data ?? []).map((r) => ({ ...summarizeRun(r), where: caseName.get(r.case_id ?? "") }))}
-          empty="No runs on this project's cases yet."
+          empty="No drafts on this project's parts yet."
         />
       </section>
     </>
@@ -185,7 +192,7 @@ function Missing() {
   return (
     <p className="text-muted-foreground">
       This project does not exist, or it belongs to an organisation you are not in.{" "}
-      <Link href="/projects" className="text-primary underline-offset-4 hover:underline">
+      <Link href="/projects" className="text-tint underline-offset-4 hover:underline">
         All projects
       </Link>
     </p>

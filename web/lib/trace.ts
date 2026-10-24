@@ -666,7 +666,7 @@ export function describeActivity(rows: readonly RunEventRow[]): string {
       case "error":
         return `Error: ${truncate(event.payload.message, 140)}`;
       case "status":
-        if (event.payload.status === "running") return "Started: reading the case…";
+        if (event.payload.status === "running") return "Started: reading the part…";
         break;
       case "unknown":
         break;

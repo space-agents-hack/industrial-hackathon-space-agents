@@ -69,10 +69,10 @@ export function AccessRequestForms({
     <div className="grid gap-5">
       {pending.length > 0 ? (
         <section className="grid gap-2" aria-labelledby="pending-heading">
-          <h2 id="pending-heading" className="text-sm font-semibold">
+          <h2 id="pending-heading" className="text-base font-semibold">
             Waiting for approval
           </h2>
-          <ul className="divide-y rounded-md border bg-card">
+          <ul className="divide-y overflow-hidden rounded-xl border bg-card">
             {pending.map((r) => (
               <li key={r.id} className="flex flex-wrap items-baseline gap-2 px-3 py-2">
                 <span>
@@ -114,7 +114,7 @@ export function AccessRequestForms({
       ) : null}
 
       <section className="grid gap-2" aria-labelledby="join-heading">
-        <h2 id="join-heading" className="text-sm font-semibold">
+        <h2 id="join-heading" className="text-base font-semibold">
           Join your organisation
         </h2>
         {organizations.length === 0 ? (
@@ -151,7 +151,7 @@ export function AccessRequestForms({
       </section>
 
       <section className="grid gap-2" aria-labelledby="create-heading">
-        <h2 id="create-heading" className="text-sm font-semibold">
+        <h2 id="create-heading" className="text-base font-semibold">
           Or start a new organisation
         </h2>
         <form

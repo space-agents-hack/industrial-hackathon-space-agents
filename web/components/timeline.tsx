@@ -2,6 +2,7 @@ import { JsonBlock } from "@/components/json-block";
 import { ToneBadge } from "@/components/status-badge";
 import {
   type EventStep,
+  type Tone,
   type TimelineItem,
   type ToolStep,
   formatElapsed,
@@ -12,6 +13,7 @@ import {
   summarizeEvent,
   toolStepStatus,
 } from "@/lib/trace";
+import { cn } from "@/lib/utils";
 
 export function Timeline({
   items,
@@ -23,19 +25,30 @@ export function Timeline({
   runFinished: boolean;
 }) {
   return (
-    <ol className="divide-y rounded-md border bg-card">
-      {items.map((item) => {
+    <ol className="rounded-xl border bg-card px-2 py-1">
+      {items.map((item, index) => {
         const at = item.type === "tool" ? item.startedAt : item.event.createdAt;
+        const last = index === items.length - 1;
         return (
-          <li key={item.key} className="grid gap-x-3 gap-y-1 px-3 py-2 sm:grid-cols-[4.5rem_1fr]">
+          <li key={item.key} className="grid grid-cols-[3.75rem_0.75rem_minmax(0,1fr)] gap-x-3 px-2 sm:grid-cols-[4.5rem_0.75rem_minmax(0,1fr)]">
             <time
               dateTime={at}
               title={formatUtc(at)}
-              className="pt-0.5 font-mono text-xs text-muted-foreground tabular-nums"
+              className="pt-3 text-right font-mono text-xs text-muted-foreground tabular-nums"
             >
               {formatElapsed(startedAt, at)}
             </time>
-            <div className="min-w-0">
+            {/* The rail: one dot per step in the colour of its outcome, joined by a line, so the
+                order and the one step that failed or waits for a person are seen before reading. */}
+            <div aria-hidden className="relative flex justify-center">
+              {items.length > 1 ? (
+                <span
+                  className={cn("absolute w-px bg-border", index === 0 ? "top-4" : "top-0", last ? "h-4" : "bottom-0")}
+                />
+              ) : null}
+              <span className={`relative mt-[0.95rem] size-2.5 rounded-full ring-4 ring-card ${DOT[dotTone(item, runFinished)]}`} />
+            </div>
+            <div className="min-w-0 py-2.5">
               {item.type === "tool" ? (
                 <ToolRow step={item} startedAt={startedAt} runFinished={runFinished} />
               ) : (
@@ -47,6 +60,23 @@ export function Timeline({
       })}
     </ol>
   );
+}
+
+const DOT: Record<Tone, string> = {
+  neutral: "bg-muted-foreground/50",
+  blue: "bg-progress",
+  amber: "bg-attention-border",
+  green: "bg-success-border",
+  red: "bg-danger",
+};
+
+function dotTone(item: TimelineItem, runFinished: boolean): Tone {
+  if (item.type === "tool") return toolStepStatus(item, runFinished).tone;
+  const { event } = item;
+  if (event.kind === "status") return statusTone(event.payload.status);
+  if (event.kind === "error") return "red";
+  if (event.kind === "text" && event.payload.warning) return "amber";
+  return "neutral";
 }
 
 function ToolRow({

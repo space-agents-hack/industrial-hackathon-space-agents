@@ -567,7 +567,7 @@ test("describeActivity names the step in progress, newest first", async () => {
   const { describeActivity } = await import("./trace.ts");
   const row = (id: number, kind: string, payload: unknown) => ({ id, run_id: "r", created_at: "2026-10-24T18:00:00Z", kind, payload });
   assert.equal(describeActivity([]), "Waiting for the agent to pick it up…");
-  assert.equal(describeActivity([row(1, "status", { status: "running" })]), "Started: reading the case…");
+  assert.equal(describeActivity([row(1, "status", { status: "running" })]), "Started: reading the part…");
   const call = row(2, "tool_call", { tool_call_id: "c1", tool_name: "write_requirements", args: {} });
   assert.equal(describeActivity([row(1, "status", { status: "running" }), call]), "Running write_requirements…");
   const result = row(3, "tool_result", { tool_call_id: "c1", tool_name: "write_requirements", result: 1 });

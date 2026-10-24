@@ -21,7 +21,7 @@ export type Readiness = {
 
 export function runBlockers(r: Readiness): string[] {
   const blockers: string[] = [];
-  if (r.files === 0) blockers.push("The case has no files yet: add at least one.");
+  if (r.files === 0) blockers.push("The part has no files yet: add at least one.");
   // A sub-goal run compares the case's own two versions of the regulation (#42) and cites nothing
   // from the library, so an empty library or a project without regulations must not stop it.
   if (r.kind === "subgoal") return blockers;

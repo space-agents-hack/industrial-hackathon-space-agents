@@ -53,7 +53,7 @@ export function CheckFileForm({ organizationId }: { organizationId: string | nul
   return (
     <div className="grid gap-4">
       <form
-        className="grid gap-3 rounded-md border bg-card p-3"
+        className="grid gap-3 rounded-xl border bg-card p-4"
         onSubmit={(event) => {
           event.preventDefault();
           if (!text.trim()) return;
@@ -63,7 +63,7 @@ export function CheckFileForm({ organizationId }: { organizationId: string | nul
         }}
       >
         <div className="grid gap-1">
-          <h2 className="text-sm font-semibold">Check a submission file</h2>
+          <h2 className="text-base font-semibold">Check a submission file</h2>
           <p className="text-xs text-muted-foreground">
             Runs Certivity&apos;s validate.py on a main-goal or sub-goal file, the same check the
             platform runs on upload. For the worked examples it also scores the file: dev-rear-lamp with

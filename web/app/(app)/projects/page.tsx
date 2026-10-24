@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import { ChevronRight, FolderOpen } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { NoAccess } from "@/components/no-access";
+import { PageHeader } from "@/components/page-header";
 import { NewNamedForm } from "@/components/projects/new-named-form";
 import { RelativeTime } from "@/components/relative-time";
 import { hasNoAccess } from "@/lib/access";
@@ -11,7 +13,7 @@ import { getCurrentOrg } from "@/lib/current-org";
 import { ofKind } from "@/lib/subgoal";
 import { createClient } from "@/lib/supabase/server";
 
-export const metadata: Metadata = { title: "Choose a project" };
+export const metadata: Metadata = { title: "Projects" };
 
 // The project picker, where every sign-in lands (SYS-36). The organisation's projects (ADR-0006:
 // organisation → projects → cases → requirements); every member sees every project, there are no
@@ -56,25 +58,27 @@ async function Projects() {
 
   return (
     <>
-      <div className="grid gap-1">
-        <h1 className="text-lg font-semibold">Choose a project</h1>
-        <p className="text-muted-foreground">
-          You work inside one project at a time: its cases, its runs and the regulations it uses. A project groups
-          the cases of one product, for example one part of a car. Everyone in {current.name} sees every project.
-        </p>
-      </div>
+      <PageHeader
+        title="Projects"
+        description={
+          <>
+            A project groups related parts, for example the lamps of one car model, and the regulations they are
+            checked against. Everyone in {current.name} sees every project.
+          </>
+        }
+      />
       {permissions.startRuns ? (
         <NewNamedForm kind="project" organizationId={current.id} placeholder="e.g. Rear lamp, model X" />
       ) : null}
       {data.length === 0 ? (
-        <p className="rounded-md border border-dashed px-3 py-6 text-center text-muted-foreground">
+        <p className="rounded-xl border border-dashed px-3 py-6 text-center text-muted-foreground">
           No projects yet.
           {permissions.startRuns
             ? " Create the first one above."
             : " A member or admin of the organisation creates the first one; a viewer cannot."}
         </p>
       ) : (
-        <ul className="divide-y rounded-md border bg-card">
+        <ul className="divide-y overflow-hidden rounded-xl border bg-card">
           {data.map((project) => {
             // The main goal's cases: a project's sub-goal cases are on Changes, not counted here.
             const cases = ofKind(project.cases, "main");
@@ -88,13 +92,19 @@ async function Projects() {
                     hover. */}
                 <a
                   href={`/projects/${project.id}/open`}
-                  className="grid gap-0.5 px-3 py-2 outline-none hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:grid-cols-[1fr_auto] sm:items-baseline sm:gap-3"
+                  className="flex items-center gap-3 px-4 py-3 outline-none hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                 >
-                  <span className="font-medium">{project.name}</span>
-                  <span className="text-sm text-muted-foreground">
-                    {cases.length} {cases.length === 1 ? "case" : "cases"} · {regulations} ·{" "}
-                    <RelativeTime iso={latest} />
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
+                    <FolderOpen aria-hidden className="size-4.5" strokeWidth={1.75} />
                   </span>
+                  <span className="grid min-w-0 flex-1 gap-0.5">
+                    <span className="truncate font-medium">{project.name}</span>
+                    <span className="text-[0.8125rem] text-muted-foreground">
+                      {cases.length} {cases.length === 1 ? "part" : "parts"} · {regulations} ·{" "}
+                      <RelativeTime iso={latest} />
+                    </span>
+                  </span>
+                  <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                 </a>
               </li>
             );
@@ -103,7 +113,7 @@ async function Projects() {
       )}
       <p className="text-sm text-muted-foreground">
         Working for another organisation too?{" "}
-        <Link href="/welcome" className="text-primary underline-offset-4 hover:underline">
+        <Link href="/welcome" className="text-tint underline-offset-4 hover:underline">
           Ask to join it
         </Link>
         .

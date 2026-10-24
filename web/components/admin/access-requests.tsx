@@ -22,7 +22,7 @@ export function AccessRequests({ kind, requests }: { kind: "join" | "create"; re
     );
   }
   return (
-    <ul className="divide-y rounded-md border bg-card">
+    <ul className="divide-y overflow-hidden rounded-xl border bg-card">
       {requests.map((r) => (
         <Row key={r.id} kind={kind} request={r} />
       ))}

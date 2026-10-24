@@ -12,7 +12,7 @@ import { getCurrentOrg } from "@/lib/current-org";
 export default function AdminLayout({ children }: LayoutProps<"/admin">) {
   return (
     <div className="grid gap-4">
-      <Suspense fallback={<h1 className="h-14 text-base font-semibold">Settings</h1>}>
+      <Suspense fallback={<h1 className="h-14 page-title">Settings</h1>}>
         <Header />
       </Suspense>
       {children}
@@ -22,10 +22,10 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
 
 async function Header() {
   const { access, current } = await getCurrentOrg();
-  if (!showsAdmin(access, current)) return <h1 className="text-base font-semibold">Settings</h1>;
+  if (!showsAdmin(access, current)) return <h1 className="page-title">Settings</h1>;
   return (
     <div className="grid gap-2">
-      <h1 className="text-base font-semibold">
+      <h1 className="page-title">
         Settings{current ? <span className="font-normal text-muted-foreground"> · {current.name}</span> : null}
       </h1>
       <AdminTabs platformAdmin={access.platformAdmin} />

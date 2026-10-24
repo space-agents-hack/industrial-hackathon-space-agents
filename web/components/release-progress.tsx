@@ -189,7 +189,7 @@ function SelectedRelease({ release, now }: { release: Release; now: number }) {
   const errors = release.jobs.flatMap((job) => job.errors);
 
   return (
-    <div className="grid gap-3 rounded-md border bg-card p-3">
+    <div className="grid gap-3 rounded-xl border bg-card p-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <ToneBadge tone={meta.tone} pulse={release.outcome === "running"}>
           {meta.label}
@@ -200,7 +200,7 @@ function SelectedRelease({ release, now }: { release: Release; now: number }) {
           {release.actor ? `${release.actor}, ` : ""}
           <RelativeTime iso={release.createdAt} />
         </span>
-        <a href={release.url} target="_blank" rel="noreferrer" className="text-xs text-primary underline underline-offset-2">
+        <a href={release.url} target="_blank" rel="noreferrer" className="text-xs text-tint underline underline-offset-2">
           View on GitHub
         </a>
       </div>
@@ -248,7 +248,7 @@ function JobRow({ job, now }: { job: ReleaseJob; now: number }) {
             href={job.url}
             target="_blank"
             rel="noreferrer"
-            className="ml-auto text-xs text-primary underline underline-offset-2"
+            className="ml-auto text-xs text-tint underline underline-offset-2"
           >
             Log
           </a>

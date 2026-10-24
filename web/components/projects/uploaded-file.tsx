@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/client";
 // Headings, lists and tables of a rendered .md file. Written here rather than with a typography
 // plugin: it is the only markdown the app shows.
 const MARKDOWN =
-  "grid gap-2 text-sm [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:font-mono [&_code]:text-xs [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:font-semibold [&_h4]:font-medium [&_hr]:border-border [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-muted [&_pre]:p-2 [&_table]:w-full [&_table]:border-collapse [&_table]:text-xs [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_td]:align-top [&_th]:border [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_ul]:list-disc [&_ul]:pl-5";
+  "grid gap-2 text-sm [&_a]:text-tint [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:font-mono [&_code]:text-xs [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:font-semibold [&_h4]:font-medium [&_hr]:border-border [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-muted [&_pre]:p-2 [&_table]:w-full [&_table]:border-collapse [&_table]:text-xs [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_td]:align-top [&_th]:border [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_ul]:list-disc [&_ul]:pl-5";
 
 const CANNOT_SHOW: Record<string, string> = {
   docx: "a Word document",
@@ -74,7 +74,7 @@ export function UploadedFile({ file }: { file: Pick<CaseFileView, "filename" | "
   if (state.kind === "error") return <p className="text-sm text-danger">{state.message}</p>;
 
   const download = (
-    <a href={state.url} download={file.filename} className="text-xs text-primary underline-offset-4 hover:underline">
+    <a href={state.url} download={file.filename} className="text-xs text-tint underline-offset-4 hover:underline">
       Download {file.filename}
     </a>
   );

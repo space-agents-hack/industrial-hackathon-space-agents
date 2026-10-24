@@ -29,10 +29,10 @@ export type Tab = { href: string; label: string; matches: (path: string) => bool
 export function projectTabs(projectId: string): Tab[] {
   const home = `/projects/${projectId}`;
   return [
-    { href: home, label: "Cases", matches: (path) => path === home || path.startsWith(`${home}/cases`) },
-    { href: "/runs", label: "Runs", matches: (path) => path === "/runs" || path.startsWith("/runs/") },
+    { href: home, label: "Parts", matches: (path) => path === home || path.startsWith(`${home}/cases`) },
+    { href: "/runs", label: "Draft requirements", matches: (path) => path === "/runs" || path.startsWith("/runs/") },
     { href: "/regulations", label: "Regulations", matches: (path) => path.startsWith("/regulations") },
-    { href: "/changes", label: "Changes", matches: (path) => path.startsWith("/changes") },
+    { href: "/changes", label: "Review requirements", matches: (path) => path.startsWith("/changes") },
     { href: "/checks", label: "Checks", matches: (path) => path.startsWith("/checks") },
   ];
 }

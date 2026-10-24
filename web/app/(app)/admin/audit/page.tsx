@@ -49,11 +49,11 @@ async function Audit() {
   return (
     <div className="grid gap-2">
       {events.data.length === 0 ? (
-        <p className="rounded-md border border-dashed px-3 py-6 text-center text-muted-foreground">
+        <p className="rounded-xl border border-dashed px-3 py-6 text-center text-muted-foreground">
           Nothing has been changed yet.
         </p>
       ) : (
-        <ul className="divide-y rounded-md border bg-card">
+        <ul className="divide-y overflow-hidden rounded-xl border bg-card">
           {events.data.map((event) => (
             <li
               key={event.id}

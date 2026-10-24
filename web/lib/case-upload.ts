@@ -58,7 +58,7 @@ export async function uploadCaseFiles(
   }
   if (rows.length === 0) return;
   const { error } = await supabase.from("case_files").insert(rows);
-  if (error) throw new Error(`The files were uploaded but not added to the case: ${error.message}`);
+  if (error) throw new Error(`The files were uploaded but not added to the part: ${error.message}`);
 }
 
 // Asks the agent to parse what is pending, then waits until every file is parsed or failed.
@@ -131,7 +131,7 @@ async function objectsOf(supabase: Client, fileIds: string[]): Promise<string[]>
 async function removeObjects(supabase: Client, paths: string[]): Promise<string | null> {
   for (let i = 0; i < paths.length; i += 100) {
     const { error } = await supabase.storage.from(CASE_FILES_BUCKET).remove(paths.slice(i, i + 100));
-    if (error) return `Removed from the case, but some stored copies were not deleted: ${error.message}`;
+    if (error) return `Removed from the part, but some stored copies were not deleted: ${error.message}`;
   }
   return null;
 }
@@ -156,8 +156,8 @@ async function fileIdsOf(supabase: Client, column: "case_id" | "project_id", id:
 export async function deleteCase(supabase: Client, caseId: string): Promise<string | null> {
   const paths = await objectsOf(supabase, await fileIdsOf(supabase, "case_id", caseId));
   const { error, count } = await supabase.from("cases").delete({ count: "exact" }).eq("id", caseId);
-  if (error) throw new Error(`The case could not be deleted: ${error.message}`);
-  if (count === 0) throw new Error("The case could not be deleted: it needs the member role in this organisation.");
+  if (error) throw new Error(`The part could not be deleted: ${error.message}`);
+  if (count === 0) throw new Error("The part could not be deleted: it needs the member role in this organisation.");
   return removeObjects(supabase, paths);
 }
 

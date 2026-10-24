@@ -3,8 +3,11 @@
 import { useRouter } from "next/navigation";
 import { type DragEvent, useEffect, useState } from "react";
 
+import { FileText } from "lucide-react";
+
 import { FilePickerButton } from "@/components/file-picker-button";
 import { UploadedFile } from "@/components/projects/uploaded-file";
+import { ToneBadge } from "@/components/status-badge";
 import { runBlockers } from "@/lib/run-readiness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -137,7 +140,7 @@ export function CaseWorkspace({
       : {};
 
   async function remove(file: CaseFileView) {
-    if (!window.confirm(`Remove ${file.filename} from this case? What was read from it goes too.`)) return;
+    if (!window.confirm(`Remove ${file.filename} from this part? What was read from it goes too.`)) return;
     setError(null);
     setPending(`Removing ${file.filename}…`);
     try {
@@ -180,11 +183,11 @@ export function CaseWorkspace({
         aria-labelledby="files-heading"
         {...dropProps}
       >
-        <h2 id="files-heading" className="text-base font-semibold">
+        <h2 id="files-heading" className="text-lg font-semibold tracking-tight">
           Files
         </h2>
         {files.length === 0 ? (
-          <p className="rounded-md border border-dashed px-3 py-4 text-center text-muted-foreground">
+          <p className="rounded-xl border border-dashed px-3 py-4 text-center text-muted-foreground">
             No files yet.
             {canEdit
               ? subgoal
@@ -193,17 +196,16 @@ export function CaseWorkspace({
               : ""}
           </p>
         ) : (
-          <ul className="divide-y rounded-md border bg-card">
+          <ul className="divide-y overflow-hidden rounded-xl border bg-card">
             {files.map((f) => (
-              <li key={f.id} className="grid gap-1 px-3 py-2">
+              <li key={f.id} className="grid gap-1 px-4 py-3">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span className="min-w-0 flex-1 truncate font-mono text-sm" title={f.filename}>
+                  <FileText aria-hidden className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
+                  <span className="min-w-0 flex-1 truncate font-medium" title={f.filename}>
                     {f.filename}
                   </span>
-                  <span className="text-xs text-muted-foreground">{describeSize(f.bytes)}</span>
-                  <span className={`text-sm ${f.status === "failed" ? "text-danger" : "text-muted-foreground"}`}>
-                    {f.status}
-                  </span>
+                  <span className="text-xs text-muted-foreground tabular-nums">{describeSize(f.bytes)}</span>
+                  <FileStatus status={f.status} />
                   {(["file", "read"] as const).map((show) => {
                     const shown = open?.id === f.id && open.show === show;
                     return (
@@ -281,9 +283,9 @@ export function CaseWorkspace({
       </section>
 
       {canEdit ? (
-        <section className="grid gap-2 rounded-md border bg-card p-3" aria-labelledby="run-heading">
-          <h2 id="run-heading" className="text-base font-semibold">
-            {subgoal ? "Find changes" : "Find requirements"}
+        <section className="grid gap-2 rounded-xl border bg-card p-4" aria-labelledby="run-heading">
+          <h2 id="run-heading" className="text-lg font-semibold tracking-tight">
+            {subgoal ? "Review requirements" : "Draft requirements"}
           </h2>
           {subgoal ? (
             <p className="text-sm text-muted-foreground">
@@ -300,7 +302,7 @@ export function CaseWorkspace({
               rows={3}
               maxLength={TASK_MAX_LENGTH}
               placeholder="Anything the files do not say."
-              className="max-h-80 font-mono text-xs"
+              className="max-h-80"
               value={notes}
               disabled={busy}
               onChange={(event) => setNotes(event.target.value)}
@@ -320,14 +322,14 @@ export function CaseWorkspace({
             />
             <p className={`text-xs ${modelOk ? "text-muted-foreground" : "text-danger"}`}>
               {modelOk
-                ? `Empty uses ${writerModel}. Another one, as provider:model, is for comparing models on the same case; the organisation needs a key for its provider.`
+                ? `Empty uses ${writerModel}. Another one, as provider:model, is for comparing models on the same part; the organisation needs a key for its provider.`
                 : 'Write it as provider:model, for example "anthropic:claude-sonnet-5-5".'}
             </p>
           </div>
           <div className="flex items-center gap-2">
             {pending ? <span className="text-sm text-muted-foreground">{pending}</span> : null}
             <Button className="ml-auto" disabled={!canRun} onClick={() => void run()}>
-              {pending ? "Working…" : subgoal ? "Find changes" : "Find requirements"}
+              {pending ? "Working…" : subgoal ? "Review requirements" : "Draft requirements"}
             </Button>
           </div>
           {blockers.map((b) => (
@@ -336,12 +338,12 @@ export function CaseWorkspace({
             </p>
           ))}
           {!readable && files.length > 0 && !unsettled ? (
-            <p className="text-sm text-danger">No file of this case could be read. See the reasons above.</p>
+            <p className="text-sm text-danger">No file of this part could be read. See the reasons above.</p>
           ) : null}
         </section>
       ) : (
         <p className="rounded-md border bg-card px-3 py-2 text-muted-foreground">
-          You can read this case. Adding files and {subgoal ? "finding changes" : "finding requirements"} needs the member
+          You can read this {subgoal ? "review" : "part"}. Adding files and {subgoal ? "reviewing requirements" : "drafting requirements"} needs the member
           role.
         </p>
       )}
@@ -359,6 +361,15 @@ export function CaseWorkspace({
       ) : null}
     </div>
   );
+}
+
+// The parse status in words and in the status colours the runs use: read is done, failed needs
+// the person, pending and parsing are the agent at work.
+function FileStatus({ status }: { status: string }) {
+  if (status === "parsed") return <ToneBadge tone="green">Read</ToneBadge>;
+  if (status === "failed") return <ToneBadge tone="red">Not read</ToneBadge>;
+  if (status === "parsing") return <ToneBadge tone="blue" pulse>Reading</ToneBadge>;
+  return <ToneBadge tone="neutral">Waiting</ToneBadge>;
 }
 
 // What was read from one file, page by page. Images are shown through a short-lived signed link,

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Suspense } from "react";
 
 import { NoAccess } from "@/components/no-access";
+import { PageHeader } from "@/components/page-header";
+import { Breadcrumb } from "@/components/projects/breadcrumb";
 import { RunTrace } from "@/components/run-trace";
 import { hasNoAccess, permissionsIn } from "@/lib/access";
 import { getAccess } from "@/lib/current-org";
@@ -11,18 +12,11 @@ import { caseKind } from "@/lib/subgoal";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/validation";
 
-export const metadata: Metadata = { title: "Run" };
+export const metadata: Metadata = { title: "Draft" };
 
 export default function RunPage({ params, searchParams }: PageProps<"/runs/[id]">) {
   return (
-    <div className="grid gap-3">
-      <h1 className="sr-only">Run</h1>
-      <Link
-        href="/"
-        className="-ml-1 inline-flex h-7 w-fit items-center rounded-md px-1 text-xs text-muted-foreground hover:text-foreground"
-      >
-        ← All runs
-      </Link>
+    <div className="grid gap-5">
       {/* The run id and the session are only known at request time, so everything that depends
           on them streams in behind this boundary. */}
       <Suspense fallback={<p className="text-muted-foreground">Loading run…</p>}>
@@ -54,30 +48,24 @@ async function Run({ params, searchParams }: PageProps<"/runs/[id]">) {
 
   return (
     <>
-      {onCase ? (
-        <p className="text-sm text-muted-foreground">
-          On case{" "}
-          <Link href={`/projects/${onCase.project_id}`} className="hover:text-foreground hover:underline">
-            {onCase.projects?.name ?? "Project"}
-          </Link>{" "}
-          ›{" "}
-          {/* A sub-goal case is listed on Changes, not under the project's Cases (#42). */}
-          {caseKind(onCase.kind) === "subgoal" ? (
-            <>
-              <Link href="/changes" className="hover:text-foreground hover:underline">
-                Changes
-              </Link>{" "}
-              ›{" "}
-            </>
-          ) : null}
-          <Link
-            href={`/projects/${onCase.project_id}/cases/${onCase.id}`}
-            className="text-foreground underline-offset-4 hover:underline"
-          >
-            {onCase.name}
-          </Link>
-        </p>
-      ) : null}
+      <PageHeader
+        breadcrumb={
+          <Breadcrumb
+            items={
+              onCase
+                ? [
+                    { label: onCase.projects?.name ?? "Project", href: `/projects/${onCase.project_id}` },
+                    // A sub-goal case is listed on Changes, not under the project's Cases (#42).
+                    ...(caseKind(onCase.kind) === "subgoal" ? [{ label: "Review requirements", href: "/changes" }] : []),
+                    { label: onCase.name, href: `/projects/${onCase.project_id}/cases/${onCase.id}` },
+                    { label: "Draft" },
+                  ]
+                : [{ label: "Draft requirements", href: "/runs" }, { label: "Draft" }]
+            }
+          />
+        }
+        title={onCase ? (caseKind(onCase.kind) === "subgoal" ? `Review of ${onCase.name}` : `Draft for ${onCase.name}`) : "Draft"}
+      />
       <RunTrace
         key={run.id}
         initialRun={run}

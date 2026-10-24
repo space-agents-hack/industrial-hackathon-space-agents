@@ -10,6 +10,6 @@ test("a block says whether a parser or a model produced it", () => {
 });
 
 test("only a duplicate name gets the duplicate message", () => {
-  assert.equal(nameTakenMessage("23505", "case", "Housing"), 'A case called "Housing" already exists here.');
+  assert.equal(nameTakenMessage("23505", "case", "Housing"), 'A part called "Housing" already exists here.');
   assert.equal(nameTakenMessage("42501", "case", "Housing"), null);
 });

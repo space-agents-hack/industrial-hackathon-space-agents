@@ -27,7 +27,7 @@ export const SUBGOAL_ACCEPT = ".json,.pdf";
 export function subgoalRefusal(file: { name: string; size: number }): string | null {
   const format = formatOf(file.name);
   if (format !== "json" && format !== "pdf") {
-    return `${file.name}: a sub-goal case takes only .json and .pdf files (requirements_old.json, files.json, old.pdf, new.pdf).`;
+    return `${file.name}: a review takes only .json and .pdf files (requirements_old.json, files.json, old.pdf, new.pdf).`;
   }
   return refusal(file);
 }
@@ -50,7 +50,7 @@ export function isAnswerKey(text: string): boolean {
 }
 
 export function answerKeyMessage(filename: string): string {
-  return `${filename} is Certivity's answer key. It is not added to the case, so the run can never read it; the checks already have it from Certivity's package.`;
+  return `${filename} is Certivity's answer key. It is not added to the review, so the run can never read it; the checks already have it from Certivity's package.`;
 }
 
 // .DS_Store, ._old.pdf (macOS) and folders like .git come with a dropped folder and are never part

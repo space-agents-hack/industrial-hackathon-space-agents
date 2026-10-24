@@ -10,7 +10,7 @@ export function AdminNotice({ reason }: { reason: AdminRefusal }) {
     return (
       <p className="text-muted-foreground">
         There is no organisation yet.{" "}
-        <Link href="/admin/organizations" className="text-primary underline-offset-4 hover:underline">
+        <Link href="/admin/organizations" className="text-tint underline-offset-4 hover:underline">
           Create one in Organisations
         </Link>
         .

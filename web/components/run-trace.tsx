@@ -273,7 +273,7 @@ export function RunTrace({
             />
           </div>
           <div className="h-1.5 overflow-hidden rounded-sm bg-muted">
-            <div className="h-full w-full animate-pulse bg-primary/50" />
+            <div className="h-full w-full animate-pulse bg-tint/50" />
           </div>
           <span className="text-xs text-muted-foreground">
             {timeline.length} {timeline.length === 1 ? "step" : "steps"} so far. This page updates as the agent
@@ -351,7 +351,7 @@ export function RunTrace({
           </span>
         </h2>
         {timeline.length === 0 ? (
-          <p className="rounded-md border border-dashed px-3 py-5 text-center text-muted-foreground">
+          <p className="rounded-xl border border-dashed px-3 py-5 text-center text-muted-foreground">
             {finished ? "This run recorded no events." : "Nothing yet. Events appear here as the agent works."}
           </p>
         ) : (

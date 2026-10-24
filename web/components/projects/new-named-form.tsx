@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { nameTakenMessage } from "@/lib/cases";
+import { nameTakenMessage, nounOf } from "@/lib/cases";
 import { rememberProject } from "@/lib/project-actions";
 import type { CaseKind } from "@/lib/subgoal";
 import { createClient } from "@/lib/supabase/client";
@@ -47,7 +47,7 @@ export function NewNamedForm({
             .insert({ id, project_id: projectId!, organization_id: organizationId, name: trimmed, kind: caseKind });
     if (e) {
       setBusy(false);
-      setError(nameTakenMessage(e.code, kind, trimmed) ?? `The ${kind} could not be created: ${e.message}`);
+      setError(nameTakenMessage(e.code, kind, trimmed) ?? `The ${nounOf(kind)} could not be created: ${e.message}`);
       return;
     }
     // A new project becomes the one the person works in (SYS-36).
@@ -65,7 +65,7 @@ export function NewNamedForm({
     >
       <div className="flex gap-2">
         <Input
-          aria-label={caseKind === "subgoal" ? "New sub-goal case name" : `New ${kind} name`}
+          aria-label={caseKind === "subgoal" ? "New review name" : `New ${nounOf(kind)} name`}
           placeholder={placeholder}
           maxLength={200}
           value={name}
@@ -74,7 +74,7 @@ export function NewNamedForm({
           className="max-w-sm"
         />
         <Button type="submit" variant="outline" disabled={busy || name.trim() === ""}>
-          {kind === "project" ? "New project" : caseKind === "subgoal" ? "New sub-goal case" : "New case"}
+          {kind === "project" ? "New project" : caseKind === "subgoal" ? "New review" : "New part"}
         </Button>
       </div>
       {error ? (

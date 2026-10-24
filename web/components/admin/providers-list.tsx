@@ -34,7 +34,7 @@ export type Connection = {
 
 export function ProvidersList({ org, connections }: { org: string; connections: Connection[] }) {
   return (
-    <ul className="divide-y rounded-md border bg-card">
+    <ul className="divide-y overflow-hidden rounded-xl border bg-card">
       {PROVIDERS.map((provider) =>
         isEndpointProvider(provider.id) ? (
           <EndpointRow

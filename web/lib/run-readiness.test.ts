@@ -18,7 +18,7 @@ test("no file, empty library or no chosen regulation each stop the run, with the
 test("a sub-goal case needs a file but no regulation: it compares its own two versions", () => {
   assert.deepEqual(runBlockers({ files: 1, library: 0, allRegulations: false, chosen: 0, kind: "subgoal" }), []);
   assert.deepEqual(runBlockers({ files: 0, library: 0, allRegulations: false, chosen: 0, kind: "subgoal" }), [
-    "The case has no files yet: add at least one.",
+    "The part has no files yet: add at least one.",
   ]);
   // The main goal still needs the library.
   assert.equal(runBlockers({ files: 1, library: 0, allRegulations: true, chosen: 0, kind: "main" }).length, 1);

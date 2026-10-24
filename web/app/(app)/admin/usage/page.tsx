@@ -84,7 +84,7 @@ async function Usage({ searchParams }: { searchParams: PageProps<"/admin/usage">
         {cap === null ? (
           <>
             , and this organisation sets no cap of its own (the deployment default applies).{" "}
-            <Link href="/admin" className="text-primary underline-offset-4 hover:underline">
+            <Link href="/admin" className="text-tint underline-offset-4 hover:underline">
               Set one
             </Link>
             .
@@ -107,7 +107,7 @@ async function Usage({ searchParams }: { searchParams: PageProps<"/admin/usage">
               aria-current={r.id === range.id ? "page" : undefined}
               className={cn(
                 "rounded-md border px-2 py-0.5",
-                r.id === range.id ? "border-primary text-primary" : "text-muted-foreground hover:text-foreground",
+                r.id === range.id ? "border-tint text-tint" : "text-muted-foreground hover:text-foreground",
               )}
             >
               Last {r.label}
@@ -122,7 +122,7 @@ async function Usage({ searchParams }: { searchParams: PageProps<"/admin/usage">
               aria-current={m === metric ? "page" : undefined}
               className={cn(
                 "rounded-md border px-2 py-0.5",
-                m === metric ? "border-primary text-primary" : "text-muted-foreground hover:text-foreground",
+                m === metric ? "border-tint text-tint" : "text-muted-foreground hover:text-foreground",
               )}
             >
               {m === "cost" ? "Cost" : "Tokens"}
@@ -132,7 +132,7 @@ async function Usage({ searchParams }: { searchParams: PageProps<"/admin/usage">
       </nav>
 
       {lines.length === 0 ? (
-        <p className="rounded-md border border-dashed px-3 py-6 text-center text-muted-foreground">
+        <p className="rounded-xl border border-dashed px-3 py-6 text-center text-muted-foreground">
           No model or embedding calls in the last {range.label}.
         </p>
       ) : (
@@ -144,7 +144,7 @@ async function Usage({ searchParams }: { searchParams: PageProps<"/admin/usage">
             <Stat label="Requests" value={all.requests.toLocaleString("en-US")} />
           </dl>
 
-          <section className="grid gap-2 rounded-md border bg-card p-3">
+          <section className="grid gap-2 rounded-xl border bg-card p-4">
             <h2 className="text-sm font-medium">
               {metric === "cost" ? "Estimated cost" : "Tokens (input and output)"} per {range.bucket}
             </h2>
@@ -218,7 +218,7 @@ async function Usage({ searchParams }: { searchParams: PageProps<"/admin/usage">
       <div className="grid max-w-prose gap-1.5 text-xs text-muted-foreground">
         <p>
           Every model and embedding call the agent makes for this organisation: requirement runs and their
-          check agent, case transcription, regulation summaries and vectors, search queries and the run chat.
+          check agent, part transcription, regulation summaries and vectors, search queries and the run chat.
           Failed runs count too. Days and months are in UTC, the same as the monthly cap.
         </p>
         <p>

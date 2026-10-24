@@ -99,13 +99,13 @@ freeze.
 1. After the held-out release, run Actions > Deploy > Run workflow (or `make certivity-load` for a
    zip). Nothing in the run needs it: the Checks only use it to check requirement ids against
    Certivity's copy of `requirements_old.json`.
-2. In the project, open **Changes**, then **New sub-goal case**. Name it exactly as the case id
+2. In the project, open **Review requirements**, then **New review**. Name it exactly as the case id
    Certivity gives, which is `subgoal-heldout` per the brief. The name is the file's `case_id`.
-3. Drop the whole `subgoal/<folder>` folder onto the case's Files. `requirements_old.json` and
+3. Drop the whole `subgoal/<folder>` folder onto the review's Files. `requirements_old.json` and
    `files.json` are enough. Dropping `old.pdf` and `new.pdf` as well (after
    `fetch_regulations.py`) avoids depending on Certivity's links. An `expected.json`, if there is
    one, is held back and never reaches the run.
-4. **Find changes.** The trace shows each step:
+4. **Review requirements** (the button). The trace shows each step:
    - the requirements count;
    - each PDF fetched, with its checksum checked;
    - both versions' pages and printed version;

@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
+import { Plus } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 
 import { NoAccess } from "@/components/no-access";
+import { PageHeader } from "@/components/page-header";
 import { NoProject } from "@/components/projects/no-project";
 import { RelativeTime } from "@/components/relative-time";
+import { buttonVariants } from "@/components/ui/button";
 import { type ImportView, ImportPanel } from "@/components/regulations/import-panel";
 import { IndexPanel } from "@/components/regulations/index-panel";
 import { hasNoAccess } from "@/lib/access";
@@ -33,11 +36,32 @@ const LINK_SECONDS = 60 * 60;
 export default function RegulationsPage() {
   return (
     <div className="grid gap-4">
-      <h1 className="text-base font-semibold">Regulations</h1>
+      <PageHeader
+        title="Regulations"
+        description="What this project's parts are checked against: the organisation's library, or the part of it the project chose."
+        actions={
+          <Suspense fallback={null}>
+            <AddRegulations />
+          </Suspense>
+        }
+      />
       <Suspense fallback={<p className="text-muted-foreground">Loading the library…</p>}>
         <Regulations />
       </Suspense>
     </div>
+  );
+}
+
+// The page's main action, at the end of its title (Clemente, 2026-10-24: "Add regulations"). Only for
+// those who may import into the library; it jumps to the import, which is on this page.
+async function AddRegulations() {
+  const { permissions } = await getCurrentOrg();
+  if (!permissions.manage) return null;
+  return (
+    <a href="#import" className={buttonVariants({ size: "lg" })}>
+      <Plus aria-hidden />
+      Add regulations
+    </a>
   );
 }
 
@@ -136,36 +160,23 @@ async function Regulations() {
 
   return (
     <div className="grid gap-6">
-      {/* First, so an import's progress is in view right after uploading. Imports fill the
-          organisation's library, shared by all its projects. */}
-      {permissions.manage ? <Imports org={current.id} /> : null}
-      {data.length > 0 ? (
-        <IndexPanel
-          org={current.id}
-          index={index}
-          model={embeddingModel}
-          canManage={permissions.manage}
-          // An import added paragraphs the indexer has not seen yet, and is no longer adding more.
-          autoStart={!importActive && index.unkeyed > 0}
-        />
-      ) : null}
       <section className="grid gap-2">
-        <h2 className="text-sm font-semibold">Regulations of {project.name}</h2>
+        <h2 className="text-base font-semibold">Regulations of {project.name}</h2>
         <p className="text-sm text-muted-foreground">
           {all
             ? `All ${data.length} regulations in the library of ${current.name}, including any imported later.`
             : `${regulations.length} of the ${data.length} regulations in the library of ${current.name}.`}{" "}
-          <Link href={`/projects/${project.id}#regulations-heading`} className="text-primary underline-offset-4 hover:underline">
+          <Link href={`/projects/${project.id}#regulations-heading`} className="text-tint underline-offset-4 hover:underline">
             Change the choice
           </Link>
         </p>
         {data.length === 0 ? (
-          <p className="rounded-md border border-dashed px-3 py-6 text-center text-muted-foreground">
+          <p className="rounded-xl border border-dashed px-3 py-6 text-center text-muted-foreground">
             The library is empty.{" "}
-            {permissions.manage ? "Import an index file above." : "An admin of this organisation fills it from an index file."}
+            {permissions.manage ? "Import an index file below." : "An admin of this organisation fills it from an index file."}
           </p>
         ) : regulations.length === 0 ? (
-          <p className="rounded-md border border-dashed px-3 py-6 text-center text-danger">
+          <p className="rounded-xl border border-dashed px-3 py-6 text-center text-danger">
             This project has chosen no regulation, so a run on it has nothing to cite.
           </p>
         ) : (
@@ -174,7 +185,7 @@ async function Regulations() {
               {regulations.length} regulations, {paths.length} PDFs. Answers cite the version label and the page
               of these exact files. Open a regulation to read and search its paragraphs.
             </p>
-            <ul className="divide-y rounded-md border bg-card">
+            <ul className="divide-y overflow-hidden rounded-xl border bg-card">
               {regulations.map((regulation) => {
                 const versions: Version[] = regulation.regulation_versions
                   .map((v) => ({
@@ -190,7 +201,7 @@ async function Regulations() {
                   }))
                   .sort((a, b) => a.versionLabel.localeCompare(b.versionLabel, "en", { numeric: true }));
                 return (
-                  <li key={regulation.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-3 py-2">
+                  <li key={regulation.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3">
                     <span className="min-w-0 flex-1 basis-64">
                       <Link href={`/regulations/${regulation.id}`} className="font-medium underline-offset-4 hover:underline">
                         {regulation.code}
@@ -210,6 +221,23 @@ async function Regulations() {
           </>
         )}
       </section>
+      {data.length > 0 ? (
+        <IndexPanel
+          org={current.id}
+          index={index}
+          model={embeddingModel}
+          canManage={permissions.manage}
+          // An import added paragraphs the indexer has not seen yet, and is no longer adding more.
+          autoStart={!importActive && index.unkeyed > 0}
+        />
+      ) : null}
+      {/* Last: the library is what people come to read, and "Add regulations" at the top of the
+          page jumps here. Imports fill the organisation's library, shared by all its projects. */}
+      {permissions.manage ? (
+        <div id="import" className="scroll-mt-6">
+          <Imports org={current.id} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -242,7 +270,7 @@ function VersionLink({ version, href }: { version: Version; href: string | undef
     );
   }
   return (
-    <a href={href} target="_blank" rel="noreferrer" title={detail} className="text-primary underline-offset-4 hover:underline">
+    <a href={href} target="_blank" rel="noreferrer" title={detail} className="text-tint underline-offset-4 hover:underline">
       {label}
     </a>
   );

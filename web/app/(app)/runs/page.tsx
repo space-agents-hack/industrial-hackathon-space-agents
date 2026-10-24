@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { NewRunForm } from "@/components/new-run-form";
 import { NoAccess } from "@/components/no-access";
+import { PageHeader } from "@/components/page-header";
 import { NoProject } from "@/components/projects/no-project";
 import { RunList } from "@/components/run-list";
 import { hasNoAccess } from "@/lib/access";
@@ -13,7 +14,7 @@ import { runBlockers } from "@/lib/run-readiness";
 import { fetchRunList } from "@/lib/runs";
 import { createClient } from "@/lib/supabase/server";
 
-export const metadata: Metadata = { title: "Runs" };
+export const metadata: Metadata = { title: "Draft requirements" };
 
 // The runs on the current project's cases (SYS-36), and a form that starts one on a case of the
 // project. Files are managed on the case page only (#46). A run without a case (made before cases existed, or whose case was
@@ -21,8 +22,11 @@ export const metadata: Metadata = { title: "Runs" };
 export default function RunsPage() {
   return (
     <div className="grid gap-5">
-      <h1 className="sr-only">Runs</h1>
-      <Suspense fallback={<p className="text-muted-foreground">Loading runs…</p>}>
+      <PageHeader
+        title="Draft requirements"
+        description="Every draft on this project's parts, newest first. Open one to follow what the agent did and decide its approvals."
+      />
+      <Suspense fallback={<p className="text-muted-foreground">Loading drafts…</p>}>
         <Runs />
       </Suspense>
     </div>
@@ -78,7 +82,7 @@ async function Runs() {
         </p>
       )}
       <section className="grid gap-2">
-        <h2 className="text-sm font-semibold">Runs in {project.name}</h2>
+        <h2 className="text-lg font-semibold tracking-tight">Drafts in {project.name}</h2>
         {runs ? (
           <RunList
             key={project.id}

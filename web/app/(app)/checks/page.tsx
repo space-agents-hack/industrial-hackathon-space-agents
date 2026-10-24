@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import { CheckFileForm } from "@/components/check-file-form";
+import { PageHeader } from "@/components/page-header";
 import { NoProject } from "@/components/projects/no-project";
 import { getCurrentOrg } from "@/lib/current-org";
 import { getCurrentProject } from "@/lib/current-project";
@@ -13,7 +14,7 @@ export const metadata: Metadata = { title: "Checks" };
 export default function ChecksPage() {
   return (
     <div className="grid gap-5">
-      <h1 className="sr-only">Checks</h1>
+      <PageHeader title="Checks" description="Run Certivity's checks on a submission file before you spend an upload on it." />
       {/* The organisation is only known at request time: its library is what citations are
           checked against. */}
       <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>

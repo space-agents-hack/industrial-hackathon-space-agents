@@ -67,7 +67,7 @@ async function Deployment() {
         {state.repo ? ` (${state.repo})` : ""}, in the production environment, where only the
         workflows can read them. Change one here, then apply: a release copies the values to
         Vercel and deploys with them. See{" "}
-        <Link href="/admin/releases" className="text-primary underline underline-offset-2">
+        <Link href="/admin/releases" className="text-tint underline underline-offset-2">
           Releases
         </Link>{" "}
         for the release itself.
@@ -118,7 +118,7 @@ async function Deployment() {
       <section className="grid gap-2">
         <h2 className="font-medium">Recent changes</h2>
         {changes?.length ? (
-          <ul className="divide-y rounded-md border bg-card text-sm">
+          <ul className="divide-y overflow-hidden rounded-xl border bg-card text-sm">
             {changes.map((event) => (
               <li key={event.id} className="flex flex-wrap gap-x-3 px-3 py-1.5">
                 <RelativeTime iso={event.created_at} className="text-muted-foreground" />

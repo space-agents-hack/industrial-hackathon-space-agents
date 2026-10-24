@@ -89,7 +89,14 @@ export function describeParser(parser: string): string {
   return parser.startsWith("model:") ? `described by a model (${parser.slice(6)})` : `read by ${parser}`;
 }
 
+// What a person calls each thing. The table is `cases` (and Certivity says "case"), but in the app
+// a case is a part (Clemente, 2026-10-24): a product's documents, run as one. Code and database
+// keep "case"; only the words on screen change, so they are made here and nowhere else.
+export function nounOf(kind: string): string {
+  return kind === "case" ? "part" : kind;
+}
+
 // A name the database refused as a duplicate, said the way the person would fix it.
 export function nameTakenMessage(code: string | undefined, what: string, name: string): string | null {
-  return code === "23505" ? `A ${what} called "${name}" already exists here.` : null;
+  return code === "23505" ? `A ${nounOf(what)} called "${name}" already exists here.` : null;
 }
