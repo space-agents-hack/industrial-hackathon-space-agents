@@ -19,6 +19,9 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-23 | ingest a regulations `index.json` automatically: download, verify checksums, store by version, page and paragraph, with embeddings for retrieval | N-13, N-1, N-2 | regs, db | T, I | 3 | #3, #18 |
 | SYS-24 | store all case data in the database and Storage as organisation → projects → cases → requirements, shared by every member of that organisation and readable by no one else; nothing case-specific in the repository | N-3, N-9, N-15 | db, ingest, web | T | 1, 2 | #8, #19 |
 | SYS-27 | ingest each case file with a deterministic parser first, send any file or part the parser fails on or does not recognise to a model, and store both results as the same standardised content blocks in the database | N-1, N-3 | ingest, db | T | 1, 2 | #8, #19 |
+| SYS-31 | let every member of the organisation browse, create and rename projects and cases, add and remove a case's files, and see each file's parsed content by page | N-15, N-2, N-3 | web, db | D | 1, 2 | #23 |
+| SYS-32 | let a member choose which regulations of the organisation's library a project uses; by default all of them, including later imports | N-13, N-4 | web, db, regs | T, D | 3 | #24 |
+| SYS-33 | let an organisation admin choose the model of each agent and process (writer, check, case transcription, summaries, embeddings), defaulting to the deployment's, and let a member override the writer and check models for one run | N-9, N-12 | web, db, regs, ingest | T | 2, 4 | #25 |
 | **Output** | | | | | | |
 | SYS-4 | output a main-goal JSON that `validate.py` accepts, with `team_id` and `case_id` | N-7 | regs, checks | T | 4 | #4 |
 | SYS-5 | cite only catalogue regulations, with the **base** `version_label` and a page of that PDF | N-2, N-7 | regs | T | 3, 5 | #3, #4 |
@@ -50,7 +53,7 @@ db = `supabase/` · ops = deploy, uploads, people.
 | SYS-26 | (may) find regulations for a given country or industry on the web and other sources, and write them as an `index.json` in Certivity's format, which SYS-23 then ingests | N-14 | regs | D | 3 | #17 |
 | SYS-30 | (may) run the agents on a local model (for example Ollama) instead of a hosted provider | N-9 | regs, ops | D | — | #21 |
 
-SYS-23 to SYS-30 are numbered out of order because they were added later. Ids are never renumbered.
+SYS-23 to SYS-33 are numbered out of order because they were added later. Ids are never renumbered.
 
 ## Rationale and notes
 
@@ -63,6 +66,9 @@ SYS-23 to SYS-30 are numbered out of order because they were added later. Ids ar
 | SYS-24 | Clemente, 2026-10-24: "it shall be DB", and several engineers of one company work on the same cases (for example the same car part). Projects group cases. Today there is one organisation (the default), and files hang off runs, not cases (#19). Reasons in ADR-0006 |
 | SYS-27 | Clemente, 2026-10-24: parser first because it is cheap, repeatable and cites pages exactly. The model covers what the parser cannot read. One block format, so the regulation step does not care which one produced a block |
 | SYS-25 | The link to the catalogue paragraph (not only the citation strings) is what lets a requirement be traced to a regulation paragraph later, and lets SYS-19 find the requirements a changed paragraph affects. Agents: an orchestrator plus a check agent (SYS-29, Clemente 2026-10-24). Exactly one regulation per requirement (Clemente, 2026-10-24, correcting "at least one"), which matches the one `source` per requirement in Certivity's format |
+| SYS-31 | Clemente, 2026-10-24 (UX thread, design/ux-hierarchy.md). Today a case is only created by starting a run, and nothing can be renamed or removed |
+| SYS-32 | Clemente, 2026-10-24. "Linked" in SYS-25 means the project's regulations. **Status: waiting on Ramón for IF-3.** For the challenge project keep "all": a regulation left out is a miss, and F2 weighs misses four times as much as extras |
+| SYS-33 | Clemente, 2026-10-24 (case-ingestion thread). Lets us compare models on the dev case and record which one produced a score (SYS-22) |
 | SYS-26 | Clemente, 2026-10-24: only if time allows. Kept here so it is not lost; issue #17 holds it |
 | SYS-28 | Clemente, 2026-10-24: embeddings (Ramón, #18) narrow 56 regulations fast; the full read keeps recall, since a paragraph the top-k misses inside a chosen regulation would otherwise be lost. Top-k only picks, it never decides alone that a regulation does not apply: the miss risk is regulation-level recall (SYS-8) |
 | SYS-29 | Clemente, 2026-10-24. The check agent reads the DB, not the model's memory, so a hallucinated paragraph is caught before the file is uploaded. The uncovered-paragraph list is for recall, which F2 weighs most (Clemente, 18:29). It costs run time (SYS-15) |
@@ -84,20 +90,20 @@ SYS-23 to SYS-30 are numbered out of order because they were added later. Ids ar
 | Need | Satisfied by |
 |---|---|
 | N-1 Completeness | SYS-2, 3, 6, 7, 8, 11, 23, 25, 27, 28 |
-| N-2 Checkable source | SYS-3, 5, 6, 12, 23, 25, 29 |
-| N-3 Input as I have it | SYS-1, 2, 24, 27 |
-| N-4 No noise | SYS-3, 7, 8, 28, 29 |
+| N-2 Checkable source | SYS-3, 5, 6, 12, 23, 25, 29, 31 |
+| N-3 Input as I have it | SYS-1, 2, 24, 27, 31 |
+| N-4 No noise | SYS-3, 7, 8, 28, 29, 32 |
 | N-5 Actionable wording | SYS-7, 9, 25 |
 | N-6 Stale requirements | SYS-19 |
 | N-7 Accepted submission | SYS-4, 5, 10, 19, 20, 29 |
 | N-8 End to end | SYS-14, 15, 28 |
-| N-9 Deployable | SYS-2, 13, 16, 17, 24, 30 (future) |
+| N-9 Deployable | SYS-2, 13, 16, 17, 24, 33, 30 (future) |
 | N-10 Fits their tooling | SYS-18 |
 | N-11 Submitted | SYS-21 |
-| N-12 Shows its weakness | SYS-11, 17, 22 |
-| N-13 Reusable regulation set | SYS-23 |
+| N-12 Shows its weakness | SYS-11, 17, 22, 33 |
+| N-13 Reusable regulation set | SYS-23, 32 |
 | N-14 More markets | SYS-26 (future) |
-| N-15 Shared work | SYS-24 |
+| N-15 Shared work | SYS-24, 31 |
 
 Every need has at least one requirement, and every requirement has at least one need.
 
@@ -105,9 +111,9 @@ Every need has at least one requirement, and every requirement has at least one 
 
 | Part | Requirements |
 |---|---|
-| web | SYS-1, 10, 11, 12, 13, 14, 18, 24 |
-| ingest | SYS-1, 2, 3, 8, 14, 15, 24, 27 |
-| regs | SYS-3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 17, 19, 23, 25, 26, 28, 29, 30 |
+| web | SYS-1, 10, 11, 12, 13, 14, 18, 24, 31, 32, 33 |
+| ingest | SYS-1, 2, 3, 8, 14, 15, 24, 27, 33 |
+| regs | SYS-3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 17, 19, 23, 25, 26, 28, 29, 30, 32, 33 |
 | checks | SYS-4, 10, 11, 14, 19, 29 |
-| db | SYS-1, 16, 17, 23, 24, 25, 27 |
+| db | SYS-1, 16, 17, 23, 24, 25, 27, 31, 32, 33 |
 | ops | SYS-15, 16, 20, 21, 22, 30 |
