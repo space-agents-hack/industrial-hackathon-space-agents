@@ -91,3 +91,30 @@ order by c.created_at, f.position;
 
 \echo '== Auth: does the demo address exist already'
 select count(*) as accounts_with_that_email from auth.users where email = lower(:'email');
+
+-- A copy roughly doubles the library's rows and files. On a plan with a size limit (Supabase Free:
+-- 500 MB of database, 1 GB of files) going over it makes the database read-only for everyone, so
+-- the copy is decided with these numbers next to the plan's limits.
+\echo '== Database size, and the largest tables'
+select pg_size_pretty(pg_database_size(current_database())) as database;
+select c.relname as table_name, pg_size_pretty(pg_total_relation_size(c.oid)) as total
+from pg_class c join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public' and c.relkind = 'r'
+order by pg_total_relation_size(c.oid) desc
+limit 8;
+
+\echo '== Share of the source in the library tables'
+select 'regulation_paragraphs' as table_name,
+       pg_size_pretty(sum(pg_column_size(p.*))::bigint) as source_rows
+from public.regulation_paragraphs p join public.organizations o on o.id = p.organization_id
+where o.name = :'source'
+union all
+select 'regulation_embeddings', pg_size_pretty(sum(pg_column_size(e.*))::bigint)
+from public.regulation_embeddings e join public.organizations o on o.id = e.organization_id
+where o.name = :'source';
+
+\echo '== Storage, every organisation'
+select s.bucket_id, count(*) as objects,
+       pg_size_pretty(sum(coalesce((s.metadata ->> 'size')::bigint, 0))) as size
+from storage.objects s
+group by s.bucket_id;
