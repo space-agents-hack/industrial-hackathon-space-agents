@@ -39,7 +39,11 @@ detachable or removable part, an optional variant of one of its functions, mount
 component, being combined with or incorporated in another device, a setting that varies in use)
 applies with that condition: a short case cannot rule the feature out, and the engineer must meet
 the obligation if the design has it. Keep it, state its condition, and cover it with `the part`
-or the component it concerns.
+or the component it concerns. The same holds for an obligation on the replaceable or separately
+approved variant of a component ("in case of replaceable ...", "where ... is approved as a
+component"): how the profile says a component is built in decides which regulations are read,
+not which of their obligations apply, and "integral" may only be how the case shows it fitted.
+Keep it, with its condition, unless the case itself says the component is not replaceable.
 
 What counts:
 
