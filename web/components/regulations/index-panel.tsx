@@ -18,12 +18,18 @@ export function IndexPanel({
   model,
   canManage,
   autoStart,
+  importing,
 }: {
   org: string;
   index: LibraryIndex;
   model: string;
   canManage: boolean;
   autoStart: boolean;
+  // An import of this organisation is queued, running or paused (#57). Indexing waits for it:
+  // each version it splits again leaves the replaced paragraphs as dead rows until the database
+  // cleans them up, and the indexer's first lookup steps over all of them. In production that
+  // passed the 8 s statement timeout on every slice while the import ran.
+  importing: boolean;
 }) {
   const router = useRouter();
   const [running, setRunning] = useState(false);
@@ -142,11 +148,13 @@ export function IndexPanel({
 
         {canManage && !complete ? (
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" disabled={running} onClick={() => void run()}>
+            <Button size="sm" disabled={running || importing} onClick={() => void run()}>
               {running ? "Indexing…" : "Index library"}
             </Button>
             <span className="text-xs text-muted-foreground">
-              Uses the organisation&apos;s embedding and summary models (Admin, Models). What it spends is in Admin, Usage.
+              {importing
+                ? "An import is in progress: indexing starts by itself on this page once it finishes."
+                : "Uses the organisation's embedding and summary models (Admin, Models). What it spends is in Admin, Usage."}
             </span>
           </div>
         ) : null}

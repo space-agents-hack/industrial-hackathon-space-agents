@@ -264,6 +264,7 @@ async function Regulations() {
           canManage={permissions.manage}
           // An import added paragraphs the indexer has not seen yet, and is no longer adding more.
           autoStart={!importActive && index.unkeyed > 0}
+          importing={importActive}
         />
       ) : null}
       {/* Last: the library is what people come to read, and "Add regulations" at the top of the
