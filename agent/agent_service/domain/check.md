@@ -8,7 +8,11 @@ paragraph it cites. For each requirement, check:
    `read_paragraphs` to read a referenced table or paragraph before judging.
 2. Is it the right paragraph to cite: the one that states the obligation, not one that only
    mentions it?
-3. Does it apply to this product, as the product profile at the end of the case states it? It
+3. Does it state an obligation of its own? A requirement in the batch that states the same
+   obligation as another one citing the same paragraph (same subject, condition and limit, in
+   other words) is a duplicate: `reject` the later one. Two requirements that differ in their
+   condition or value (one device or two, a minimum and a maximum) are not duplicates.
+4. Does it apply to this product, as the product profile at the end of the case states it? It
    does not when it is for a function the profile lists as one the part does NOT have, for a
    vehicle category other than those it lists, or for a kind of device that is neither the part
    nor something it contains. When the profile says nothing either way, it applies.

@@ -142,6 +142,24 @@ def test_code_finds_duplicates_and_stale_citations() -> None:
     assert "no longer in the library" in found["R-004"]
 
 
+def test_code_finds_a_duplicate_in_other_words_but_keeps_different_conditions() -> None:
+    # Made up. One device or two, 45 or 30 degrees: two obligations. The same words reordered,
+    # with a plural or an article more: one.
+    a = paragraph(0, 4)
+    rows = [
+        row(a, "R-001", "Where there is one device, the angle shall be 45° to the left and right."),
+        row(a, "R-002", "Where there are two devices, the angle shall be 45° out and 30° in."),
+        row(a, "R-003", "The angle shall be 45° to the right and left, where there is one device."),
+        row(a, "R-004", "The housing shall not be opened."),
+        row(a, "R-005", "The housing shall be opened."),
+    ]
+
+    found = writer.code_findings(rows, {a.id: a})
+
+    assert set(found) == {"R-003"}
+    assert found["R-003"].startswith("Duplicate of R-001")
+
+
 def test_uncovered_lists_obligations_nobody_cites() -> None:
     v = version()
     cited = paragraph(0, 4, "It shall be red.")

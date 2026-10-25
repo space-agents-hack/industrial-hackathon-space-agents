@@ -738,11 +738,33 @@ def check_batch(rows: Sequence[Requirement], cited: dict[UUID, Paragraph]) -> st
     return "\n".join(lines)
 
 
+# Words that carry no obligation of their own: two requirements on one paragraph that differ only
+# in these (and in word order, case, punctuation or a plural "s") state the same obligation.
+# "not", "no", numbers, "minimum"/"maximum" and every noun are NOT here, so "one device" and "two
+# devices", or a limit of 45° and one of 30°, stay apart.
+_FILLER = frozenset(
+    {"a", "an", "the", "of", "shall", "must", "be", "is", "are", "and", "or", "to", "in", "for"}
+    | {"with", "by", "as", "at", "on", "which", "that", "this", "these", "those", "each"}
+    | {"every", "its", "their", "it", "they", "there", "where", "when"}
+)
+
+
+def _content_words(text: str) -> tuple[str, ...]:
+    # Counted, not a set: "for 12 V ... 12 V / 24 V" and "for 24 V ... 12 V / 24 V" hold the same
+    # words and are two obligations.
+    words = re.findall(r"[a-z]+|\d+(?:[.,]\d+)?", text.lower())
+    return tuple(
+        sorted(w.removesuffix("s") if len(w) > 3 else w for w in words if w not in _FILLER)
+    )
+
+
 def code_findings(rows: Sequence[Requirement], cited: dict[UUID, Paragraph]) -> dict[str, str]:
-    """What code alone can tell: a citation that no longer matches the library, and exact
-    duplicates (same paragraph, same words), which only lower precision."""
+    """What code alone can tell: a citation that no longer matches the library, and duplicates
+    on one paragraph (the same words, or the same content words in another order or form), which
+    only lower precision: the platform matches one to one, so a second copy never scores."""
     found: dict[str, str] = {}
     seen: dict[tuple[UUID | None, str], str] = {}
+    near: dict[tuple[UUID | None, tuple[str, ...]], str] = {}
     for r in rows:
         p = cited.get(r.paragraph_id) if r.paragraph_id else None
         if r.paragraph_superseded_at is not None:
@@ -755,10 +777,16 @@ def code_findings(rows: Sequence[Requirement], cited: dict[UUID, Paragraph]) -> 
         elif (p.page_start, p.label, p.content_hash) != (r.page, r.paragraph, r.paragraph_hash):
             found[r.ext_id] = "Its citation no longer matches the paragraph in the library."
         key = (r.paragraph_id, " ".join(r.text.lower().split()))
+        loose = (r.paragraph_id, _content_words(r.text))
         if key in seen:
             found[r.ext_id] = f"Duplicate of {seen[key]}: same paragraph, same text."
+        elif loose in near:
+            found[r.ext_id] = (
+                f"Duplicate of {near[loose]}: same paragraph, same obligation in other words."
+            )
         else:
             seen[key] = r.ext_id
+            near[loose] = r.ext_id
     return found
 
 
