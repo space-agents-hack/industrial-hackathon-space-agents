@@ -245,7 +245,16 @@ async def case_content(store: RunStore, case_id: UUID) -> ingest.CaseContent:
             report.error = f.error or f"Not parsed yet ({f.status}); not given to the agent."
             parsed_files.append(ingest.ParsedFile(f.filename, f.format, report, out))
             continue
-        for b in by_file.get(f.id, []):
+        stored = by_file.get(f.id, [])
+        # Parsed before parts held answer files back (9e7165a): checked again here, so a file
+        # already stored is not read either (SYS-42).
+        if f.format in ("json", "md", "txt") and (
+            kind := ingest.answers_in("".join(b.text or "" for b in stored if b.kind == "text"))
+        ):
+            report.error = ingest.ANSWERS_NOTE.format(kind=kind)
+            parsed_files.append(ingest.ParsedFile(f.filename, f.format, report, out))
+            continue
+        for b in stored:
             if b.kind == "text" and b.text is not None:
                 out.append(ingest.Block(b.text, b.label, b.page, b.parser))
             elif b.image_path is not None:

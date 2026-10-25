@@ -142,6 +142,20 @@ async def test_an_answer_key_in_a_part_is_never_read_by_a_run(store, settings) -
     assert "The part shall be marked" not in saved
 
 
+async def test_an_answer_key_stored_before_the_guard_is_not_read_either(store) -> None:
+    case_id = uuid4()
+    key = store.add_case_file(case_id, "expected.json", "json", b"{}")
+    await ingest(store, case_id)
+    # As a parse from before the guard left it: parsed, its text stored as a block.
+    [block] = store.blocks[key]
+    store.blocks[key] = [block.model_copy(update={"text": ANSWERS})]
+
+    content = await case_ingest.case_content(store, case_id)
+
+    assert "not given to the run" in (content.reports[0].error or "")
+    assert "The part shall be marked" not in str(content.parts)
+
+
 async def test_a_model_that_fails_leaves_the_parsed_file_parsed_and_says_why(store) -> None:
     case_id = uuid4()
     file_id = store.add_case_file(case_id, "sheet.pdf", "pdf", pdf([LONG, ""]))
