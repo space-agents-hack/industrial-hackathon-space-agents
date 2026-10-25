@@ -67,7 +67,12 @@ class Settings(BaseSettings):
     # keeps what any sample kept (recall); "majority" keeps what more than half kept (precision;
     # with 2 samples that is both). Which one pays is settled by platform uploads, not tuned on
     # the dev key (SYS-42). DISPOSITION_SAMPLES=1 in Vercel goes back without a code change.
-    disposition_samples: int = Field(default=3, ge=1, le=3)
+    # 1 since 2026-10-25 09:58 UTC (Clemente: "merge the procedures" of the manual held-out run
+    # into the pipeline). That run read each window once, with one reader, and scored precision
+    # .52 at recall .72, against the pipeline's .42 at .69 with 3 samples in union: the union
+    # kept what any one sample kept, which here bought no recall. It also triples the writer's
+    # Opus calls, and credits are short. DISPOSITION_SAMPLES=3 goes back.
+    disposition_samples: int = Field(default=1, ge=1, le=3)
     disposition_vote: Literal["union", "majority"] = "union"
     # The scope screen's model (screen_regulations). Not the run's model: the screen reads scope
     # sections and answers applies, possibly or does_not, and its fixed rules (screen.decide) and
