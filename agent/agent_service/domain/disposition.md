@@ -63,12 +63,6 @@ What is an obligation:
   sample, how to record or average a reading, and what the technical service does. Set those
   aside; they go in the test case. Ask whose value it is: the product's exposure or result is an
   obligation, the apparatus's is not.
-- An annex or appendix that describes how a test the regulation imposes is carried out is read
-  as the laboratory's instructions. There, a sentence that only names the standard, method or
-  test bench to use ("shall be performed according to ..."), or the lines, points or positions
-  it is applied to, is `test_method`: the obligation is the requirement to pass the test, where
-  the regulation imposes it. The limits, levels and results the product must reach that the
-  annex states are still obligations: list them.
 
 How to cut obligations into entries. Each requirement is matched one to one against a requirement
 written by regulatory experts, by its scope (what it is about), its condition (when it applies)
