@@ -36,11 +36,13 @@ PACKAGE_DIR = Path(__file__).resolve().parents[2] / "certivity"
 # More problems than this are not read by anyone; the count still says how many there are.
 _MAX_PROBLEMS = 200
 
-# Share of the paragraph slots the platform's judge credited, on the one upload where we know both:
-# 2026-10-24 21:11 UTC, 409 requirements, 109 slots shared with the answer key, 91 matched (#48).
-# One point is all it rests on: re-measure it from every platform upload with a requirement level
-# (score log, docs/se/verification.md). Changing it moves the estimate, never the output.
-REQUIREMENT_JUDGE_RATE = 91 / 109
+# Share of the paragraph slots the platform's judge credited, from the latest upload where we know
+# both: 2026-10-25 04:06 UTC, Opus, 345 requirements, 144 slots shared with the answer key, 138
+# matched (P 0.40, R 0.726). The first point, 2026-10-24 21:11 UTC, was 91 of 109 (0.83) with the
+# one-stage writer; the two-stage writer words obligations closer to the text, so the newer rate
+# is the one that describes today's drafts. Re-measure it from every platform upload with a
+# requirement level (score log, docs/se/verification.md). It moves the estimate, never the output.
+REQUIREMENT_JUDGE_RATE = 138 / 144
 
 _FENCED = re.compile(r"```(?:json)?\s*\n(.*?)\n\s*```", re.DOTALL)
 
