@@ -62,6 +62,7 @@ and recall, who ran it. Platform scores for the held-out case also go on issue #
 
 | When | Case | Commit | Model | Scores | By |
 |---|---|---|---|---|---|
+| 2026-10-25 ~09:08 UTC (~10:08 CET) | subgoal-heldout (platform) | `subgoal-a187622.json` again (assumed; third upload of the same file) | as 07:39 | flag recall 73.4%, precision 72.3%, change accuracy 92.9%: 47 of 65, against 48 and 48 before, so recall varies by at least one hit for an identical file | Ramón |
 | 2026-10-25 08:39 UTC (09:39 CET) | subgoal-heldout (platform) | 85208ec rules on the 07:39 verdicts (`subgoal-85208ec.json`, 66 changes: `subgoal-a187622.json` plus one id flag) | as 07:39 | flag recall 64.1%, precision 62.1%, change accuracy 91.7%: 41 of 66, 7 hits fewer for one added flag, so the platform's recall is not deterministic either; 85208ec reverted so main reproduces the counting file | Ramón |
 | 2026-10-25 local | subgoal-heldout (local), subgoal-dev | 85208ec (#42, reverted) | none (`regdiff`, rules only) | a requirement that names a table is modified when rows of its paragraph's table change: held-out 63 to 64 changes (1 flag), added unchanged; dev byte-identical | Claude for Ramón |
 | 2026-10-25 08:31 UTC (09:31 CET) | subgoal-heldout (platform) | `subgoal-heldout-v3.json` again, byte-identical | as 07:39 | flag recall 75.0%, precision 73.8%, change accuracy 88.4% (38/43, was 36/43 for the same file): the judge of change accuracy varies between uploads, recall and precision did not | Ramón |
