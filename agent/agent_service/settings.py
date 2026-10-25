@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from agent_service.records import OrganizationSettings
@@ -52,6 +53,16 @@ class Settings(BaseSettings):
     # does both, as before. Set WRITER_STAGES=one to go back without a code change if a run gets
     # too slow for run_timeout_s: two stages make about twice the calls.
     writer_stages: Literal["one", "two"] = "two"
+    # Answers of the disposition agent per window, merged by vote (writer.vote_dispositions;
+    # research doc retrieval-extraction-research.md, proposal 1). 1, the default, is one answer
+    # and no vote, as before. 2 or 3 make that many calls per window in the same lane, so the
+    # first stage takes about that many times longer: watch run_timeout_s. The trace counts units
+    # kept by every sample and by only some: the agreement rate, measured without the answer key.
+    # The vote: "union" keeps what any sample kept (recall); "majority" keeps what more than half
+    # kept (precision; with 2 samples that is both). Which one pays is settled by platform
+    # uploads, not tuned on the dev key (SYS-42).
+    disposition_samples: int = Field(default=1, ge=1, le=3)
+    disposition_vote: Literal["union", "majority"] = "majority"
     # Translator calls in flight at once, in their own lane beside the writer_concurrency lane of
     # the per-window calls. In one shared lane every window's first stage queued ahead of every
     # translation, so the translations ran in rounds after all of them, and the first two-stage

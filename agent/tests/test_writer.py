@@ -373,3 +373,77 @@ async def test_an_obligation_over_two_clauses_may_give_one_requirement_per_claus
     result = await writer.translator_agent.run(job.render(), model=FunctionModel(model), deps=job)
 
     assert [d.text for d in result.output] == ["It shall be red.", "It shall not flash."]
+
+
+def _o(ref: int, *clauses: str, covers: str = "", what: str = "x") -> writer.Obligation:
+    return writer.Obligation(ref=ref, clauses=list(clauses), covers=covers, what=what)
+
+
+def _aside(clause: str) -> writer.SetAside:
+    return writer.SetAside(clause=clause, reason="not_this_product")
+
+
+def test_the_union_keeps_a_clause_one_sample_kept_and_no_longer_sets_it_aside() -> None:
+    a = writer.Disposition(obligations=[_o(3, "c3.1", covers="Lens")], set_aside=[_aside("c3.2")])
+    b = writer.Disposition(obligations=[_o(3, "c3.1", "c3.2")], set_aside=[])
+
+    found, agreement = writer.vote_dispositions([a, b], need=1)
+
+    assert [(o.ref, o.clauses, o.covers) for o in found.obligations] == [
+        (3, ["c3.1"], "Lens"),
+        (3, ["c3.2"], ""),
+    ]
+    assert found.set_aside == []
+    assert agreement == {"vote: kept by all": 1, "vote: kept by some": 1, "vote: dropped": 0}
+
+
+def test_the_majority_drops_what_one_sample_of_two_kept_and_keeps_its_reason() -> None:
+    a = writer.Disposition(obligations=[_o(3, "c3.1")], set_aside=[_aside("c3.2")])
+    b = writer.Disposition(obligations=[_o(3, "c3.1", "c3.2", "c3.2")], set_aside=[])
+
+    found, agreement = writer.vote_dispositions([a, b], need=2)
+
+    # The clause list is deduplicated: the translator's cap is one requirement per clause.
+    assert [o.clauses for o in found.obligations] == [["c3.1"]]
+    assert [s.clause for s in found.set_aside] == ["c3.2"]
+    assert agreement["vote: dropped"] == 1
+
+
+def test_rows_without_clauses_are_voted_on_by_how_many() -> None:
+    # Three table rows on one paragraph in one sample, two in the other: a vote on the count.
+    a = writer.Disposition(obligations=[_o(7, what=f"row {i}") for i in range(3)])
+    b = writer.Disposition(obligations=[_o(7, what=f"row {i}") for i in range(2)])
+
+    union, _ = writer.vote_dispositions([a, b], need=1)
+    majority, _ = writer.vote_dispositions([a, b], need=2)
+
+    assert [o.what for o in union.obligations] == ["row 0", "row 1", "row 2"]
+    assert [o.what for o in majority.obligations] == ["row 0", "row 1"]
+
+
+def test_a_translator_is_given_the_paragraphs_an_obligation_refers_to() -> None:
+    v = version()
+    rule = paragraph(3, 4, "5.3. It shall meet paragraph 6.2. and paragraph 1 of Annex 2.")
+    main = paragraph(40, 9, "6.2. At least 5 N.", label="6.2")
+    annex = paragraph(80, 40, "1. Pull for 10 s.", label="Annex 2 1")
+    unrelated = paragraph(81, 41, "1. Something else.", label="1")
+    window = writer.Window(v, [rule])
+    found = writer.Disposition(obligations=[_o(3, "c3.1")])
+
+    [job] = writer.translation_jobs(window, found, [rule, main, annex, unrelated])
+
+    assert [p.label for p in job.referred_to()] == ["6.2", "Annex 2 1"]
+    assert "At least 5 N." in job.render() and "Pull for 10 s." in job.render()
+
+
+def test_a_reference_inside_an_annex_resolves_in_that_annex_first() -> None:
+    v = version()
+    rule = paragraph(90, 50, "2. As described in paragraph 1.", label="Annex 3 2")
+    body = paragraph(1, 1, "1. Scope.", label="1")
+    same_annex = paragraph(89, 50, "1. The test bench.", label="Annex 3 1")
+    window = writer.Window(v, [rule])
+    found = writer.Disposition(obligations=[_o(90)])
+
+    [job] = writer.translation_jobs(window, found, [body, same_annex, rule])
+
+    assert [p.label for p in job.referred_to()] == ["Annex 3 1"]

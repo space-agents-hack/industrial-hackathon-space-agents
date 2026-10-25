@@ -474,7 +474,16 @@ async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> d
     )
     tally: Counter[str] = Counter()
     covers: dict[str, Counter[str]] = {}
-    results = await _write_windows(ctx, jobs, tally, covers)
+    agreement: Counter[str] = Counter()
+    results = await _write_windows(ctx, jobs, tally, covers, agreement)
+    if agreement:
+        await _progress(
+            deps,
+            f"Disposition vote ({deps.settings.disposition_samples} answers per window, "
+            f"{deps.settings.disposition_vote}): "
+            + ", ".join(f"{k.removeprefix('vote: ')} {n}" for k, n in sorted(agreement.items()))
+            + ".",
+        )
     if covers:
         # A line of its own: the tool result below is clipped in the trace when it is long.
         await _progress(
@@ -513,6 +522,7 @@ async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> d
     return {
         "written": written,
         "clauses_set_aside": dict(tally),
+        **({"disposition_vote": dict(agreement)} if agreement else {}),
         # Kept obligations per regulation by what of the profile they cover: if "the part" holds
         # most of a regulation, the writers may be filing other devices' obligations under it.
         "obligations_by_covers": {reg: dict(c.most_common()) for reg, c in covers.items()},
@@ -817,11 +827,13 @@ async def _write_windows(
     jobs: list[Window],
     tally: Counter[str] | None = None,
     covers: dict[str, Counter[str]] | None = None,
+    agreement: Counter[str] | None = None,
 ) -> list[tuple[int, str | None]]:
     """Every window through the writer; (stored, error) per window. `tally` counts the clauses
     set aside, by reason, and those left without an answer: what the trace shows of the
     obligations the writers decided not to write (#48). `covers` counts the kept obligations per
-    regulation by the profile entry they cover.
+    regulation by the profile entry they cover. `agreement` counts, with disposition_samples above
+    1, the units every sample kept, those only some kept, and those the vote dropped.
 
     Two stages (settings.writer_stages, the default): the disposition agent decides per clause
     what applies, then translators write the obligations ten at a time. One stage: a single writer
@@ -898,10 +910,28 @@ async def _write_windows(
             )
         return len(drafts)
 
-    async def two_stage(window: Window) -> tuple[int, str | None]:
-        found: writer.Disposition = await ask(
-            window_lane, writer.disposition_agent, window.render(), window
+    samples = deps.settings.disposition_samples
+
+    async def dispose(window: Window) -> writer.Disposition:
+        prompt = window.render()
+        if samples == 1:
+            return await ask(window_lane, writer.disposition_agent, prompt, window)
+        answers = await asyncio.gather(
+            *(ask(window_lane, writer.disposition_agent, prompt, window) for _ in range(samples)),
+            return_exceptions=True,
         )
+        ok = [a for a in answers if isinstance(a, writer.Disposition)]
+        if not ok:
+            raise next(a for a in answers if isinstance(a, BaseException))
+        # Need is counted on the answers that came back: a sample that failed is no vote.
+        need = 1 if deps.settings.disposition_vote == "union" else len(ok) // 2 + 1
+        found, votes = writer.vote_dispositions(ok, need=need)
+        if agreement is not None:
+            agreement.update(votes)
+        return found
+
+    async def two_stage(window: Window) -> tuple[int, str | None]:
+        found = await dispose(window)
         count(window, found.obligations, found.set_aside)
         version_paragraphs = await _paragraphs(deps, window.version.id)
         batches = writer.translation_jobs(window, found, version_paragraphs)

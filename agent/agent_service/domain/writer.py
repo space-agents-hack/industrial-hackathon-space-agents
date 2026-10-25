@@ -557,9 +557,85 @@ def _disposes_of_every_clause(ctx: RunContext[Window], answer: Disposition) -> D
     return answer
 
 
+# A vote's unit: a clause id, or "#n" for an obligation that lists no clause, with its occurrence
+# within one sample (vote_dispositions).
+_Unit = tuple[str, int]
+
+
+def vote_dispositions(
+    samples: Sequence[Disposition], *, need: int
+) -> tuple[Disposition, Counter[str]]:
+    """Several answers of the disposition agent for one window, merged into one by vote.
+
+    Why (research doc retrieval-extraction-research.md, proposal 1; Clemente 2026-10-25: "apply
+    all"): one sample of a model at its default temperature keeps some obligations by chance and
+    drops others by chance. Asking twice or three times and voting is self-consistency, the usual
+    remedy. `need` is how many samples must keep a unit: 1 is the union (an obligation one sample
+    missed comes back, for recall), a majority cuts what only one sample kept (for precision).
+
+    The vote is per unit, not per obligation, because samples group clauses differently: a unit
+    is one clause id an obligation lists, or, for an obligation that lists none (a table row, a
+    heading with a value), its [#n]. Each unit is counted once per occurrence within a sample, so
+    two obligations on the same clause, or three table rows on one paragraph, are three votes on
+    "how many", not one. Merged obligations come from the first sample that holds them, keep their
+    `covers` and list each clause once (the translator's cap, 89a088d, is one requirement per
+    clause). A clause kept by the vote is never also set aside.
+
+    Returns the merged disposition and agreement counts for the trace: units kept by every sample
+    and units kept by only some of them, which is the noise the vote acts on, measured without
+    the answer key."""
+
+    def units(sample: Disposition) -> list[list[_Unit]]:
+        seen: Counter[str] = Counter()
+        out: list[list[_Unit]] = []
+        for o in sample.obligations:
+            mine: list[_Unit] = []
+            for key in list(dict.fromkeys(o.clauses)) or [f"#{o.ref}"]:
+                seen[key] += 1
+                mine.append((key, seen[key]))
+            out.append(mine)
+        return out
+
+    per_sample = [units(s) for s in samples]
+    votes: Counter[_Unit] = Counter(u for sample in per_sample for mine in sample for u in mine)
+    kept = {u for u, n in votes.items() if n >= need}
+    agreement: Counter[str] = Counter()
+    for n in votes.values():
+        agreement["vote: kept by all" if n == len(samples) else "vote: kept by some"] += 1
+    agreement["vote: dropped"] = len(votes) - len(kept)
+
+    merged: list[Obligation] = []
+    emitted: set[_Unit] = set()
+    for sample, sample_units in zip(samples, per_sample, strict=True):
+        for o, mine in zip(sample.obligations, sample_units, strict=True):
+            new = [u for u in mine if u in kept and u not in emitted]
+            if not new:
+                continue
+            emitted.update(new)
+            clauses = [key for key, _ in new if not key.startswith("#")]
+            merged.append(o.model_copy(update={"clauses": clauses}))
+
+    kept_clauses = {c for o in merged for c in o.clauses}
+    set_aside: dict[str, SetAside] = {}
+    for sample in samples:
+        for a in sample.set_aside:
+            if a.clause not in kept_clauses:
+                set_aside.setdefault(a.clause, a)
+    return Disposition(obligations=merged, set_aside=list(set_aside.values())), agreement
+
+
 # Obligations per translator call: each comes with its paragraph, so ten is a few thousand tokens
 # in and a few thousand out, well inside a call's time; more per call is fewer, slower calls.
 TRANSLATE_BATCH = 10
+
+# A cross-reference in a paragraph: "paragraph 6.2.3.", "paragraphs 5.1 and 5.2" (the first is
+# taken), "paragraph 2 of Annex 4". Only numbered paragraphs: a bare "Annex 4" is a whole annex,
+# too long to attach, and stays a look-up.
+_REFERENCE = re.compile(r"\bparagraphs?\s+(\d+(?:\.\d+)*)\.?(?:\s+of\s+Annex\s+(\d+[A-Z]?))?")
+# Referenced paragraphs attached per translator call, and characters of each: 8 of 1,500 is
+# about 3k tokens more per call, small next to the case the call already carries.
+_REFERRED_MAX = 8
+_REFERRED_CHARS = 1_500
 
 
 @dataclass(frozen=True)
@@ -588,7 +664,43 @@ class TranslationJob:
             ]
             lines += [f"Clause {{{c}}}: {clause_text[c]}" for c in o.clauses if c in clause_text]
             lines += ["Paragraph text:", p.text, ""]
+        referred = self.referred_to()
+        if referred:
+            lines += ["# Paragraphs these obligations refer to", ""]
+            for r in referred:
+                text = (
+                    r.text if len(r.text) <= _REFERRED_CHARS else r.text[:_REFERRED_CHARS] + " ..."
+                )
+                lines += [f"{r.label} (page {r.page_start})", text, ""]
         return "\n".join(lines)
+
+    def referred_to(self) -> list[Paragraph]:
+        """The paragraphs the obligations' own paragraphs name ("as specified in paragraph
+        6.2.3.", "paragraph 2 of Annex 4"), resolved in the obligation's own annex or part first,
+        then in the main body. Why attached and not left to read_version_paragraphs: a translator
+        that does not think of looking writes the requirement without the values, and each
+        look-up is another model turn in a run with 770 s for everything. Capped at
+        _REFERRED_MAX per call so the input stays a few thousand tokens."""
+        by_position = {p.position: p for p in self.window.paragraphs}
+        own = {o.ref for o in self.obligations}
+        out: list[Paragraph] = []
+        for o in self.obligations:
+            p = by_position[o.ref]
+            scope = p.label.rsplit(" ", 1)[0] if p.label and " " in p.label else ""
+            for number, annex in _REFERENCE.findall(p.text):
+                candidates = [f"Annex {annex} {number}"] if annex else [f"{scope} {number}", number]
+                for label in candidates:
+                    found = [
+                        r
+                        for r in self.by_label.get(label.strip(), [])
+                        if r.position not in own and r.id not in {x.id for x in out}
+                    ]
+                    if found:
+                        out.append(found[0])
+                        break
+                if len(out) >= _REFERRED_MAX:
+                    return out
+        return out
 
 
 translator_agent = Agent(

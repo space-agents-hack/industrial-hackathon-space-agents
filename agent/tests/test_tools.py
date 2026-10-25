@@ -228,3 +228,21 @@ async def test_a_paragraph_set_aside_clause_by_clause_is_remembered_for_the_chec
     await tools.write_requirements(ctx(d, FunctionModel(model)), ["UN R148"])
 
     assert d.set_aside and set(d.set_aside.values()) == {"test_method"}
+
+
+async def test_several_disposition_samples_are_voted_and_counted(store, settings) -> None:
+    d = deps(store, settings.model_copy(update={"disposition_samples": 2}))
+    first_asks: list[str] = []
+    inner = stalls_on("no marker").function
+    assert inner is not None
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        if len(messages) == 1:  # a first answer, not the nudge that follows it
+            first_asks.append(info.output_tools[0].name)
+        return await inner(messages, info)  # type: ignore[misc]
+
+    result = await tools.write_requirements(ctx(d, FunctionModel(model)), ["UN R148"])
+
+    assert first_asks.count("record_disposition") == 4  # two windows, two answers each
+    assert result["written"]["UN R148"]["requirements"] == 2  # the same obligation, once
+    assert result["disposition_vote"]["vote: kept by all"] == 2
