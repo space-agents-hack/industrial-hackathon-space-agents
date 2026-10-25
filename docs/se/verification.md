@@ -62,6 +62,8 @@ and recall, who ran it. Platform scores for the held-out case also go on issue #
 
 | When | Case | Commit | Model | Scores | By |
 |---|---|---|---|---|---|
+| 2026-10-25 local | subgoal-heldout (local, PDFs match files.json sha256), subgoal-dev | this commit (#42) | none (`regdiff`, rules only) | added entries only in parts of the regulation the old list covers: held-out 123 to 66 changes (added 98 to 41, flags unchanged); dev output byte-identical (7/7 flagged, added 16/17) | Claude for Ramón |
+| 2026-10-25 07:39 UTC (08:39 CET) | subgoal-heldout (platform) | main before this commit (deploy not recorded) | reviewer: organisation default (not recorded) | flag recall 75.0%, flag precision 38.4%, change accuracy 90.7%; 125 entries (95 added, 57 of them in annex parts no old requirement cites), so about 48 matched of about 64 expected | Ramón |
 | 2026-10-24 21:45 UTC (23:45 CEST) | subgoal-dev (platform) | 7a7e581 (deploy 97, before the writer step) | reviewer: Sonnet 5.5, the default (assumed, run events not read) | flag recall 22/24, change accuracy 18/21; last of 10 teams | sub-goal thread, for Clemente |
 | 2026-10-24 21:11 UTC | dev-rear-lamp (platform; local score_local.py identical at regulation and page level) | not recorded (main at c797cce or earlier) | not recorded | valid; 409 requirements; requirements P 0.222 R 0.479 F1 0.304 F2 0.389; regulations P 0.400 R 1.000 F2 0.769 (10 cited, 4 expected); pages P 0.372 R 0.962 F2 0.731 (137 / 53 / 51) | Claude for Ramón |
 | 2026-10-24 20:49 UTC | subgoal-dev (local, real dev PDFs) | 2f00402 | scripted (rules only, reviewer off) | run file byte-identical to the `regdiff` CLI; flagged 7/7, change type 7/7, added 16/17 | Claude for the sub-goal thread |

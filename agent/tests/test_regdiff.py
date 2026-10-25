@@ -191,6 +191,49 @@ def test_new_obligations_are_added_but_not_new_definitions_or_titles() -> None:
     ]
 
 
+def test_new_text_is_added_only_in_parts_of_the_regulation_the_old_requirements_come_from() -> None:
+    annex = P("Annex 1", "Annex 1\nTest procedures", 20)
+    old, new = _versions(
+        [SPEC, P("5.1", "5.1. The widget shall be blue."), annex],
+        [
+            SPEC,
+            P("5.1", "5.1. The widget shall be blue."),
+            P("5.2", "5.2. The widget shall hum."),
+            annex,
+            P("Annex 1 1.1", "1.1. The tester shall hold the widget at arm's length.", 20),
+            P("Annex 1 Appendix 1 1.1", "1.1. The report shall list every widget.", 22),
+        ],
+    )
+    main_only = [_req("R-001", "The widget shall be blue.", "5.1")]
+
+    added = [c.paragraph for c in regdiff.diff_versions(main_only, old, new)]
+
+    assert added == ["5.2"]
+    assert regdiff.part("Annex 1 Appendix 1 1.1") == "annex 1 appendix 1"
+    assert regdiff.part("Annex 1 1.1") == "annex 1"
+    assert regdiff.part("5.2") == ""
+
+    # A list that cites the annex keeps its new text, but not that of the annex's appendix.
+    with_annex = [*main_only, _req("R-002", "The tester shall be present.", "Annex 1 1.1", 20)]
+    added = [c.paragraph for c in regdiff.diff_versions(with_annex, old, new)]
+
+    assert added == ["5.2", "Annex 1 1.1"]
+
+
+def test_a_requirement_list_that_cannot_be_traced_limits_no_part() -> None:
+    old, new = _versions(
+        [SPEC, P("5.1", "5.1. The widget shall be blue.")],
+        [
+            SPEC,
+            P("5.1", "5.1. The widget shall be blue."),
+            P("Annex 1 1.1", "1.1. It shall hum.", 9),
+        ],
+    )
+
+    assert regdiff.covered_parts([], old) is None
+    assert [c.paragraph for c in regdiff.diff_versions([], old, new)] == ["Annex 1 1.1"]
+
+
 def test_the_submission_is_valid_against_certivitys_schema() -> None:
     old, new = _versions(
         [SPEC, P("5.1", "5.1. The widget shall be blue.\nThe widget may be tested twice.")],

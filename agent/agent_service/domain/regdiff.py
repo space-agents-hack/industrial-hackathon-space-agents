@@ -16,7 +16,10 @@ No model is called. The answer is built from text alone:
 4. A requirement whose segments all survive unchanged is not reported; one whose segments are
    gone is `removed`; anything else is `modified`, with the new segments as `new_text`.
 5. New segments that nothing paired with, outside introduction, scope and definitions, and that
-   state an obligation, become `added`.
+   state an obligation, become `added`, if they are in a part of the regulation (its main text,
+   an annex, an appendix) that the old requirements were written from. The old list is the
+   scope of the requirement set being kept up to date: an annex its authors wrote no requirement
+   from is out of that scope in the new version too.
 
 "Unchanged" is judged after normalising editorial noise: `70%` and `70 per cent`, `6 seconds`
 and `6 s`, footnote markers glued to words (`Party3` became `Party4` only because a footnote was
@@ -72,6 +75,10 @@ _NORMATIVE = re.compile(
     r"\b(shall|must|may|required|not more than|not less than|at least|at most)\b", re.IGNORECASE
 )
 _LIST_ITEM = re.compile(r"^\((?:[a-z]|[ivxl]+)\)\s")
+# An annex, or an appendix of one: "Annex 3 Appendix 2 5.1.1" is in "Annex 3 Appendix 2", "Annex
+# 4 4.2.1" in "Annex 4". Each is a separate document as far as a requirement list goes: forms,
+# documentation lists and test procedures that a list may cover or leave out as a whole.
+_PART = re.compile(r"^((?:annex|appendix)\s+\w+(?:\s+appendix\s+\w+)?)\b", re.IGNORECASE)
 _LABEL_PREFIX = re.compile(r"^\d+(?:\.\d+)*\.?\s+")
 # Abbreviations that end with a dot but do not end a sentence.
 _ABBREVIATIONS = ("e.g.", "i.e.", "No.", "no.", "para.", "Rev.", "etc.", "approx.")
@@ -369,6 +376,32 @@ def evidence(requirement: dict[str, Any], old: Version) -> list[Segment]:
     return found
 
 
+def part(label: str | None) -> str:
+    """The part of the regulation a paragraph is in: "" for the main text (introduction included),
+    else the annex or appendix, lower case."""
+    m = _PART.match((label or "").strip())
+    return " ".join(m.group(1).split()).lower() if m else ""
+
+
+def covered_parts(requirements_old: Sequence[dict[str, Any]], old: Version) -> set[str] | None:
+    """The parts of the old version the requirements were written from: those of the segments
+    each was traced to, and of an annex or appendix a requirement cites by label. None when no
+    requirement can be traced, so a list this module cannot read limits nothing.
+
+    Why: on a held-out pair (2026-10-25) 57 of 95 `added` entries came from two annexes and an
+    appendix that not one of the 117 old requirements was written from: new test procedures and
+    documentation lists, each sentence one entry. The platform scored flag precision at 38%. The
+    rule reads only the case's own input, the old list, and names no annex, so it holds for any
+    regulation: a list that covers an annex keeps that annex's new text."""
+    parts: set[str] = set()
+    for req in requirements_old:
+        parts |= {part(s.label) for s in evidence(req, old)}
+        cited = part((req.get("source") or {}).get("paragraph"))
+        if cited:
+            parts.add(cited)
+    return parts or None
+
+
 def _word_diff(old_text: str, new_text: str, limit: int = 1200) -> str:
     a, b = old_text.split(), new_text.split()
     parts: list[str] = []
@@ -524,8 +557,9 @@ def requirement_changes(
     return changes, consumed
 
 
-def added_changes(new: Version, consumed: set[int]) -> list[Change]:
-    """New obligations nothing in the old version pairs with."""
+def added_changes(new: Version, consumed: set[int], parts: set[str] | None = None) -> list[Change]:
+    """New obligations nothing in the old version pairs with, in `parts` of the regulation
+    (`covered_parts`) when given."""
     reg, ver = new.regulation, new.version_label
     excluded = {top for top, title in new.section_titles.items() if _NOT_REQUIREMENTS.match(title)}
     segs = new.segments
@@ -538,6 +572,7 @@ def added_changes(new: Version, consumed: set[int]) -> list[Change]:
             and not s.heading
             and bool(s.label)
             and s.label.split(".")[0] not in excluded
+            and (parts is None or part(s.label) in parts)
         )
 
     handled: set[int] = set()
@@ -593,7 +628,7 @@ def diff_versions(
 ) -> list[Change]:
     align(old, new)
     changes, consumed = requirement_changes(requirements_old, old, new)
-    return changes + added_changes(new, consumed)
+    return changes + added_changes(new, consumed, covered_parts(requirements_old, old))
 
 
 def submission(team_id: str, case_id: str, changes: Sequence[Change]) -> dict[str, Any]:
