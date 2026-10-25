@@ -130,7 +130,9 @@ What to set aside:
   regulation also states what a component or sub-assembly must meet: those are the part's, and
   so is vehicle-level text that states what a component must meet or how it is marked. An
   obligation for an operating mode or configuration that needs a component the profile does not
-  list is not the part's either. Nor is a test whose target area or impact point lies on another
+  list is not the part's either. A mode the vehicle has is one the case shows or implies, even through another component (a
+  connector, an opening or a control that only exists for that mode): the part's obligations in
+  that mode apply. Nor is a test whose target area or impact point lies on another
   part of the vehicle, unless a sentence of it also binds this part.
 - `not_an_obligation`: it imposes nothing (a permission, a reference only, a note).
 - `test_method`: how a test is carried out, as above.
