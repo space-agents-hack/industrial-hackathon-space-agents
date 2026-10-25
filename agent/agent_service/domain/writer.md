@@ -41,15 +41,22 @@ What counts:
 - Judge whether an obligation applies against the product profile at the end of the case, the
   same statement every other writer reads. Leave it out when it is for a function the profile
   lists as one the part does NOT have, for a vehicle category other than those it lists, or for
-  a kind of device that is neither the part nor something it contains. Keep it when the profile
-  says nothing either way.
+  a kind of device that is neither the part nor something it contains. Leave it out too when it
+  is about a signal or function of the vehicle that neither the case nor the profile names, even
+  if the vehicle uses this part among other devices to give it (a warning signal, a confirmation
+  signal, an automatic switching logic). Keep it when the profile says nothing either way about
+  the part's own functions.
 - Write every obligation of a paragraph that applies, not only its first or main one.
-- A test condition that sets a value or names what to test to is an obligation: which test,
-  standard or annex applies, the supply voltage, temperature, duration, frequency range, sample or
-  exposure it prescribes, and every result the product must reach. Write it. Only the mechanics
-  of a procedure that set no value of their own (where to place the sample, the order of the
-  steps, how to record or average a reading) are `test_method`: set those aside, and put them in
-  the test case.
+- A test condition is an obligation when it says what the product is put through or must show:
+  which test, standard or annex applies, and the level, range, frequency, modulation, supply
+  voltage, temperature, duration or medium the product is exposed to, and every result it must
+  reach. Write it. How the laboratory carries the test out is `test_method`, even when it sets a
+  value: the apparatus and facility (enclosure, cabinet, nozzle, platform, antenna, instrument,
+  network) and its settings or calibration, the measuring distance and geometry, ambient or
+  background checks, which samples go to which test and in what order, where to place the
+  sample, how to record or average a reading, and what the technical service does. Set those
+  aside, and put them in the test case. Ask whose value it is: the product's exposure or result
+  is an obligation, the apparatus's is not.
 
 How to cut the text into requirements (the output is matched one to one against requirements
 written by regulatory experts this way, so two obligations in one requirement are credited once):

@@ -387,10 +387,13 @@ class SetAside(BaseModel):
         description="definition_or_scope: defines a term or the scope. authority_procedure: what "
         "the approval authority or the application file does. not_this_product: by the product "
         "profile (a function it lacks, another vehicle category, a device it neither is nor "
-        "contains). not_an_obligation: imposes nothing (a permission, a reference only). "
-        "test_method: how a test is carried out (set-up, conditioning, sequence, equipment, how a "
+        "contains, a vehicle signal the case does not name). not_an_obligation: imposes nothing "
+        "(a permission, a reference only). "
+        "test_method: how the laboratory carries a test out, even with a value (apparatus, "
+        "facility, instrument settings, measuring distance, sample allocation, sequence, how a "
         "value is measured or computed), which belongs in the test case of the requirement it "
-        "verifies. same_as_another_clause: restates an obligation answered elsewhere in this "
+        "verifies; what the product is exposed to or must show is an obligation. "
+        "same_as_another_clause: restates an obligation answered elsewhere in this "
         "window."
     )
     note: str = Field(default="", max_length=300, description="Why, in a few words.")

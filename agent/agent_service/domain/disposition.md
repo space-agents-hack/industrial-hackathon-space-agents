@@ -35,11 +35,16 @@ What is an obligation:
 - Each paragraph that states an obligation of its own gets its own entry, even when another
   paragraph states something similar. A paragraph that only restates, sums up or refers back to
   an obligation already listed is `same_as_another_clause`.
-- A test condition that sets a value or names what to test to is an obligation: which test,
-  standard or annex applies, the supply voltage, temperature, duration, frequency range, sample or
-  exposure it prescribes, and every result the product must reach. List it. Only the mechanics of
-  a procedure that set no value of their own (where to place the sample, the order of the steps,
-  how to record or average a reading) are `test_method`: set those aside, they go in the test case.
+- A test condition is an obligation when it says what the product is put through or must show:
+  which test, standard or annex applies, and the level, range, frequency, modulation, supply
+  voltage, temperature, duration or medium the product is exposed to, and every result it must
+  reach. List it. How the laboratory carries the test out is `test_method`, even when it sets a
+  value: the apparatus and facility (enclosure, cabinet, nozzle, platform, antenna, instrument,
+  network) and its settings or calibration, the measuring distance and geometry, ambient or
+  background checks, which samples go to which test and in what order, where to place the
+  sample, how to record or average a reading, and what the technical service does. Set those
+  aside; they go in the test case. Ask whose value it is: the product's exposure or result is an
+  obligation, the apparatus's is not.
 
 How to cut obligations into entries. Each requirement is matched one to one against a requirement
 written by regulatory experts, by its scope (what it is about), its condition (when it applies)
@@ -77,8 +82,11 @@ What to set aside:
 - `not_this_product`: judged against the product profile at the end of the case, the statement
   every other agent reads. Only when it is for a function the profile lists as one the part does
   NOT have, for a vehicle category other than those it lists, or for a kind of device that is
-  neither the part nor something it contains. When the profile says nothing either way, it
-  applies.
+  neither the part nor something it contains. Also when it is about a signal or function of the
+  vehicle that neither the case nor the profile names, even if the vehicle uses this part among
+  other devices to give it (a warning signal, a confirmation signal, an automatic switching
+  logic): the part's own functions are the ones the profile lists. When the profile says nothing
+  either way about the part's own functions, it applies.
 - `not_an_obligation`: it imposes nothing (a permission, a reference only, a note).
 - `test_method`: how a test is carried out, as above.
 - `same_as_another_clause`: it restates an obligation you answered elsewhere in this window.
