@@ -25,11 +25,13 @@ contains or through where it is fitted:
   and the component's "How it is built in" line does not meet it, the verdict is `does_not`; if
   that line says "not stated", `possibly`, naming the condition. A regulation that governs a whole
   vehicle's system, or the manufacturer's processes for it, does not reach a part only because
-  the part contains software or electronics: `does_not`, unless its scope names parts or
+  the part contains software or electronics, or carries a sensor, an antenna, a connector or
+  another component that system uses: `does_not`, unless its scope names such parts or
   components as what it approves or tests, or the case names that regulation.
 - Through where it is fitted: the regulation must set requirements on the part's own
   installation or on the part's own behaviour on the vehicle, not only on other devices or
-  features of the vehicle near it.
+  features of the vehicle near it, and not only on what the vehicle as a whole must achieve
+  (its occupants' protection in a crash, its braking, its emissions).
 
 For each verdict:
 
