@@ -446,8 +446,10 @@ def _cites_this_window(ctx: RunContext[Window], answer: WindowAnswer) -> WindowA
             parts.append(
                 f"`covers` is not an entry of the product profile for [#{', #'.join(uncovered)}]. "
                 "Copy a function or component from the profile word for word, or write "
-                f"'{WHOLE_PART}'; if it covers none of them, set its clauses aside as "
-                "not_this_product."
+                f"'{WHOLE_PART}', which also covers an obligation that holds only if the part "
+                "has a feature the case does not mention (keep it, with its condition). Set it "
+                "aside as not_this_product only when it is on another device or a function the "
+                "profile says the part does not have."
             )
         raise ModelRetry(" ".join(parts) + " Answer again with the whole list.")
     requirements = [d for d in answer.requirements if d.text.strip()]

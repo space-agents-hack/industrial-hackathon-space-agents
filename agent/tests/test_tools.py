@@ -90,7 +90,9 @@ async def test_a_window_whose_call_never_answers_fails_alone_and_the_rest_is_sto
 
 
 async def test_a_failed_window_names_its_labels_and_they_retry_it(store, settings) -> None:
-    d = deps(store, settings.model_copy(update={"subagent_timeout_s": 0.2}))
+    # 1 s, not 0.2: the retry's window must answer inside the limit, and a busy CI runner took
+    # longer than 0.2 s for it (Deploy run 145, 2026-10-25).
+    d = deps(store, settings.model_copy(update={"subagent_timeout_s": 1.0}))
     first = await tools.write_requirements(ctx(d, stalls_on("obsolete")), ["UN R148"])
     [failed] = first["failed_windows"]
     assert failed["paragraphs"] == ["6.1"]

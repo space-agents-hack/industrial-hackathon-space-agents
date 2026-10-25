@@ -21,8 +21,14 @@ answer for every clause, with `record_disposition`:
 - `covers` in each entry: what of the product the obligation is about, copied word for word from
   the product profile: one of the functions it performs or one of the components or materials it
   contains. Write `the part` when it is on the part as a whole (its marking, its installation,
-  the device as a whole). An obligation about a function or component that is neither in the
-  profile nor shown by the case does not apply: set its clauses aside as `not_this_product`.
+  the device as a whole). An obligation about another device, or a function the profile says the
+  part does NOT have, does not apply: set its clauses aside as `not_this_product`.
+  An obligation that holds only if the part has a feature the case does not mention (a logo or
+  extra marking, a detachable or removable part, an optional variant of one of its functions,
+  mounting on a moving component, being combined with or incorporated in another device, a
+  setting that varies in use) applies with that condition: a short case cannot rule the feature
+  out, and the engineer must meet the obligation if the design has it. Keep it, state its
+  condition, and cover it with `the part` or the component it concerns.
 - `set_aside`: every other clause, with its reason.
 
 What is an obligation:
