@@ -66,7 +66,8 @@ chance, without the answer key. Two samples double the first stage: watch the 77
   and voting removes its random errors. A confidence-weighted vote needs about 40% fewer samples
   than a plain one. RAFT (Xue et al. 2026), a regulation-to-requirement pipeline, votes 2 of 3
   where precision matters and takes the union where recall matters. **Built** as an option:
-  `DISPOSITION_SAMPLES`, `DISPOSITION_VOTE` (de37a98). Off by default.
+  `DISPOSITION_SAMPLES`, `DISPOSITION_VOTE` (de37a98). On by default since 2026-10-25: 3 samples,
+  majority, to cut the excess on the dev run (457 requirements for 190 expected).
 - **Tables are the hard part of PDF parsing**, as Certivity's partners said. In PDF-Bench (Dec
   2025, 17 parsers, 353 documents) the table score (TEDS) was pdfplumber 93.4%, pymupdf4llm 84.8%,
   Docling 84.5%. On PDFs with a real text layer, as ours have, a small pure-Python library beats

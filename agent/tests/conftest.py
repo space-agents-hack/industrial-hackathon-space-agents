@@ -32,4 +32,7 @@ def settings() -> Settings:
         chat_model="scripted",
         summary_model="scripted",
         figure_model="scripted",
+        # One disposition answer per window, so a test sees one scripted call per window; the
+        # vote has its own tests, which ask for samples.
+        disposition_samples=1,
     )
