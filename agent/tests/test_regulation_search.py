@@ -6,7 +6,7 @@ import asyncio
 import json
 from collections.abc import Iterator
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -567,3 +567,70 @@ async def test_a_search_by_words_cancelled_for_time_is_not_hidden(settings: Sett
     async with Provider().client as http:
         with pytest.raises(SearchTimeout):
             await search(Slow(), http, settings, ORG, "stop lamp", mode="text")
+
+
+# ---------------------------------------------------------------------- ranking regulations (#53)
+
+
+def _hit(code: str, version: UUID, label: str) -> regulation_search.Hit:
+    # Made-up codes and text: what is tested is the folding, not any regulation.
+    return regulation_search.Hit(
+        paragraph_id=uuid4(),
+        version_id=version,
+        regulation_code=code,
+        version_label="00",
+        label=label,
+        kind="paragraph",
+        text="x",
+        page_start=1,
+        page_end=1,
+        score=0.0,
+    )
+
+
+def test_regulations_are_ranked_by_the_reciprocal_ranks_of_their_paragraphs() -> None:
+    a, b, c = uuid4(), uuid4(), uuid4()
+    hits = [
+        _hit("X-B", b, "5.1"),
+        _hit("X-A", a, "6.2"),
+        _hit("X-A", a, "6.3"),
+        _hit("X-A", a, "7.1"),
+        _hit("X-C", c, "2"),
+    ]
+    ranked = regulation_search.rank_hits(hits)
+    assert [(r.regulation_code, r.rank) for r in ranked] == [("X-A", 1), ("X-B", 2), ("X-C", 3)]
+    first = ranked[0]
+    assert first.score == pytest.approx(1 / 62 + 1 / 63 + 1 / 64)
+    # Its best paragraph, not its first in the score: what a person opens to check.
+    assert (first.best_rank, first.best_label, first.paragraphs) == (2, "6.2", 3)
+    assert ranked[1].score == pytest.approx(1 / 61)
+    assert ranked[1].best_rank == 1
+
+
+def test_two_versions_of_one_regulation_are_two_rows_not_one_doubled() -> None:
+    old, new = uuid4(), uuid4()
+    ranked = regulation_search.rank_hits(
+        [_hit("X-A", new, "1"), _hit("X-A", old, "1"), _hit("X-B", uuid4(), "1")]
+    )
+    assert [(r.regulation_code, r.version_id) for r in ranked][:2] == [("X-A", new), ("X-A", old)]
+    assert all(r.paragraphs == 1 for r in ranked)
+
+
+def test_no_hits_rank_nothing() -> None:
+    assert regulation_search.rank_hits([]) == []
+
+
+async def test_ranking_regulations_costs_one_embedding_and_one_search(settings: Settings) -> None:
+    a, b = uuid4(), uuid4()
+    store = InMemorySearchStore(
+        keys={"openai": KEY}, hits=[_hit("X-B", b, "3"), _hit("X-A", a, "4"), _hit("X-A", a, "5")]
+    )
+    provider = Provider()
+    async with provider.client as http:
+        ranked = await regulation_search.rank_regulations(
+            store, http, settings, ORG, "rear position lamp", version_ids=[a, b]
+        )
+    assert len(provider.requests) == 1
+    assert [m["k"] for m in store.matches] == [regulation_search.RANK_PARAGRAPHS]
+    assert store.matches[0]["versions"] == [a, b]
+    assert [r.regulation_code for r in ranked] == ["X-A", "X-B"]

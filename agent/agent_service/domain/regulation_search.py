@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 from uuid import UUID
@@ -666,3 +667,106 @@ async def search(
         raise VectorSearchTimeout(
             "the search by meaning took longer than the database allows"
         ) from None
+
+
+# ------------------------------------------------------------------------------------------
+# Ranking regulations (#53)
+# ------------------------------------------------------------------------------------------
+
+# The fusion constant of match_regulation_paragraphs (migration 20261024360000), so a paragraph
+# weighs here what it weighed in the search that found it. With 60, rank 1 is worth 1/61 and rank
+# 50 is worth 1/110: less than twice as much. The score is therefore close to a count of
+# paragraphs in the first 50, and a long regulation that mentions a component on many pages
+# outranks a short one whose best paragraph is first. `best_rank` is kept next to it for that
+# reason; which of the two a rule reads is the caller's choice, made before a run, not fitted.
+RRF_K = 60
+# Paragraphs per query, as #53 proposed: enough that the fifth regulation still has some in the
+# list when the first ones take most of it. Still one embedding and one database call; the screen
+# already runs its searches at k = 40, and k only cuts the fused list: each half fetches its 100
+# candidates (p_candidates) whatever k is, so 50 costs the database what 20 does.
+RANK_PARAGRAPHS = 50
+
+
+@dataclass(frozen=True)
+class RegulationRank:
+    """One regulation version, as one query ranks it among the versions it hit.
+
+    `score` is the sum over its paragraphs of 1 / (RRF_K + the paragraph's rank in the search),
+    not `screen.reciprocal_rank`, which sums 1 / rank over the regulation's rank in several
+    searches: two different numbers. `rank` orders by `score`; `best_rank` and `best_label` are
+    its best paragraph's, which is what a person checks."""
+
+    regulation_code: str
+    version_id: UUID
+    version_label: str
+    score: float
+    rank: int
+    best_rank: int
+    best_label: str | None
+    paragraphs: int
+
+
+def rank_hits(hits: Sequence[Hit]) -> list[RegulationRank]:
+    """Fold a search's paragraph hits, best first, into one row per version, best first: by
+    score, then by best paragraph, then by code so the same hits always give the same order.
+
+    Per version, not per code: two versions of one regulation share most of their text, so
+    summing them would count the same paragraph twice. A caller that wants one row per
+    regulation passes one version of each, as the writer's searches do (`_citable`)."""
+    found: dict[UUID, list[tuple[int, Hit]]] = {}
+    for position, hit in enumerate(hits, start=1):
+        found.setdefault(hit.version_id, []).append((position, hit))
+    folded = [
+        (sum(1 / (RRF_K + p) for p, _ in mine), mine[0][0], mine[0][1], len(mine))
+        for mine in found.values()
+    ]
+    folded.sort(key=lambda f: (-f[0], f[1], f[2].regulation_code))
+    return [
+        RegulationRank(
+            regulation_code=best.regulation_code,
+            version_id=best.version_id,
+            version_label=best.version_label,
+            score=score,
+            rank=rank,
+            best_rank=best_rank,
+            best_label=best.label,
+            paragraphs=count,
+        )
+        for rank, (score, best_rank, best, count) in enumerate(folded, start=1)
+    ]
+
+
+async def rank_regulations(
+    store: SearchStore,
+    http: httpx.AsyncClient,
+    settings: Settings,
+    org: UUID,
+    query: str,
+    *,
+    version_ids: list[UUID] | None = None,
+    k_paragraphs: int = RANK_PARAGRAPHS,
+    mode: SearchMode = "hybrid",
+    case_id: UUID | None = None,
+    meter: Meter | None = None,
+) -> list[RegulationRank]:
+    """Which regulations one function or component of a part points to, and how strongly: one
+    `search` (one embedding, one database call) folded by `rank_hits`.
+
+    A second signal next to the scope screen, which reads every scope against the profile:
+    search finds a regulation by what the component is called in its text, the screen by what
+    its scope says. What this does NOT do: decide anything (the pipeline's fixed rules do),
+    match a vector of the scope summary alone (a migration, see #53), or fall back to words when
+    the query cannot be embedded (`search` raises, as for every caller; pass mode="text")."""
+    hits = await search(
+        store,
+        http,
+        settings,
+        org,
+        query,
+        version_ids=version_ids,
+        k=k_paragraphs,
+        mode=mode,
+        case_id=case_id,
+        meter=meter,
+    )
+    return rank_hits(hits)

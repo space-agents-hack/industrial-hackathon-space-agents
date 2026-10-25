@@ -77,3 +77,31 @@ assistant say so (`regulation_search.words_only`).
 Built in `20261024210000_regulation_search.sql`, filtered to current rows by
 `20261024270000_superseded_paragraphs.sql`. Measured on 49,680 synthetic paragraphs: 0.5 to 0.9 s
 for the whole library, about 0.1 s for 10 versions (`docs/regulations-store.md`, "As built").
+
+## IF-3 ranking: regulations for one function or component
+
+Status: **added, not yet called.** Asked for on #53 (Clemente's request, Certivity's tip to scope by
+rules and semantic search together, SYS-28, SYS-44) with this shape; built on the producer side
+without a migration. Additive: `search` and `Hit` are unchanged. The pipeline's `screen.evidence`
+still ranks regulations its own way (by best paragraph); switching it is the pipeline's call.
+
+**Query**, `regulation_search.rank_regulations(store, http, settings, org, query, *, version_ids,
+k_paragraphs=50, mode, case_id, meter)`: one `search` with k = `k_paragraphs`, so one embedding and
+one database call. Same arguments and same `EmbeddingError` as `search`. A caller that already has
+the hits (the pipeline's `_search`, with its words-only fallback) folds them with
+`regulation_search.rank_hits(hits)`.
+
+**Response**: a list of `RegulationRank`, one per version hit, best first:
+
+- `regulation_code`, `version_id`, `version_label`: as in `Hit`.
+- `score`: sum over the version's paragraphs of 1 / (60 + the paragraph's rank in the search), the
+  fusion constant of `match_regulation_paragraphs`. Not `screen.reciprocal_rank`, which is another
+  number.
+- `rank`: position by `score`, 1 is the best.
+- `best_rank`, `best_label`: the version's best paragraph, its rank in the search and its label.
+- `paragraphs`: how many of its paragraphs are in the first `k_paragraphs`.
+
+**What it does not promise:** one row per regulation when several versions of one are searched
+(each version is its own row, so a shared paragraph is not counted twice), or that `score` is
+independent of a regulation's length. With 60, rank 1 is worth 1/61 and rank 50 1/110, so `score`
+is close to a paragraph count; `best_rank` is the length-independent signal.

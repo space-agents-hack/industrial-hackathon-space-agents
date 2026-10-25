@@ -39,6 +39,8 @@ class InMemorySearchStore:
     refreshes: int = 0
     analyses: int = 0
     matches: list[dict[str, object]] = field(default_factory=list)
+    # What every match answers, best first, cut to k: the ranking is the SQL's, tested there.
+    hits: list[Hit] = field(default_factory=list)
     # The database cancels a search that uses vectors, as the hosted one did at 8 s (#44).
     vector_search_times_out: bool = False
     # model_usage rows (agent_service/metering.py).
@@ -119,11 +121,17 @@ class InMemorySearchStore:
         k: int,
     ) -> list[Hit]:
         self.matches.append(
-            {"query": query, "embedding": embedding, "model": model, "versions": version_ids}
+            {
+                "query": query,
+                "embedding": embedding,
+                "model": model,
+                "versions": version_ids,
+                "k": k,
+            }
         )
         if self.vector_search_times_out and embedding is not None:
             raise SearchTimeout("canceling statement due to statement timeout")
-        return []
+        return self.hits[:k]
 
     async def aclose(self) -> None:
         self.closed = True
