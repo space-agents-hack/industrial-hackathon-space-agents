@@ -7,10 +7,12 @@ the paragraph that states it, the heading it is under, a one-line statement of w
 its clauses and the full text of the paragraph. Another agent has already decided that each one
 applies to this product: write them, do not judge them again.
 
-For each obligation, write exactly one requirement, and record them with `record_translations`,
-citing the `[#n]` the obligation is headed with and listing its clause ids in `clauses`. The other
-agent has already split the obligations one per list item, table row or separate quantity: do not
-split one again, and do not add requirements it did not list. When the obligation refers to a
+For each obligation, write one requirement, and record them with `record_translations`, citing
+the `[#n]` the obligation is headed with and listing its clause ids in `clauses`. The other agent
+has already split the obligations one per list item, table row or separate quantity: do not split
+one again, and do not add requirements it did not list. The one exception: an obligation that
+lists several clauses, each of which obliges something of its own (two "shall" sentences, two list
+items), gets one requirement per clause, each listing its own clause id. When the obligation refers to a
 table, an annex or another paragraph for its values ("as specified in Table 2"), read it with
 `read_version_paragraphs` and put the values in the requirement. When it refers to one for its
 test ("in accordance with Annex 4"), put the test in the `test_case`, not in more requirements.

@@ -591,8 +591,12 @@ def read_version_paragraphs(
 def _translates_these_obligations(
     ctx: RunContext[TranslationJob], drafts: list[Draft]
 ) -> list[Draft]:
-    known = Counter(o.ref for o in ctx.deps.obligations)
-    wrong = sorted({d.ref for d in drafts if d.ref not in known})
+    # How many requirements each paragraph may get: one per obligation, or one per clause when an
+    # obligation lists several (each "shall" sentence or list item the code found).
+    allowed: Counter[int] = Counter()
+    for o in ctx.deps.obligations:
+        allowed[o.ref] += max(1, len(o.clauses))
+    wrong = sorted({d.ref for d in drafts if d.ref not in allowed})
     if wrong:
         raise ModelRetry(
             f"[#{', #'.join(map(str, wrong))}] are not the paragraphs of these obligations. Cite "
@@ -600,21 +604,24 @@ def _translates_these_obligations(
         )
     drafts = [d for d in drafts if d.text.strip()]
     written = Counter(d.ref for d in drafts)
-    over = sorted(ref for ref, n in written.items() if n > known[ref])
+    over = sorted(ref for ref, n in written.items() if n > allowed[ref])
     # One requirement per obligation (Clemente, 2026-10-25: "make sure one obligation, one
-    # requirement is met"). The first stage already splits; a translator that splits again
-    # multiplied the output (634 requirements on dev for a key of 190). Asked once; after that the
-    # first ones per paragraph are kept, as many as it has obligations.
+    # requirement is met"): a translator splitting freely multiplied the output (634 requirements
+    # on dev for a key of 190). One per obligation flat may cost recall wherever the first stage
+    # lists one obligation for several clauses (matched fell to 115 of 190 after it; the cause is
+    # not measured). So the bound is the code's own split: one per clause, never more. Asked
+    # once; then the first ones per paragraph are kept.
     if over and ctx.retry == 0:
         raise ModelRetry(
-            f"[#{', #'.join(map(str, over))}]: more requirements than obligations. Write exactly "
-            "one requirement per obligation; another agent already split them. Answer again."
+            f"[#{', #'.join(map(str, over))}]: more requirements than the obligations and clauses "
+            "listed. Write one requirement per obligation, or one per clause when an obligation "
+            "lists several clauses that each oblige something. Answer again."
         )
     kept: list[Draft] = []
     for d in drafts:
-        if known[d.ref] > 0:
+        if allowed[d.ref] > 0:
             kept.append(d)
-            known[d.ref] -= 1
+            allowed[d.ref] -= 1
     return kept
 
 

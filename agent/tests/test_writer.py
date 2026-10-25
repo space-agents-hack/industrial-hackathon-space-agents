@@ -326,3 +326,23 @@ async def test_a_translator_writes_one_requirement_per_obligation() -> None:
 
     assert len(calls) == 2  # asked once, then the first one per obligation is kept
     assert [d.text for d in result.output] == ["It shall be red."]
+
+
+async def test_an_obligation_over_two_clauses_may_give_one_requirement_per_clause() -> None:
+    # One flat requirement per obligation lost recall where the first stage grouped clauses.
+    window = writer.Window(version(), [paragraph(3, 4, RED)])
+    found = writer.Disposition(
+        obligations=[writer.Obligation(ref=3, clauses=["c3.1", "c3.2"], what="x")]
+    )
+    [job] = writer.translation_jobs(window, found, [])
+    two = [
+        {"ref": 3, "clauses": ["c3.1"], "text": "It shall be red.", "test_case": "Look."},
+        {"ref": 3, "clauses": ["c3.2"], "text": "It shall not flash.", "test_case": "Look."},
+    ]
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[ToolCallPart("record_translations", {"response": two})])
+
+    result = await writer.translator_agent.run(job.render(), model=FunctionModel(model), deps=job)
+
+    assert [d.text for d in result.output] == ["It shall be red.", "It shall not flash."]
