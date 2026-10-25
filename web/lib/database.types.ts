@@ -1410,6 +1410,10 @@ export type Database = {
         Args: { member_email: string; member_role: string; org: string }
         Returns: string
       }
+      add_regulation_embedding_keys: {
+        Args: { p_limit?: number; p_organization_id: string }
+        Returns: number
+      }
       analyze_regulation_search: { Args: never; Returns: undefined }
       bootstrap_member: {
         Args: {
@@ -1438,6 +1442,10 @@ export type Database = {
       delete_provider_key: {
         Args: { key_provider: string; org: string }
         Returns: undefined
+      }
+      delete_regulations: {
+        Args: { org: string; regulation_ids: string[] }
+        Returns: Json
       }
       find_people: {
         Args: { org: string; search: string }
@@ -1580,6 +1588,13 @@ export type Database = {
       refresh_regulation_embedding_keys: {
         Args: { p_organization_id: string }
         Returns: number
+      }
+      regulation_citation_counts: {
+        Args: { org: string }
+        Returns: {
+          regulation_id: string
+          requirements: number
+        }[]
       }
       regulation_embedding_input: {
         Args: {

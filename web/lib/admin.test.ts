@@ -255,6 +255,20 @@ test("audit lines are readable sentences", () => {
     "ana@example.com: admin, active.",
   );
   assert.equal(
+    summarizeAuditEvent({ action: "regulations.deleted", detail: { codes: ["UN R10"], requirements_unlinked: 0 } }, nameOf),
+    "Deleted the regulation UN R10 from the library.",
+  );
+  assert.equal(
+    summarizeAuditEvent(
+      {
+        action: "regulations.deleted",
+        detail: { codes: ["UN R1", "UN R2", "UN R3", "UN R4", "UN R5", "UN R6", "UN R7"], requirements_unlinked: 3 },
+      },
+      nameOf,
+    ),
+    "Deleted 7 regulations UN R1, UN R2, UN R3, UN R4, UN R5 and 2 more from the library; 3 requirements kept their citation without the link.",
+  );
+  assert.equal(
     summarizeAuditEvent({ action: "member.removed", detail: { user_id: ORG, email: "bo@example.com" } }, nameOf),
     "Removed bo@example.com from the organisation.",
   );

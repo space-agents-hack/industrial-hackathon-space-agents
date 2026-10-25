@@ -146,6 +146,17 @@ What the import does not do: delete anything (a version missing from a new index
 while no import page is open (it waits, paused, and Resume picks it up), or store more than one PDF
 per version.
 
+Deleting is separate, and only for admins (SYS-46, #56): Delete on a regulation's row, or Clear the
+library at the end of the page, which asks for the organisation's name to be typed. Both go through
+`delete_regulations` (migration `20261024380000`), which refuses while an import is in progress and
+takes at most 25 regulations per call, so the web clears a library in batches inside the 8 s
+statement timeout. A regulation takes its versions, paragraphs, search keys, scope summaries and the
+projects' choice of it; the web then removes its PDFs as the admin. Requirements already written
+stay with their run and citation text, with `version_id` and `paragraph_id` set to null, and
+re-importing does not link them again. Embedding vectors stay: they are keyed by the text's hash,
+so importing the same files again costs nothing, and the search reaches a vector only through a
+paragraph. The import history stays too.
+
 ## The two AI fields
 
 **Per version: a scope summary and keywords. Yes.** Matching a component to regulations starts with

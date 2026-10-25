@@ -541,6 +541,14 @@ export function summarizeAuditEvent(
       const who = text(detail.email) ?? (userId ? nameOf(userId) : "Someone");
       return `Removed ${who} from the organisation.`;
     }
+    case "regulations.deleted": {
+      const codes = Array.isArray(detail.codes) ? detail.codes.filter((c) => typeof c === "string") : [];
+      const shown = codes.length > 5 ? `${codes.slice(0, 5).join(", ")} and ${codes.length - 5} more` : codes.join(", ");
+      const unlinked = num(detail.requirements_unlinked) ?? 0;
+      return `Deleted ${codes.length === 1 ? "the regulation" : `${codes.length} regulations`} ${shown || "?"} from the library${
+        unlinked > 0 ? `; ${unlinked} requirements kept their citation without the link` : ""
+      }.`;
+    }
     default:
       return `${event.action} ${compactJson(event.detail, 160)}`;
   }

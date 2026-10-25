@@ -116,3 +116,112 @@ export function formatBytes(bytes: number): string {
   if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(bytes / 1000))} KB`;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Deleting regulations (SYS-46, #56)
+// ---------------------------------------------------------------------------------------------
+
+// What delete_regulations accepts in one call (migration 20261024380000): the paragraphs of 25
+// regulations go well inside the API's statement timeout. Clearing a library is that many calls.
+export const DELETE_BATCH = 25;
+
+export type DeleteTarget = { ids: string[] } | { all: true; confirm: string };
+
+// Body of DELETE /api/regulations: { organization_id, regulation_ids } for chosen regulations, or
+// { organization_id, all: true, confirm } to clear the whole library, where `confirm` is the
+// organisation's name as the person typed it. The route checks that name again: a hidden field or
+// a replayed request must not empty a library nobody meant to.
+export function parseDeleteRequest(body: unknown): Parsed<{ organizationId: string; target: DeleteTarget }> {
+  if (!isRecord(body)) {
+    return { ok: false, error: 'Expected a JSON body like { "organization_id": "...", "regulation_ids": ["..."] }.' };
+  }
+  if (!isUuid(body.organization_id)) return { ok: false, error: "Choose an organisation first." };
+  if (body.all === true) {
+    if (typeof body.confirm !== "string") return { ok: false, error: "Type the organisation's name to clear its library." };
+    return { ok: true, value: { organizationId: body.organization_id, target: { all: true, confirm: body.confirm } } };
+  }
+  const ids = body.regulation_ids;
+  if (!Array.isArray(ids) || ids.length === 0 || !ids.every(isUuid)) {
+    return { ok: false, error: "Choose at least one regulation to delete." };
+  }
+  // One page of the library at most; clearing all of it is `all`.
+  if (ids.length > 1000) return { ok: false, error: "Delete at most 1000 regulations at a time." };
+  return { ok: true, value: { organizationId: body.organization_id, target: { ids: [...new Set(ids)] } } };
+}
+
+// The organisation's name, typed. Case and surrounding spaces do not count: the point is that the
+// person read which library this is, and "org one" for "Org One" shows they did.
+export function confirmsClear(typed: string, organizationName: string): boolean {
+  return typed.trim() !== "" && typed.trim().toLowerCase() === organizationName.trim().toLowerCase();
+}
+
+export function batches<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+export type DeleteOutcome = {
+  regulations: number;
+  versions: number;
+  paragraphs: number;
+  requirementsUnlinked: number;
+  paths: string[];
+};
+
+export const NO_DELETION: DeleteOutcome = { regulations: 0, versions: 0, paragraphs: 0, requirementsUnlinked: 0, paths: [] };
+
+function count(value: unknown): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
+// delete_regulations' answer, added to what earlier batches deleted.
+export function addOutcome(total: DeleteOutcome, raw: unknown): DeleteOutcome {
+  const o = isRecord(raw) ? raw : {};
+  const paths = Array.isArray(o.paths) ? o.paths.filter((p): p is string => typeof p === "string") : [];
+  return {
+    regulations: total.regulations + count(o.regulations),
+    versions: total.versions + count(o.versions),
+    paragraphs: total.paragraphs + count(o.paragraphs),
+    requirementsUnlinked: total.requirementsUnlinked + count(o.requirements_unlinked),
+    paths: [...total.paths, ...paths],
+  };
+}
+
+function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
+}
+
+export type LibraryPart = { regulations: number; versions: number; paragraphs: number; requirements: number };
+
+// The confirmation's sentences, the same for one regulation and for the whole library, so the two
+// dialogs cannot drift apart on what is kept.
+export function describeConsequences(part: LibraryPart): { removed: string; kept: string } {
+  const one = part.regulations === 1;
+  const removed =
+    `Removed for every project of the organisation: ${plural(part.regulations, "regulation")}, ` +
+    `${plural(part.versions, "version")} and their PDFs, ${plural(part.paragraphs, "paragraph")}, ` +
+    `their scope summaries and search index, and the projects' choice of ${one ? "it" : "them"}.`;
+  const n = part.requirements;
+  const kept =
+    n === 0
+      ? `No requirement cites ${one ? "it" : "them"}. The import history stays, and so do the embedding ` +
+        "vectors, so importing the same files again costs no new embeddings."
+      : `${plural(n, "requirement")} already written ${n === 1 ? "cites" : "cite"} ${one ? "it" : "them"}. ` +
+        `${n === 1 ? "It stays with its run" : "They stay with their runs"}, citation text included, but ` +
+        `${n === 1 ? "loses" : "lose"} the link to the paragraph; importing again does not restore it. ` +
+        "The import history and the embedding vectors stay.";
+  return { removed, kept };
+}
+
+export function describeDeletion(outcome: DeleteOutcome): string {
+  if (outcome.regulations === 0) return "Nothing to delete: the library is already empty.";
+  const unlinked =
+    outcome.requirementsUnlinked > 0
+      ? ` ${plural(outcome.requirementsUnlinked, "requirement")} kept ${outcome.requirementsUnlinked === 1 ? "its" : "their"} citation without the link.`
+      : "";
+  return (
+    `Deleted ${plural(outcome.regulations, "regulation")}: ${plural(outcome.versions, "version")}, ` +
+    `${plural(outcome.paragraphs, "paragraph")}.${unlinked}`
+  );
+}

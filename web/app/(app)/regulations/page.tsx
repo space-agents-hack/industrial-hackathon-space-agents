@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { NoProject } from "@/components/projects/no-project";
 import { RelativeTime } from "@/components/relative-time";
 import { buttonVariants } from "@/components/ui/button";
+import { ClearLibrary, DeleteRegulation } from "@/components/regulations/delete-regulations";
 import { type ImportView, ImportPanel } from "@/components/regulations/import-panel";
 import { IndexPanel } from "@/components/regulations/index-panel";
 import { hasNoAccess } from "@/lib/access";
@@ -24,7 +25,7 @@ import {
   vectorKey,
   versionSummary,
 } from "@/lib/regulation-index";
-import { ACTIVE_IMPORT, type ImportStatus, countFiles, formatBytes } from "@/lib/regulations";
+import { ACTIVE_IMPORT, type ImportStatus, type LibraryPart, countFiles, formatBytes } from "@/lib/regulations";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Regulations" };
@@ -90,7 +91,7 @@ async function Regulations() {
   // Each organisation has its own library (ADR-0006); a project uses all of it or a chosen part
   // (SYS-32), and this page shows that part (SYS-36). RLS lets a platform admin read every library,
   // so the filter is what keeps this page to the organisation in the header.
-  const [{ data, error }, scope, indexStatus, chosenEmbedding, health, latestImport] = await Promise.all([
+  const [{ data, error }, scope, indexStatus, chosenEmbedding, health, latestImport, citations] = await Promise.all([
     supabase
       .from("regulations")
       .select(
@@ -118,7 +119,12 @@ async function Regulations() {
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // For the delete confirmations only: how many requirements lose their link (SYS-46).
+    permissions.manage
+      ? supabase.rpc("regulation_citation_counts", { org: current.id })
+      : Promise.resolve({ data: [], error: null }),
   ]);
+  if (citations.error) console.error("Regulations: counting citations failed", citations.error);
   if (indexStatus.error) console.error("Regulations: reading the index status failed", indexStatus.error);
   if (error || scope.error) {
     console.error("Regulations: read failed", error);
@@ -140,6 +146,24 @@ async function Regulations() {
     embeddingModel,
   );
   const importActive = latestImport.data ? ACTIVE_IMPORT.includes(latestImport.data.status as ImportStatus) : false;
+  // delete_regulations refuses during an import too; this only says why before anyone presses.
+  const deleteBlocked = importActive ? "An import is in progress: delete once it finishes or is cancelled." : null;
+  const cited = new Map((citations.data ?? []).map((c) => [c.regulation_id, c.requirements]));
+  const partOf = (r: (typeof data)[number]): LibraryPart => ({
+    regulations: 1,
+    versions: r.regulation_versions.length,
+    paragraphs: r.regulation_versions.reduce((n, v) => n + (v.paragraph_count ?? 0), 0),
+    requirements: cited.get(r.id) ?? 0,
+  });
+  const library = data.map(partOf).reduce(
+    (a, b) => ({
+      regulations: a.regulations + b.regulations,
+      versions: a.versions + b.versions,
+      paragraphs: a.paragraphs + b.paragraphs,
+      requirements: a.requirements + b.requirements,
+    }),
+    { regulations: 0, versions: 0, paragraphs: 0, requirements: 0 },
+  );
 
   const all = scope.data?.all_regulations ?? true;
   const chosen = new Set(scope.data?.project_regulations.map((r) => r.regulation_id) ?? []);
@@ -213,6 +237,17 @@ async function Regulations() {
                         <VersionLink key={version.id} version={version} href={links.get(version.pdfPath)} />
                       ))}
                     </span>
+                    {permissions.manage ? (
+                      <DeleteRegulation
+                        org={current.id}
+                        orgName={current.name}
+                        regulationId={regulation.id}
+                        code={regulation.code}
+                        part={partOf(regulation)}
+                        projectHref={`/projects/${project.id}#regulations-heading`}
+                        blocked={deleteBlocked}
+                      />
+                    ) : null}
                     <IndexDetails versions={versions} status={status} model={embeddingModel} />
                   </li>
                 );
@@ -237,6 +272,9 @@ async function Regulations() {
         <div id="import" className="scroll-mt-6">
           <Imports org={current.id} />
         </div>
+      ) : null}
+      {permissions.manage && data.length > 0 ? (
+        <ClearLibrary org={current.id} orgName={current.name} part={library} blocked={deleteBlocked} />
       ) : null}
     </div>
   );
