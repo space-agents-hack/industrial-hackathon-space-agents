@@ -77,7 +77,6 @@ _NOT_REQUIREMENTS = re.compile(
 _NORMATIVE = re.compile(
     r"\b(shall|must|may|required|not more than|not less than|at least|at most)\b", re.IGNORECASE
 )
-_TABLE = re.compile(r"\btables?\b", re.IGNORECASE)
 _LIST_ITEM = re.compile(r"^\((?:[a-z]|[ivxl]+)\)\s")
 # An annex, or an appendix of one: "Annex 3 Appendix 2 5.1.1" is in "Annex 3 Appendix 2", "Annex
 # 4 4.2.1" in "Annex 4". Each is a separate document as far as a requirement list goes: forms,
@@ -572,53 +571,6 @@ def _new_span(judged: list[Segment], new: Version) -> tuple[list[Segment], set[i
     return shown, owned
 
 
-def _table_change(
-    req: dict[str, Any], judged: list[Segment], old: Version, new: Version
-) -> Change | None:
-    """A requirement whose own sentence is unchanged but that points to a table in its paragraph
-    ("report at least the information listed in the table below"), when rows of that table
-    changed. What the requirement obliges is the table's content, so it changed with it. The
-    diff reads a table only as the text of its rows, which is enough to see that rows changed.
-
-    Why: on a held-out pair (2026-10-25) a reporting table gained about 15 rows and the
-    requirement that points to it was not flagged. Narrow on purpose: the requirement has to
-    name a table, and only rows of its own cited paragraph count."""
-    if not _TABLE.search(req.get("text", "")):
-        return None
-    taken = {s.index for s in judged}
-    pool = [s for s in cited_pool(req, old) if s.index not in taken]
-    labels = {s.label for s in pool} | {
-        new.segments[s.partner].label for s in pool if s.partner is not None
-    }
-    changed_old = [s for s in pool if s.status != "unchanged"]
-    added_new = [
-        n for n in new.segments if n.label in labels and not n.heading and n.partner is None
-    ]
-    if not changed_old and not added_new:
-        return None
-    rows = [new.segments[s.partner] for s in changed_old if s.partner is not None] + added_new
-    rows.sort(key=lambda n: n.index)
-    partners = [new.segments[s.partner] for s in judged if s.partner is not None]
-    if not partners:
-        return None
-    first = partners[0]
-    gone = sum(1 for s in changed_old if s.status == "removed")
-    reworded = sum(1 for s in changed_old if s.status == "modified")
-    example = f" (e.g. '{_short(rows[0].text, 80)}')" if rows else ""
-    return Change(
-        "modified",
-        req["id"],
-        _cap(" ".join([*(n.text for n in partners), *(n.text for n in rows)])),
-        f"Paragraph {first.label} of {new.regulation} was amended in version "
-        f"{new.version_label}: the table the requirement refers to changed, {len(added_new)} "
-        f"row(s) added, {reworded} reworded, {gone} removed{example}.",
-        first.page,
-        first.label,
-        old_text=" ".join(s.text for s in judged),
-        source_text=" ".join(n.text for n in [*partners, *rows]),
-    )
-
-
 def requirement_changes(
     requirements_old: Sequence[dict[str, Any]], old: Version, new: Version
 ) -> tuple[list[Change], set[int]]:
@@ -633,7 +585,9 @@ def requirement_changes(
             continue
         shown, owned = _new_span(judged, new)
         inserted = [n for n in shown if n.partner is None]
-        unchanged = (all(s.status == "unchanged" for s in judged) and not inserted) or (
+        if all(s.status == "unchanged" for s in judged) and not inserted:
+            continue
+        if (
             not inserted
             and not any(s.status == "removed" for s in judged)
             and not _touches(
@@ -641,11 +595,7 @@ def requirement_changes(
                 " ".join(s.text for s in judged),
                 " ".join(n.text for n in shown),
             )
-        )
-        if unchanged:
-            table = _table_change(req, judged, old, new)
-            if table is not None:
-                changes.append(table)
+        ):
             continue
         old_label = judged[0].label
         if all(s.status == "removed" for s in judged):
