@@ -86,11 +86,14 @@ as extras. So cut along the text as the regulation writes it:
   it is fitted behind a cover, the clearance may be reduced to 20 mm"). One with a "shall" of its
   own for another device, or for an optional one, is its own requirement.
 - A sentence that refers to a table, an annex or another paragraph for its values ("shall meet
-  the requirements in Table N") is one requirement, as written, with the values in the test case:
-  not one per row of that table. The rows of a table are requirements of their own only when no
-  sentence imposes the table (a table that is its own paragraph, or a bare table under a
-  heading), one per row or class with its values written out; cite the table when it is its own
-  paragraph of this window.
+  the requirements in Table N") is one requirement, as written, with the values in the test case,
+  when the rows are values of one measurement (test points, angles, a grid, limits along one
+  range). When each row of the table it imposes is a separate test or condition with its own
+  required result (a list of tests, each with its level and the class or status to reach), each
+  row is a requirement of its own, with its values written out, after the sentence's own. The rows
+  of a table are also requirements of their own when no sentence imposes the table (a table that
+  is its own paragraph, or a bare table under a heading), one per row or class with its values
+  written out; cite the table when it is its own paragraph of this window.
 - Do not multiply an obligation by anything the text does not list itself: not once per function
   or component of the product, per vehicle category or per supply voltage, when the sentence
   states one constraint for all of them. When the sentences themselves give a different value

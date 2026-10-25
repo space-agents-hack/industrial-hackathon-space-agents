@@ -68,10 +68,13 @@ along the text as the regulation writes it:
   condition shall not apply to ..."). A relaxation with a "shall" of its own for another device,
   or for an optional one, is its own entry.
 - A sentence that refers to a table, an annex or another paragraph for its values ("shall meet
-  the requirements in Table N") is one entry, as written: the values go in the test case. Do not
-  make one entry per row of that table. The rows of a table are entries of their own only when
-  no sentence imposes the table (a table that is its own paragraph, or a bare table under a
-  heading), one per row or class.
+  the requirements in Table N") is one entry, as written, when the rows are values of one
+  measurement (test points, angles, a grid, limits along one range): the values go in the test
+  case. When each row of the table it imposes is a separate test or condition with its own
+  required result (a list of tests, each with its level and the class or status to reach), each
+  row is an entry of its own, after the sentence's entry. The rows of a table are also entries
+  of their own when no sentence imposes the table (a table that is its own paragraph, or a bare
+  table under a heading), one per row or class.
 - Do not multiply an obligation by anything the text does not list itself: not once per function
   or component of the product, per vehicle category or per supply voltage, when the sentence
   states one constraint for all of them. When the sentences themselves give a different value
