@@ -49,6 +49,9 @@ on:
       review_runs:
         description: Latest succeeded sub-goal reviews to copy
         default: "2"
+      runs:
+        description: More runs to copy, by id, comma-separated (their projects come with them)
+        required: false
       paragraphs:
         description: Paragraph text to copy (smaller choices for a database near its limit)
         type: choice
@@ -131,6 +134,7 @@ jobs:
           EMAIL: ${{ inputs.email }}
           REPLACE: ${{ inputs.replace && '1' || '0' }}
           PARAGRAPHS: ${{ inputs.paragraphs }}
+          RUNS: ${{ inputs.runs }}
           VECTORS: ${{ inputs.vectors && '1' || '0' }}
           DEMO_PASSWORD: ${{ inputs.password }}
         run: |
@@ -140,7 +144,7 @@ jobs:
           psql "$DB_URL" -v ON_ERROR_STOP=1 -v source="$SOURCE" -v target="$TARGET" \
             -v project="$PROJECT" -v main_runs="$MAIN_RUNS" -v review_runs="$REVIEW_RUNS" \
             -v email="$EMAIL" -v replace="$REPLACE" -v paragraphs="$PARAGRAPHS" \
-            -v vectors="$VECTORS" -f scripts/demo-org.sql 2>&1 | tee "$out"
+            -v vectors="$VECTORS" -v runs="$RUNS" -f scripts/demo-org.sql 2>&1 | tee "$out"
           { echo '```'; cat "$out"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/setup-node@v7

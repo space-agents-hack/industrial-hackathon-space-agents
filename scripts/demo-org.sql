@@ -4,7 +4,8 @@
 --
 --   DEMO_PASSWORD=... psql "$DB_URL" -v ON_ERROR_STOP=1 -v source=team-09 -v target=certivity \
 --     -v project=dev-rear-lamp -v main_runs=2 -v review_runs=2 -v email=demo@certivity.demo \
---     [-v paragraphs=all] [-v vectors=1] [-v replace=1] -f scripts/demo-org.sql
+--     [-v runs=<run id>,<run id>] [-v paragraphs=all] [-v vectors=1] [-v replace=1] \
+--     -f scripts/demo-org.sql
 --
 -- Copy, never move: the source is only read. Every id is new, and every id the copied rows carry
 -- (in columns, in Storage paths, inside traces and notes) is mapped to its copy, so nothing in the
@@ -26,7 +27,12 @@
 --     copy is then the library as it is, and nothing has to be made again if it is ever unfrozen;
 --   - the project, all its cases (the main case and its sub-goal case) and their parsed files;
 --   - the latest `main_runs` succeeded runs on the main cases and `review_runs` on the sub-goal
---     cases, with their trace, requirements, approvals and stored checks.
+--     cases, with their trace, requirements, approvals and stored checks;
+--   - and any run named in `runs` (ids, comma-separated), with the project it belongs to, all of
+--     that project's cases and their files: a result worth showing that is not among the latest,
+--     or that is in another project (Ramón, 2026-10-25: the held-out sub-goal review with its
+--     trace). There is no adding to an existing copy: ids are mapped in one pass, so a new run is
+--     added by rebuilding with `replace=1`.
 -- What is not: imports (their index holds signed download links), provider keys and endpoints,
 -- model choices, settings, usage (the demo spent nothing) and saved conversations (`run_state`,
 -- needed only to resume a run that is waiting, and these have finished).
@@ -48,6 +54,10 @@
 \if :{?replace}
 \else
   \set replace 0
+\endif
+\if :{?runs}
+\else
+  \set runs ''
 \endif
 \if :{?paragraphs}
 \else
@@ -78,7 +88,8 @@ select set_config('demo.source', :'source', true) as s1,
        set_config('demo.password', :'demo_password', true) as s7,
        set_config('demo.replace', :'replace', true) as s8,
        set_config('demo.paragraphs', :'paragraphs', true) as s9,
-       set_config('demo.vectors', :'vectors', true) as s10 \gset ignored_
+       set_config('demo.vectors', :'vectors', true) as s10,
+       set_config('demo.runs', :'runs', true) as s11 \gset ignored_
 
 -- Every old id and its copy. Paths, traces and notes are rewritten through this one table.
 create temp table id_map (old_id uuid primary key, new_id uuid not null unique) on commit drop;
@@ -133,6 +144,8 @@ declare
   dst uuid;
   existing record;
   proj uuid;
+  projs uuid[];
+  extra uuid[];
   demo_user uuid;
   pw text := current_setting('demo.password');
   n integer;
@@ -165,6 +178,23 @@ begin
     raise exception 'no project named % in %', current_setting('demo.project'), current_setting('demo.source');
   end if;
 
+  -- The runs asked for by id, and the projects they bring with them.
+  begin
+    select coalesce(array_agg(distinct trim(x)::uuid), '{}') into extra
+    from unnest(string_to_array(current_setting('demo.runs'), ',')) x where trim(x) <> '';
+  exception when invalid_text_representation then
+    raise exception 'runs must be run ids separated by commas, not %', current_setting('demo.runs');
+  end;
+  if (select count(*) from public.runs r where r.id = any(extra) and r.organization_id = src)
+     <> cardinality(extra) then
+    raise exception 'not every run in % is a run of %', current_setting('demo.runs'), current_setting('demo.source');
+  end if;
+  select array_agg(distinct x) into projs from (
+    select proj as x
+    union all
+    select c.project_id from public.runs r join public.cases c on c.id = r.case_id where r.id = any(extra)
+  ) y;
+
   -- ---------------------------------------------------------------- what the runs need
   -- The latest that succeeded: a failed run shows a failure, not the product.
   create temp table chosen_runs on commit drop as
@@ -174,7 +204,9 @@ begin
     where c.project_id = proj and r.status = 'succeeded'
   ) r
   where (r.kind = 'main' and r.nth <= current_setting('demo.main_runs')::integer)
-     or (r.kind = 'subgoal' and r.nth <= current_setting('demo.review_runs')::integer);
+     or (r.kind = 'subgoal' and r.nth <= current_setting('demo.review_runs')::integer)
+  union
+  select unnest(extra);
 
   -- What the copied runs point at in the library: the paragraphs their requirements cite, and
   -- the regulations those belong to or the sub-goal cases compare.
@@ -186,7 +218,7 @@ begin
   where v.id in (
     select q.version_id from public.requirements q where q.run_id in (select id from chosen_runs)
     union
-    select unnest(array[c.old_version_id, c.new_version_id]) from public.cases c where c.project_id = proj);
+    select unnest(array[c.old_version_id, c.new_version_id]) from public.cases c where c.project_id = any(projs));
 
   if current_setting('demo.paragraphs') not in ('all', 'current', 'cited_regulations', 'cited') then
     raise exception 'paragraphs must be all, current, cited_regulations or cited, not %',
@@ -258,32 +290,32 @@ begin
   from public.regulation_figures f where f.organization_id = src;
 
   -- ---------------------------------------------------------------- the project and its cases
-  insert into id_map values (proj, gen_random_uuid());
+  insert into id_map select x, gen_random_uuid() from unnest(projs) x;
   insert into public.projects (id, organization_id, name, created_by, created_at, all_regulations)
   select pg_temp.mapped(p.id), dst, p.name, null, p.created_at, p.all_regulations
-  from public.projects p where p.id = proj;
+  from public.projects p where p.id = any(projs);
 
   insert into public.project_regulations (project_id, regulation_id, organization_id, created_by, created_at)
   select pg_temp.mapped(pr.project_id), pg_temp.mapped(pr.regulation_id), dst, null, pr.created_at
-  from public.project_regulations pr where pr.project_id = proj;
+  from public.project_regulations pr where pr.project_id = any(projs);
 
-  insert into id_map select id, gen_random_uuid() from public.cases where project_id = proj;
+  insert into id_map select id, gen_random_uuid() from public.cases where project_id = any(projs);
   insert into public.cases (id, project_id, organization_id, name, created_by, created_at, kind,
                             old_version_id, new_version_id)
   select pg_temp.mapped(c.id), pg_temp.mapped(c.project_id), dst, c.name, null, c.created_at, c.kind,
     pg_temp.mapped(c.old_version_id), pg_temp.mapped(c.new_version_id)
-  from public.cases c where c.project_id = proj;
+  from public.cases c where c.project_id = any(projs);
 
   insert into id_map
   select f.id, gen_random_uuid() from public.case_files f join public.cases c on c.id = f.case_id
-  where c.project_id = proj;
+  where c.project_id = any(projs);
   insert into public.case_files (id, case_id, organization_id, position, storage_path, filename, format,
     media_type, bytes, sha256, status, notes, error, pages, created_by, created_at, updated_at, parsed_at)
   select pg_temp.mapped(f.id), pg_temp.mapped(f.case_id), dst, f.position,
     pg_temp.remap_path(f.storage_path, src), f.filename, f.format, f.media_type, f.bytes, f.sha256,
     f.status, pg_temp.remap_json(f.notes), f.error, f.pages, null, f.created_at, f.updated_at, f.parsed_at
   from public.case_files f join public.cases c on c.id = f.case_id
-  where c.project_id = proj;
+  where c.project_id = any(projs);
 
   insert into public.case_file_blocks (file_id, organization_id, seq, kind, page, label, text,
     image_path, media_type, parser, created_at)
@@ -291,7 +323,7 @@ begin
     pg_temp.remap_path(b.image_path, src), b.media_type, b.parser, b.created_at
   from public.case_file_blocks b
   where b.file_id in (select f.id from public.case_files f join public.cases c on c.id = f.case_id
-                      where c.project_id = proj)
+                      where c.project_id = any(projs))
   order by b.id;
 
   -- ---------------------------------------------------------------- the account
@@ -381,12 +413,12 @@ begin
   from public.regulation_versions v where v.organization_id = src and v.md_path is not null
   union all
   select dst, 'case-files', f.storage_path, pg_temp.remap_path(f.storage_path, src)
-  from public.case_files f join public.cases c on c.id = f.case_id where c.project_id = proj
+  from public.case_files f join public.cases c on c.id = f.case_id where c.project_id = any(projs)
   union all
   select dst, 'case-files', b.image_path, pg_temp.remap_path(b.image_path, src)
   from public.case_file_blocks b join public.case_files f on f.id = b.file_id
   join public.cases c on c.id = f.case_id
-  where c.project_id = proj and b.image_path is not null
+  where c.project_id = any(projs) and b.image_path is not null
   union all
   select dst, 'case-files', f.storage_path, pg_temp.remap_path(f.storage_path, src)
   from public.run_files f where f.run_id in (select id from chosen_runs);
@@ -395,7 +427,7 @@ begin
   values (dst, null, 'organization.created', jsonb_build_object(
     'name', current_setting('demo.target'), 'read_only', true,
     'copied_from', current_setting('demo.source'), 'project', current_setting('demo.project'),
-    'by', 'scripts/demo-org.sql'));
+    'runs', to_jsonb(extra), 'by', 'scripts/demo-org.sql'));
 
   select count(*) into n from chosen_runs;
   raise notice 'organisation % (%) created read-only, with % runs; account % is its viewer',
@@ -422,14 +454,15 @@ where o.name in (:'source', :'target')
 order by o.read_only;
 
 \echo '== Its runs'
-select c.name as case_name, c.kind, r.status, r.created_at, r.model,
+select p.name as project, c.name as case_name, c.kind, r.status, r.created_at, r.model,
   (select count(*) from public.requirements q where q.run_id = r.id) as requirements,
   (select count(*) from public.requirements q where q.run_id = r.id and q.paragraph_id is null) as unlinked,
   (select count(*) from public.run_events e where e.run_id = r.id) as events
 from public.runs r join public.cases c on c.id = r.case_id
+join public.projects p on p.id = c.project_id
 join public.organizations o on o.id = r.organization_id
 where o.name = :'target'
-order by c.kind, r.created_at desc;
+order by p.name, c.kind, r.created_at desc;
 
 \echo '== Files to copy in Storage'
 select s.bucket_id, count(*) as files
