@@ -144,23 +144,11 @@ def search_new_version(ctx: RunContext[ReviewDeps], words: str) -> list[dict[str
 # ------------------------------------------------------------------------------------------
 
 
-def _label(label: str | None) -> str:
-    return (label or "").strip().rstrip(".").replace(",", "").lower()
-
-
 def cited_segments(requirement: dict[str, Any], old: regdiff.Version) -> list[regdiff.Segment]:
     """The old segments of the paragraph a requirement cites. This is the same pool
     `regdiff.evidence` searches, but all of it: the reviewer judges the paragraph, not the
     sentences word overlap chose."""
-    source = requirement.get("source") or {}
-    label = _label(source.get("paragraph"))
-    body = [s for s in old.segments if not s.heading]
-    pool = [s for s in body if _label(s.label) == label] if label else []
-    if not pool and label:
-        pool = [s for s in body if _label(s.label).startswith(label + ".")]
-    if not pool and source.get("page"):
-        pool = [s for s in body if s.page == source["page"]]
-    return pool
+    return regdiff.cited_pool(requirement, old)
 
 
 def candidates(

@@ -14,7 +14,9 @@ No model is called. The answer is built from text alone:
    the paragraph it cites. Requirements are paraphrased ("When X, the system shall Y" from "The
    system shall Y when X"), so overlap of words, not of strings.
 4. A requirement whose segments all survive unchanged is not reported; one whose segments are
-   gone is `removed`; anything else is `modified`, with the new segments as `new_text`.
+   gone is `removed`; anything else is `modified`, with the new segments as `new_text`, unless
+   the edit leaves the requirement's own words as they were (a connective like "In addition,"
+   dropped in front of it): then it is not reported either.
 5. New segments that nothing paired with, outside introduction, scope and definitions, and that
    state an obligation, become `added`, if they are in a part of the regulation (its main text,
    an annex, an appendix) that the old requirements were written from. The old list is the
@@ -23,7 +25,8 @@ No model is called. The answer is built from text alone:
 
 "Unchanged" is judged after normalising editorial noise: `70%` and `70 per cent`, `6 seconds`
 and `6 s`, footnote markers glued to words (`Party3` became `Party4` only because a footnote was
-inserted earlier), quotes, hyphens and line breaks. Without it the worked example
+inserted earlier) or to a closing quote, numbers written as words (`three` and `3`), quotes,
+hyphens and line breaks. Without it the worked example
 flags three requirements whose obligation did not change.
 
 What this does NOT do:
@@ -79,6 +82,31 @@ _LIST_ITEM = re.compile(r"^\((?:[a-z]|[ivxl]+)\)\s")
 # 4 4.2.1" in "Annex 4". Each is a separate document as far as a requirement list goes: forms,
 # documentation lists and test procedures that a list may cover or leave out as a whole.
 _PART = re.compile(r"^((?:annex|appendix)\s+\w+(?:\s+appendix\s+\w+)?)\b", re.IGNORECASE)
+_NUMBER_WORDS = {
+    w: str(i)
+    for i, w in enumerate(
+        [
+            "zero",
+            "one",
+            "two",
+            "three",
+            "four",
+            "five",
+            "six",
+            "seven",
+            "eight",
+            "nine",
+            "ten",
+            "eleven",
+            "twelve",
+        ]
+    )
+}
+_NUMBER_WORD = re.compile(r"\b(?:" + "|".join(_NUMBER_WORDS) + r")\b", re.IGNORECASE)
+# How many content words a change may remove, outside the requirement's own words, and still
+# leave the requirement as it was: "In addition, the" became "The". A longer cut is more likely a
+# condition the requirement paraphrased in other words, so it counts as a change (recall first).
+_CONTEXT_WORDS_MAX = 3
 _LABEL_PREFIX = re.compile(r"^\d+(?:\.\d+)*\.?\s+")
 # Abbreviations that end with a dot but do not end a sentence.
 _ABBREVIATIONS = ("e.g.", "i.e.", "No.", "no.", "para.", "Rev.", "etc.", "approx.")
@@ -143,6 +171,10 @@ def normalize(text: str) -> str:
     # A footnote marker glued to a word: "Party3", "direction3." Short words are left
     # alone because "M1" and "N1" are vehicle categories, not footnotes.
     t = re.sub(r"\b([A-Za-z]{3,})\d{1,2}\b", r"\1", t)
+    # The same after a closing quote: a database named "DETA"1 that became "DETA"4.
+    t = re.sub(r"(?<=[A-Za-z][\"'])\d{1,2}\b", "", t)
+    # "three months" and "3 months" are the same limit; new series write numbers as digits.
+    t = _NUMBER_WORD.sub(lambda m: _NUMBER_WORDS[m.group(0).lower()], t)
     t = re.sub(r"\s*%", "%", t)
     t = t.lower().replace("-", " ")
     return " ".join(re.findall(r"[a-z0-9%]+(?:\.[0-9]+)*", t))
@@ -351,18 +383,37 @@ def _norm_label(label: str | None) -> str:
     return (label or "").strip().rstrip(".").replace(",", "").lower()
 
 
+def cited_pool(requirement: dict[str, Any], old: Version) -> list[Segment]:
+    """The old segments of the paragraph a requirement cites, headings left out: its label, else
+    its subparagraphs, else its page. `evidence` searches this pool; the reviewer reads all of
+    it."""
+    source = requirement.get("source") or {}
+    label = _norm_label(source.get("paragraph"))
+    body = [s for s in old.segments if not s.heading]
+    pool = [s for s in body if _norm_label(s.label) == label] if label else []
+    page = source.get("page")
+    if label and page and not any(abs(s.page - page) <= 1 for s in pool):
+        # A bare number cited where a prefixed paragraph sits on the cited page: "10" on page 2
+        # is "Introduction 10", not section 10 thirty pages on. Only a prefixed label is taken,
+        # never the page alone, so a list whose pages are counted differently is not misled.
+        near = [
+            s
+            for s in body
+            if abs(s.page - page) <= 1 and _norm_label(s.label).endswith(" " + label)
+        ]
+        pool = near or pool
+    if not pool and label:
+        pool = [s for s in body if _norm_label(s.label).startswith(label + ".")]
+    if not pool and page:
+        pool = [s for s in body if s.page == page]
+    return pool
+
+
 def evidence(requirement: dict[str, Any], old: Version) -> list[Segment]:
     """The old segments a requirement was written from: those of its cited paragraph whose
     content words are mostly in the requirement."""
-    source = requirement.get("source") or {}
-    label = _norm_label(source.get("paragraph"))
     rwords = _words(normalize(requirement.get("text", "")))
-    body = [s for s in old.segments if not s.heading]
-    pool = [s for s in body if _norm_label(s.label) == label] if label else []
-    if not pool and label:
-        pool = [s for s in body if _norm_label(s.label).startswith(label + ".")]
-    if not pool and source.get("page"):
-        pool = [s for s in body if s.page == source["page"]]
+    pool = cited_pool(requirement, old)
 
     def containment(s: Segment) -> float:
         w = _words(s.norm)
@@ -400,6 +451,22 @@ def covered_parts(requirements_old: Sequence[dict[str, Any]], old: Version) -> s
         if cited:
             parts.add(cited)
     return parts or None
+
+
+def _touches(requirement_text: str, old_text: str, new_text: str) -> bool:
+    """Whether the edit from the old to the new wording reaches what the requirement says: it
+    removes a word the requirement uses, adds one it does not, or cuts more than a few words of
+    context. "In addition, the system shall ..." becoming "The system shall ..." leaves
+    "The system shall ..." as it was; flagging it is a false change."""
+    rwords = _words(normalize(requirement_text))
+    a, b = normalize(old_text).split(), normalize(new_text).split()
+    for op, i1, i2, j1, j2 in SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if op == "equal":
+            continue
+        gone, came = _words(" ".join(a[i1:i2])), _words(" ".join(b[j1:j2]))
+        if gone & rwords or came - rwords or len(gone) > _CONTEXT_WORDS_MAX:
+            return True
+    return False
 
 
 def _word_diff(old_text: str, new_text: str, limit: int = 1200) -> str:
@@ -519,6 +586,16 @@ def requirement_changes(
         shown, owned = _new_span(judged, new)
         inserted = [n for n in shown if n.partner is None]
         if all(s.status == "unchanged" for s in judged) and not inserted:
+            continue
+        if (
+            not inserted
+            and not any(s.status == "removed" for s in judged)
+            and not _touches(
+                req.get("text", ""),
+                " ".join(s.text for s in judged),
+                " ".join(n.text for n in shown),
+            )
+        ):
             continue
         old_label = judged[0].label
         if all(s.status == "removed" for s in judged):

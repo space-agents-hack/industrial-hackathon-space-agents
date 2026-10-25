@@ -234,6 +234,49 @@ def test_a_requirement_list_that_cannot_be_traced_limits_no_part() -> None:
     assert [c.paragraph for c in regdiff.diff_versions([], old, new)] == ["Annex 1 1.1"]
 
 
+def test_an_edit_outside_the_requirements_own_words_is_not_a_change() -> None:
+    old, new = _versions(
+        [
+            SPEC,
+            P("5.1", "5.1. In addition, the widget shall be blue."),
+            P("5.2", '5.2. Records shall go to the database "WDB"1 within three months.'),
+            P("5.3", "5.3. The widget shall glow in daylight."),
+        ],
+        [
+            SPEC,
+            P("5.1", "5.1. The widget shall be blue."),
+            P("5.2", '5.2. Records shall go to the database "WDB"4 within 3 months.'),
+            P("5.3", "5.3. The widget shall glow."),
+        ],
+    )
+    reqs = [
+        _req("R-001", "The widget shall be blue.", "5.1"),
+        _req("R-002", 'Records shall go to the database "WDB" within three months.', "5.2"),
+        _req("R-003", "In daylight, the widget shall glow.", "5.3"),
+    ]
+
+    changes = regdiff.diff_versions(reqs, old, new)
+
+    # Only the requirement that carried the cut words changed.
+    assert [(c.requirement_id, c.change) for c in changes] == [("R-003", "modified")]
+
+
+def test_a_bare_number_cited_on_an_introduction_page_is_the_introduction_paragraph() -> None:
+    old = regdiff.build_version(
+        "UN R999",
+        "1.0.0",
+        [
+            P("Introduction 2", "2. The widget shall hum quietly.", 1),
+            P("1", "1. Scope", 3),
+            P("2", "2. Definitions", 3),
+            P("2.1", '2.1. "Widget" means a device that hums.', 3),
+        ],
+    )
+    req = _req("R-001", "The widget shall hum quietly.", "2", page=1)
+
+    assert [s.label for s in regdiff.evidence(req, old)] == ["Introduction 2"]
+
+
 def test_the_submission_is_valid_against_certivitys_schema() -> None:
     old, new = _versions(
         [SPEC, P("5.1", "5.1. The widget shall be blue.\nThe widget may be tested twice.")],
