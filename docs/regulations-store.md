@@ -261,7 +261,9 @@ minutes. And the planner needs statistics on freshly written tables: the indexer
 `analyze_regulation_search` after it writes keys or vectors, rather than waiting for autovacuum.
 
 With the extraction's 68 MB for the paragraphs, a library takes about 170 MB of the free plan's
-500 MB. A second organisation with the same library takes another 170 MB.
+500 MB. A second organisation with the same library takes another 170 MB. Measured on
+2026-10-25: 401 MB before the demo organisation copied team-09's library (`scripts/demo-org.sql`),
+which is why the project moved that day to a plan whose disk grows by itself (Ramón).
 
 How to run it: the Regulations page starts the indexer by itself once an import has added
 paragraphs the indexer has not seen, and an admin can start it with **Index library** (#37). Like an

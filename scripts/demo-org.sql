@@ -4,7 +4,7 @@
 --
 --   DEMO_PASSWORD=... psql "$DB_URL" -v ON_ERROR_STOP=1 -v source=team-09 -v target=certivity \
 --     -v project=dev-rear-lamp -v main_runs=2 -v review_runs=2 -v email=demo@certivity.demo \
---     [-v paragraphs=cited_regulations] [-v vectors=0] [-v replace=1] -f scripts/demo-org.sql
+--     [-v paragraphs=all] [-v vectors=1] [-v replace=1] -f scripts/demo-org.sql
 --
 -- Copy, never move: the source is only read. Every id is new, and every id the copied rows carry
 -- (in columns, in Storage paths, inside traces and notes) is mapped to its copy, so nothing in the
@@ -12,17 +12,18 @@
 --
 -- What is copied, and why:
 --   - every regulation and version, with its PDF, scope summary and figures with descriptions;
---   - their paragraphs, as `paragraphs` says: `all` (superseded ones too), `current`,
---     `cited_regulations` (the current paragraphs of every regulation the copied runs cite or
---     compare) or `cited` (only the paragraphs the copied requirements cite). Whatever the choice,
---     the cited ones are always in, superseded or not, so every copied requirement keeps its link.
---     Not always `all`, because of size: on 2026-10-25 production's database held 401 MB on a
---     plan whose limit is 500 MB (docs/regulations-store.md), and every paragraph of team-09 came
---     to about 100 MB on disk with its indexes, its vectors about as much again. A database over
---     its limit becomes read-only for everyone. `cited_regulations` was about 10 MB;
---   - search keys and vectors only with `vectors=1`: a read-only organisation never searches by
---     meaning, since the question itself would have to be embedded, a model call. Word search over
---     the paragraphs needs no vector;
+--   - their paragraphs, as `paragraphs` says: `all` (the default, superseded ones too: a
+--     requirement may cite a paragraph since superseded), `current`, `cited_regulations` (the
+--     current paragraphs of every regulation the copied runs cite or compare) or `cited` (only
+--     the paragraphs the copied requirements cite). Whatever the choice, the cited ones are always
+--     in, superseded or not, so every copied requirement keeps its link. The smaller choices exist
+--     for a database near its size limit: on 2026-10-25, on the free plan, production held 401 MB
+--     of 500 MB and every paragraph of team-09 came to about 100 MB on disk, its vectors about as
+--     much again; a database over its limit becomes read-only for everyone. The plan was upgraded
+--     that day so the disk grows on its own (Ramón), and the first copy took everything;
+--   - search keys and vectors with `vectors=1` (the default): a read-only organisation never
+--     searches by meaning, since the question would have to be embedded, a model call, but the
+--     copy is then the library as it is, and nothing has to be made again if it is ever unfrozen;
 --   - the project, all its cases (the main case and its sub-goal case) and their parsed files;
 --   - the latest `main_runs` succeeded runs on the main cases and `review_runs` on the sub-goal
 --     cases, with their trace, requirements, approvals and stored checks.
@@ -50,11 +51,11 @@
 \endif
 \if :{?paragraphs}
 \else
-  \set paragraphs cited_regulations
+  \set paragraphs all
 \endif
 \if :{?vectors}
 \else
-  \set vectors 0
+  \set vectors 1
 \endif
 \if :{?demo_password}
 \else

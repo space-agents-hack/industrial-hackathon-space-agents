@@ -7,7 +7,10 @@ name: Demo organisation
 #
 #   inventory  reads only: what the source holds, so the copy is chosen from facts.
 #   copy       scripts/demo-org.sql (one transaction: the organisation, read-only, its rows and the
-#              account), then the agent copies the files it queued, until none is left.
+#              account), then the agent copies the files it queued, until none is left, then
+#              verify.
+#   verify     scripts/demo-org-verify.sql: as the demo account, through row-level security, what
+#              it reads and every write it is refused, in a transaction that is rolled back.
 #
 # Its own queue, not the release's: GitHub keeps one pending job per group and cancels the older
 # one, so sharing it could cancel a pending release. Start a copy when no release is running;
@@ -23,7 +26,7 @@ on:
       step:
         description: What to do
         type: choice
-        options: [inventory, copy]
+        options: [inventory, copy, verify]
         default: inventory
       source:
         description: Organisation to copy from (its name)
@@ -47,14 +50,14 @@ on:
         description: Latest succeeded sub-goal reviews to copy
         default: "2"
       paragraphs:
-        description: Paragraph text to copy (scripts/demo-org.sql says why not always all)
+        description: Paragraph text to copy (smaller choices for a database near its limit)
         type: choice
-        options: [cited_regulations, cited, current, all]
-        default: cited_regulations
+        options: [all, current, cited_regulations, cited]
+        default: all
       vectors:
         description: Copy the search vectors too (a read-only organisation never uses them)
         type: boolean
-        default: false
+        default: true
       password:
         description: Demo account's password (empty keeps the current one)
         required: false
@@ -178,3 +181,18 @@ jobs:
           done
           echo "Files copied; $remaining left." >> "$GITHUB_STEP_SUMMARY"
           [[ "$remaining" == "0" ]]
+
+      - name: Verify as the demo account
+        if: inputs.step == 'copy' || inputs.step == 'verify'
+        shell: bash
+        env:
+          SOURCE: ${{ inputs.source }}
+          TARGET: ${{ inputs.target }}
+          EMAIL: ${{ inputs.email }}
+          DEMO_PASSWORD: ${{ inputs.password }}
+        run: |
+          [[ -z "$DEMO_PASSWORD" ]] || echo "::add-mask::$DEMO_PASSWORD"
+          out="$RUNNER_TEMP/verify.txt"
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -v source="$SOURCE" -v target="$TARGET" \
+            -v email="$EMAIL" -f scripts/demo-org-verify.sql 2>&1 | tee "$out"
+          { echo '```'; cat "$out"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

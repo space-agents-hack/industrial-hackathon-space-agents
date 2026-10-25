@@ -47,10 +47,11 @@ as a viewer, whatever their role, and the agent starts nothing that calls a mode
 assistant answer, no case parsing, no import, no indexing. Only SQL sets it. The judges' demo
 account is a viewer in one, `certivity`, made by `.github/workflows/demo-org.yml` from a copy of
 team-09's library and its dev-rear-lamp project (`scripts/demo-org.sql`); the files are copied by
-the agent from the queue `storage_copies`, since only it holds the Storage key. The copy keeps
-every regulation, version and PDF but, by default, the paragraph text only of the regulations its
-runs cite, and no vectors: a full copy would have taken the 401 MB database past the free plan's
-500 MB, and a read-only organisation never searches by meaning.
+the agent from the queue `storage_copies`, since only it holds the Storage key. The copy is the
+whole library by default; it can leave out paragraph text and vectors for a database near its size
+limit (`paragraphs`, `vectors`), and a regulation page whose text was left out says so.
+`scripts/demo-org-verify.sql` then checks, as the demo account and through row-level security,
+what it reads and that every write is refused.
 
 Settings have their defaults in the agent's environment; an organisation's row stores only what
 it changed. Provider keys live in Supabase Vault; the browser sees provider and last four
