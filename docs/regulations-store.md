@@ -369,9 +369,27 @@ use a made-up PDF in `agent/tests/fixtures/regulation/`):
   R101's Annex 7, whose first appendix heading is missing from the text layer, and a footnote
   marker before a heading in R40 1.1.0. The rows are kept; the label is just not unique there.
 
-What it does not do: split tables out of their paragraph (a table's text stays in the paragraph it
-follows), keep pictures, read text inside figures, or read scanned PDFs (refused with a message).
-Docling was not needed for the citations above; it may still help table text.
+**Tables (#52, extractor `paragraphs-2`).** A table drawn with cell borders is read as rows by
+`agent/agent_service/domain/pdf_tables.py`: the borders give the grid (Chrome draws each cell's
+border as a 0.75 pt filled rectangle), each character goes to the cell its centre is in, and each
+body row becomes one line, `Header A: value; Header B: value`, where the table's lines were.
+Header rows are the top rows set heavier than the last row. A header cell across the whole width
+is a title, written once. Past 20 body rows the headers are written once and each row is its
+values in column order, because repeating the names made R49's drive cycle five times longer.
+The rows stay in the paragraph the table follows, so no label or page changes. Borders that cut
+through a word are not a table (rules under a formula, a frame): those lines stay as they were,
+and the extraction warns how many.
+
+Measured on 2026-10-25 on the 92 PDFs: every one of the 48,487 (label, first page, last page)
+is the same as with `paragraphs-1`. 2,464 tables are read on 1,599 pages in 49 of the 57
+regulations, and 1,273 paragraphs change text. 11 sets of borders are rejected. 46 characters of
+1.5 million in the changed paragraphs are missing afterwards: repeated header words. The library's
+text grows 5 %, and splitting takes 35 s instead of 15 s (R49, the slowest, about 4 s a version).
+The full counts are on #52.
+
+What it does not do: split tables out of their paragraph, regroup a table drawn without borders
+(252 pages have table-sized text and no borders), keep pictures, read text inside figures, or
+read scanned PDFs (refused with a message).
 
 ## How we know it works
 

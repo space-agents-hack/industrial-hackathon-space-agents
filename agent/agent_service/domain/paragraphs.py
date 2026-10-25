@@ -30,9 +30,15 @@ paragraph) cited by the dev case and the sub-goal is found with its page inside 
 range, except the two that cite a table ("5.1.4.4.1. Table 3"), whose paragraph is found under its
 plain label.
 
+Tables (#52). A table drawn with cell borders, which is how Chrome draws an HTML table with
+borders, is read by pdf_tables.py: each row becomes one line, "Header A: value; Header B: value",
+where the table's lines were. Without that, a wrapped cell or a column of crosses came out as
+loose lines and the row could not be rebuilt. On the 92 PDFs every label and page stayed the same.
+
 What this does NOT do:
-  - split tables out of their paragraph. A table's text stays in the paragraph it follows, so its
+  - split tables out of their paragraph. A table's rows stay in the paragraph it follows, so its
     pages count for that paragraph; a citation "5.1.4.4.1. Table 3" finds "5.1.4.4.1".
+  - regroup a table drawn without borders (252 pages of the 92 PDFs): its lines stay as they are.
   - read text inside pictures (no OCR), or keep the pictures.
   - work on scanned PDFs. A PDF without a text layer raises ExtractionProblem.
   - understand other layouts. A PDF from another source still gets paragraphs if it numbers them
@@ -45,11 +51,13 @@ from collections import Counter
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
+from agent_service.domain.pdf_tables import Table, read_tables
 from agent_service.pdf_lock import PDFIUM
 
 # Stored with each version's paragraphs. Changing how paragraphs are split means changing this, so
 # the import extracts every version again instead of keeping paragraphs cut the old way.
-EXTRACTOR = "paragraphs-1"
+# paragraphs-2 (#52): bordered tables are read as rows under their headers (pdf_tables.py).
+EXTRACTOR = "paragraphs-2"
 
 Kind = Literal["paragraph", "text"]
 
@@ -110,6 +118,9 @@ class _Line:
     text: str
     size: float
     bold: bool
+    # A row of a bordered table, rebuilt by pdf_tables.py. Never starts a paragraph or a heading:
+    # a row that begins "5.2.1" is a reference in a cell, not the next paragraph.
+    table: bool = False
 
 
 _FOOTER = re.compile(
@@ -143,6 +154,8 @@ def _read_lines_alone(data: bytes) -> tuple[list[_Line], int, list[str], list[st
     versions: list[str] = []
     warnings: list[str] = []
     empty = 0
+    previous: Table | None = None
+    unread_tables = 0
     try:
         page_count = len(pdf)
         for index in range(page_count):
@@ -155,10 +168,26 @@ def _read_lines_alone(data: bytes) -> tuple[list[_Line], int, list[str], list[st
                     empty += 1
                     continue
                 page_lines: list[_Line] = []
+                texts = raw.split("\r\n")
+                starts = []
                 offset = 0
-                for text in raw.split("\r\n"):
-                    start = offset
+                for text in texts:
+                    starts.append(offset)
                     offset += len(text) + 2
+                tables, misfits = read_tables(page, textpage, raw, starts, previous)
+                unread_tables += misfits
+                previous = tables[-1] if tables else None
+                # Each table's rows go where its first line was; its other lines are dropped.
+                replaced = {t.lines[0]: t for t in tables}
+                dropped = {n for t in tables for n in t.lines[1:]}
+                for n, (text, start) in enumerate(zip(texts, starts, strict=True)):
+                    if n in dropped:
+                        continue
+                    if n in replaced:
+                        page_lines += [
+                            _Line(number, row, 0.0, False, table=True) for row in replaced[n].rows
+                        ]
+                        continue
                     stripped = text.replace(_BROKEN_HYPHEN, "-").strip()
                     if not stripped:
                         continue
@@ -194,6 +223,10 @@ def _read_lines_alone(data: bytes) -> tuple[list[_Line], int, list[str], list[st
         )
     if empty:
         warnings.append(f"{empty} page(s) have no text.")
+    if unread_tables:
+        warnings.append(
+            f"{unread_tables} bordered area(s) did not read as tables; their text is kept as lines."
+        )
     return lines, page_count, versions, warnings
 
 
@@ -316,6 +349,9 @@ class _Splitter:
     def feed(self, line: _Line) -> None:
         heading = self.last_was_heading
         self.last_was_heading = False
+        if line.table:
+            self.append(line)
+            return
         if self.is_title(line) or self.is_footnote(line):
             return
         if line.page == 1 and not self.done and self.open is None and _BANNER.match(line.text):
@@ -589,7 +625,8 @@ def extract(pdf: bytes) -> Extraction:
     # heading.
     sizes: Counter[float] = Counter()
     for line in lines:
-        sizes[line.size] += len(line.text)
+        if not line.table:
+            sizes[line.size] += len(line.text)
     body = sizes.most_common(1)[0][0]
     splitter = _Splitter(body)
     for line in lines:

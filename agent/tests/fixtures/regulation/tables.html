@@ -1,0 +1,73 @@
+<!doctype html>
+<!-- A made-up regulation with bordered tables, for tests/test_pdf_tables.py. Rendered like
+     sample.html (make_sample.cjs). Not challenge material. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: sans-serif; font-size: 14pt; line-height: 1.25; margin: 0; }
+  h2 { font-size: 17.3pt; font-weight: 700; margin: 0.6em 0 0.2em; }
+  p { margin: 0.2em 0; }
+  table { font-size: 12.7pt; border-collapse: collapse; margin: 0.3em 0; }
+  th, td { border: 1px solid black; padding: 0 0.4em; }
+  table.plain td { border: none; }
+</style>
+</head>
+<body>
+<h2>1. Scope</h2>
+<p>1.1. This Regulation applies to test lamps of category T.</p>
+<h2>5. Specifications</h2>
+<p>5.1. The tests shall be made in the following order:</p>
+<p>Table 1 Order of tests</p>
+<table>
+  <tr><th rowspan="2">Reference</th><th rowspan="2">Test</th><th colspan="3">Samples</th></tr>
+  <tr><th>a</th><th>b</th><th>c</th></tr>
+  <tr><td>Annex 2</td><td>Heat: 48 h at 65 °C<br>visual inspection</td><td>x<br>x</td><td>x<br>x</td><td></td></tr>
+  <tr><td rowspan="2">5.3.</td><td>Colour</td><td>x</td><td></td><td>x</td></tr>
+  <tr><td>Photometry</td><td></td><td>x</td><td>x</td></tr>
+</table>
+<p>5.2. The intensity shall stay within these limits:</p>
+<table>
+  <tr><th colspan="3">Limits expressed in cd</th></tr>
+  <tr><th>Point</th><th>Minimum</th><th>Maximum</th></tr>
+  <tr><td>HV</td><td>0.3</td><td>30</td></tr>
+  <tr><td>10 U</td><td>0.1</td><td>5</td></tr>
+</table>
+<p>5.3. The drive cycle is:</p>
+<table>
+  <tr><th>Time s</th><th>Speed per cent</th></tr>
+  <tr><td>1</td><td>0</td></tr><tr><td>2</td><td>1</td></tr><tr><td>3</td><td>4</td></tr>
+  <tr><td>4</td><td>9</td></tr><tr><td>5</td><td>16</td></tr><tr><td>6</td><td>25</td></tr>
+  <tr><td>7</td><td>36</td></tr><tr><td>8</td><td>49</td></tr><tr><td>9</td><td>64</td></tr>
+  <tr><td>10</td><td>81</td></tr><tr><td>11</td><td>100</td></tr><tr><td>12</td><td>100</td></tr>
+  <tr><td>13</td><td>100</td></tr><tr><td>14</td><td></td></tr><tr><td>15</td><td>81</td></tr>
+  <tr><td>16</td><td>64</td></tr><tr><td>17</td><td>49</td></tr><tr><td>18</td><td>36</td></tr>
+  <tr><td>19</td><td>25</td></tr><tr><td>20</td><td>16</td></tr><tr><td>21</td><td>9</td></tr>
+  <tr><td>22</td><td>4</td></tr>
+</table>
+<p>5.4. Without borders, a table stays as lines:</p>
+<table class="plain">
+  <tr><td>Red</td><td>R</td></tr>
+  <tr><td>Amber</td><td>A</td></tr>
+</table>
+<p>5.5. The manufacturer shall fill in:</p>
+<table>
+  <tr><th>Rear (m)</th><th>Front (m)</th></tr>
+  <tr><td>&nbsp;</td><td>&nbsp;</td></tr>
+</table>
+<p>5.6. The test points are:</p>
+<table>
+  <tr><th>No.</th><th>Point</th></tr>
+  <tr><td>1</td><td>Point P01</td></tr><tr><td>2</td><td>Point P02</td></tr>
+  <tr><td>3</td><td>Point P03</td></tr><tr><td>4</td><td>Point P04</td></tr>
+  <tr><td>5</td><td>Point P05</td></tr><tr><td>6</td><td>Point P06</td></tr>
+  <tr><td>7</td><td>Point P07</td></tr><tr><td>8</td><td>Point P08</td></tr>
+  <tr><td>9</td><td>Point P09</td></tr><tr><td>10</td><td>Point P10</td></tr>
+  <tr><td>11</td><td>Point P11</td></tr><tr><td>12</td><td>Point P12</td></tr>
+  <tr><td>13</td><td>Point P13</td></tr><tr><td>14</td><td>Point P14</td></tr>
+  <tr><td>15</td><td>Point P15</td></tr><tr><td>16</td><td>Point P16</td></tr>
+  <tr><td>17</td><td>Point P17</td></tr><tr><td>18</td><td>Point P18</td></tr>
+</table>
+<p>5.7. The lamp shall be red.</p>
+</body>
+</html>

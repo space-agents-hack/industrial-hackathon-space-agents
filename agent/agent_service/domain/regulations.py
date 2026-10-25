@@ -575,8 +575,8 @@ async def _split_one(store: LibraryStore, version: VersionToSplit, split: Splitt
     try:
         if hashlib.sha256(data).hexdigest() != version.sha256:
             raise ExtractionProblem("The stored PDF does not match its sha256; import it again.")
-        # Splitting is CPU work (about 0.2 s per 100 pages); in a thread, the request keeps
-        # streaming its heartbeat meanwhile.
+        # Splitting is CPU work (about 0.6 s per 100 pages since tables are read, #52); in a
+        # thread, the request keeps streaming its heartbeat meanwhile.
         extraction = await asyncio.to_thread(split, data)
     except ExtractionProblem as exc:
         await store.splitting_failed(version, EXTRACTOR, str(exc))
