@@ -16,6 +16,7 @@ import {
   formatJson,
   indentJsonText,
   formatRelativeTime,
+  formatRelativeWithClock,
   formatUsage,
   formatUtc,
   isApprovalRow,
@@ -514,6 +515,16 @@ test("formatRelativeTime steps through seconds, minutes, hours, days and then a 
   assert.equal(ago(45 * 86_400_000), "2026-08-29");
   assert.equal(formatRelativeTime("2026-10-13T12:00:05.000Z", now), "just now");
   assert.equal(formatRelativeTime("not a date", now), "");
+});
+
+test("formatRelativeWithClock adds the UTC clock time once a timestamp is an hour old", () => {
+  const now = Date.parse("2026-10-25T06:10:00.000Z");
+  const at = (iso: string) => formatRelativeWithClock(iso, now);
+  assert.equal(at("2026-10-25T05:50:00.000Z"), "20 min ago");
+  assert.equal(at("2026-10-25T03:28:00.000Z"), "3 h ago · 03:28 UTC");
+  assert.equal(at("2026-10-23T03:28:00.000Z"), "2 d ago · 10-23 03:28 UTC");
+  assert.equal(at("2026-08-01T03:28:00.000Z"), "2026-08-01 03:28 UTC");
+  assert.equal(at("not a date"), "");
 });
 
 test("formatUtc and formatElapsed do not depend on the local time zone", () => {

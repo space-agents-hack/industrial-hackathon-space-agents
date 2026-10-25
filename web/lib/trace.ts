@@ -658,6 +658,19 @@ export function formatRelativeTime(iso: string, nowMs: number): string {
   return iso.slice(0, 10);
 }
 
+// The relative time with the clock time after it once it is an hour old: "3 h ago" alone does
+// not tell two drafts of the same morning apart, and a person matching a draft to a time someone
+// wrote down (a Checks result, an upload) needs the time itself (Clemente, 2026-10-25). UTC, like
+// formatUtc, so server and browser agree and it matches the times in the trace.
+export function formatRelativeWithClock(iso: string, nowMs: number): string {
+  const relative = formatRelativeTime(iso, nowMs);
+  const then = Date.parse(iso);
+  if (!relative || nowMs - then < 3_600_000) return relative;
+  const utc = formatUtc(iso); // "YYYY-MM-DD HH:MM UTC"
+  if (relative === iso.slice(0, 10)) return utc;
+  return nowMs - then < 86_400_000 ? `${relative} · ${utc.slice(11)}` : `${relative} · ${utc.slice(5)}`;
+}
+
 export function formatUtc(iso: string): string {
   const time = Date.parse(iso);
   if (Number.isNaN(time)) return "";

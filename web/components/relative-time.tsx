@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 
-import { formatRelativeTime, formatUtc } from "@/lib/trace";
+import { formatRelativeWithClock, formatUtc } from "@/lib/trace";
 
 // One shared clock for every timestamp on the page. On the server and during hydration there is
 // no clock (the snapshot is null) and the absolute UTC time is rendered, so the HTML is the same
@@ -35,7 +35,7 @@ export function RelativeTime({ iso, className }: { iso: string; className?: stri
   const absolute = formatUtc(iso);
   return (
     <time dateTime={iso} title={absolute} className={className}>
-      {nowMs === 0 ? absolute : formatRelativeTime(iso, nowMs)}
+      {nowMs === 0 ? absolute : formatRelativeWithClock(iso, nowMs)}
     </time>
   );
 }
