@@ -22,8 +22,9 @@ contains or through where it is fitted:
 
 - Through what it contains: the scope must cover that component as the part contains it. If the
   scope sets a condition on the component (replaceable, separately approved, of a stated type)
-  and the component's "How it is built in" line does not meet it, the verdict is `does_not`; if
-  that line says "not stated", `possibly`, naming the condition. A regulation that governs a whole
+  and the component's "How it is built in" line does not meet it, or says "not stated", the
+  verdict is `does_not`: a regulation that approves only replaceable, separately approved or
+  listed components does not reach one the case does not show to be so. A regulation that governs a whole
   vehicle's system, or the manufacturer's processes for it, does not reach a part only because
   the part contains software or electronics, or carries a sensor, an antenna, a connector or
   another component that system uses: `does_not`, unless its scope names such parts or
