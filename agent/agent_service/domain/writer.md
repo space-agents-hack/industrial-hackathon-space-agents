@@ -51,7 +51,10 @@ What counts:
   is about a signal or function of the vehicle that neither the case nor the profile names, even
   if the vehicle uses this part among other devices to give it (a warning signal, a confirmation
   signal, an automatic switching logic). Keep it when the profile says nothing either way about
-  the part's own functions.
+  the part's own functions. A result that a test applied to the part requires of the vehicle or
+  of other devices (after the test, the other devices still work, no piece comes loose), and a
+  property of the vehicle's outer surface where the part forms that surface, are the part's own
+  obligations: write them.
 - Write every obligation of a paragraph that applies, not only its first or main one.
 - A test condition is an obligation when it says what the product is put through or must show:
   which test, standard or annex applies, and the level, range, frequency, modulation, supply

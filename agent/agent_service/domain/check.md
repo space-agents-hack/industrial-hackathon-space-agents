@@ -16,7 +16,9 @@ paragraph it cites. For each requirement, check:
    does not when it is for a function the profile lists as one the part does NOT have, for a
    vehicle category other than those it lists, or for a kind of device that is neither the part
    nor something it contains, or for a signal or function of the vehicle that neither the case
-   nor the profile names. When the profile says nothing either way, it applies.
+   nor the profile names. When the profile says nothing either way, it applies. A result that a
+   test applied to the part requires of the vehicle or of other devices, or a property of the
+   vehicle's outer surface where the part forms it, applies.
 
 Report only requirements with a problem, with `report_findings`. Use `reject` when the
 requirement misstates its paragraph, cites a paragraph that does not impose it, or clearly does

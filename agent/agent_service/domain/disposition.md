@@ -95,7 +95,10 @@ What to set aside:
   vehicle that neither the case nor the profile names, even if the vehicle uses this part among
   other devices to give it (a warning signal, a confirmation signal, an automatic switching
   logic): the part's own functions are the ones the profile lists. When the profile says nothing
-  either way about the part's own functions, it applies.
+  either way about the part's own functions, it applies. A result that a test applied to the part
+  requires of the vehicle or of other devices (after the test, the other devices still work, no
+  piece comes loose), and a property of the vehicle's outer surface where the part forms that
+  surface, are the part's own obligations: they apply, and cover `the part`.
 - `not_an_obligation`: it imposes nothing (a permission, a reference only, a note).
 - `test_method`: how a test is carried out, as above.
 - `same_as_another_clause`: it restates an obligation you answered elsewhere in this window.
