@@ -354,9 +354,11 @@ def _subgoal_score(
             f"(its case_id: {expected.get('case_id')!r}), not the one in the database."
         )
     notes.append(
-        "Local approximation: flagged requirement ids, their change type, and added entries "
-        "matched by paragraph and similar text. The platform judges each change by meaning with "
-        "a model, so its numbers can differ."
+        "An upper bound, not an estimate: flagged requirement ids, their change type, and added "
+        "entries counted as matched when they share a paragraph and 40% of their words with an "
+        "expected one. The platform has a model judge each change by meaning, and accepts fewer: "
+        "on the dev upload of 2026-10-25 (about 05:20 CEST) this counted 23 matched and the "
+        "platform 20."
     )
     return result
 
