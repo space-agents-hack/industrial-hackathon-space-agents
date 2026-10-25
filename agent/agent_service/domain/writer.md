@@ -75,10 +75,14 @@ What counts:
   among many (the vehicle's own emissions or immunity) is not the part's, when the regulation
   also states what a component or sub-assembly must meet: those are the part's, and so is
   vehicle-level text that states what a component must meet or how it is marked. An obligation
-  for an operating mode or configuration that needs a component the profile does not list is not
-  the part's either. A mode the vehicle has is one the case shows or implies, even through another component (a
-  connector, an opening or a control that only exists for that mode): the part's obligations in
-  that mode apply. Nor is a test whose target area or impact point lies on another part of the
+  for an operating mode or configuration the case rules out is not the part's either. A mode the
+  vehicle has is one the case shows or implies, even through another component (a connector, an
+  opening or a control that only exists for that mode): the part's obligations in that mode
+  apply. An obligation that holds only "where" or "in the case of" a feature the case does not
+  mention (an optional control, a combination with another device, a variant of the vehicle) is
+  kept with its condition, as above. A vehicle system that a component of the part senses for or
+  triggers (a sensor, a switch) is one the vehicle has: the obligations on sensing and triggering
+  it, and the tests that verify them, are the part's. Nor is a test whose target area or impact point lies on another part of the
   vehicle, unless a sentence of it also binds this part.
 - Write every obligation of a paragraph that applies, not only its first or main one.
 - A test condition is an obligation when it says what the product is put through or must show:
