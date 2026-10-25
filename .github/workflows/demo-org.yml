@@ -97,10 +97,14 @@ jobs:
           SOURCE: ${{ inputs.source }}
           CASE_LIKE: ${{ inputs.case_like }}
           EMAIL: ${{ inputs.email }}
+          PROJECT: ${{ inputs.project }}
+          MAIN_RUNS: ${{ inputs.main_runs }}
+          REVIEW_RUNS: ${{ inputs.review_runs }}
         run: |
           out="$RUNNER_TEMP/inventory.txt"
           psql "$DB_URL" -v ON_ERROR_STOP=1 -v source="$SOURCE" -v case_like="$CASE_LIKE" \
-            -v email="$EMAIL" -f scripts/demo-org-inventory.sql | tee "$out"
+            -v email="$EMAIL" -v project="$PROJECT" -v main_runs="$MAIN_RUNS" \
+            -v review_runs="$REVIEW_RUNS" -f scripts/demo-org-inventory.sql | tee "$out"
           { echo '```'; cat "$out"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Copy the rows and create the account

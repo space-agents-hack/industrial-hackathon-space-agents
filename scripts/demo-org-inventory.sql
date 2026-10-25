@@ -3,7 +3,7 @@
 -- what production holds, not from a guess.
 --
 --   psql "$DB_URL" -v ON_ERROR_STOP=1 -v source=team-09 -v case_like=%rear-lamp% \
---     -f scripts/demo-org-inventory.sql
+--     -v project=dev-rear-lamp -v main_runs=2 -v review_runs=2 -f scripts/demo-org-inventory.sql
 --
 -- No paragraph text, case content or requirement text is printed: the output lands in a CI log.
 
@@ -118,3 +118,48 @@ select s.bucket_id, count(*) as objects,
        pg_size_pretty(sum(coalesce((s.metadata ->> 'size')::bigint, 0))) as size
 from storage.objects s
 group by s.bucket_id;
+
+-- What a copy of the project's latest runs would need from the library, to size a smaller copy:
+-- the regulations its requirements cite or its sub-goal cases compare, and their paragraphs.
+-- `on_disk` scales the rows' own size by the table's indexes and TOAST, as measured above.
+\echo '== Paragraphs a copy of the latest runs needs (main_runs and review_runs from the copy step)'
+with project as (
+  select p.id from public.projects p join public.organizations o on o.id = p.organization_id
+  where o.name = :'source' and p.name = :'project'
+), chosen as (
+  select r.id from (
+    select r.id, c.kind, row_number() over (partition by c.kind order by r.created_at desc) as nth
+    from public.runs r join public.cases c on c.id = r.case_id
+    where c.project_id in (select id from project) and r.status = 'succeeded'
+  ) r
+  where (r.kind = 'main' and r.nth <= :main_runs) or (r.kind = 'subgoal' and r.nth <= :review_runs)
+), cited_versions as (
+  select q.version_id as id from public.requirements q where q.run_id in (select id from chosen)
+  union
+  select unnest(array[c.old_version_id, c.new_version_id]) from public.cases c
+  where c.project_id in (select id from project)
+), cited_regulations as (
+  select distinct v.regulation_id as id from public.regulation_versions v
+  where v.id in (select id from cited_versions)
+), factor as (
+  select pg_total_relation_size('public.regulation_paragraphs')::numeric
+         / greatest(sum(pg_column_size(p.*)), 1) as k
+  from public.regulation_paragraphs p
+)
+select 'every paragraph' as scope, count(*) as paragraphs,
+       pg_size_pretty((sum(pg_column_size(p.*)) * (select k from factor))::bigint) as on_disk
+from public.regulation_paragraphs p join public.organizations o on o.id = p.organization_id
+where o.name = :'source'
+union all
+select 'current paragraphs', count(*), pg_size_pretty((sum(pg_column_size(p.*)) * (select k from factor))::bigint)
+from public.regulation_paragraphs p join public.organizations o on o.id = p.organization_id
+where o.name = :'source' and p.superseded_at is null
+union all
+select 'current, of the ' || (select count(*) from cited_regulations) || ' cited regulations', count(*),
+       pg_size_pretty((sum(pg_column_size(p.*)) * (select k from factor))::bigint)
+from public.regulation_paragraphs p join public.regulation_versions v on v.id = p.version_id
+where v.regulation_id in (select id from cited_regulations) and p.superseded_at is null
+union all
+select 'cited by the requirements only', count(*), pg_size_pretty((sum(pg_column_size(p.*)) * (select k from factor))::bigint)
+from public.regulation_paragraphs p
+where p.id in (select q.paragraph_id from public.requirements q where q.run_id in (select id from chosen));
