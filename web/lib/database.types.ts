@@ -714,6 +714,86 @@ export type Database = {
           },
         ]
       }
+      regulation_figure_descriptions: {
+        Row: {
+          described_at: string
+          description: string | null
+          error: string | null
+          image_sha256: string
+          model: string
+          organization_id: string
+        }
+        Insert: {
+          described_at?: string
+          description?: string | null
+          error?: string | null
+          image_sha256: string
+          model: string
+          organization_id: string
+        }
+        Update: {
+          described_at?: string
+          description?: string | null
+          error?: string | null
+          image_sha256?: string
+          model?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "regulation_figure_descriptions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      regulation_figures: {
+        Row: {
+          height_pt: number
+          image_sha256: string
+          organization_id: string
+          page: number
+          position: number
+          version_id: string
+          width_pt: number
+        }
+        Insert: {
+          height_pt: number
+          image_sha256: string
+          organization_id: string
+          page: number
+          position: number
+          version_id: string
+          width_pt: number
+        }
+        Update: {
+          height_pt?: number
+          image_sha256?: string
+          organization_id?: string
+          page?: number
+          position?: number
+          version_id?: string
+          width_pt?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "regulation_figures_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "regulation_figures_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "regulation_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       regulation_import_files: {
         Row: {
           error: string | null
@@ -946,6 +1026,7 @@ export type Database = {
           extracted_at: string | null
           extracted_with: string | null
           extraction_error: string | null
+          figures_missing: number
           file_name: string
           id: string
           last_import_id: string | null
@@ -973,6 +1054,7 @@ export type Database = {
           extracted_at?: string | null
           extracted_with?: string | null
           extraction_error?: string | null
+          figures_missing?: number
           file_name: string
           id?: string
           last_import_id?: string | null
@@ -1000,6 +1082,7 @@ export type Database = {
           extracted_at?: string | null
           extracted_with?: string | null
           extraction_error?: string | null
+          figures_missing?: number
           file_name?: string
           id?: string
           last_import_id?: string | null
@@ -1640,6 +1723,15 @@ export type Database = {
       rename_organization: {
         Args: { new_name: string; org: string }
         Returns: undefined
+      }
+      replace_regulation_figures: {
+        Args: {
+          p_figures: Json
+          p_missing: number
+          p_sha256: string
+          p_version_id: string
+        }
+        Returns: number
       }
       replace_regulation_paragraphs: {
         Args: {

@@ -1,6 +1,6 @@
-// Renders sample.html and tables.html to PDFs the way the challenge's PDFs were made: headless
-// Chrome with the footer "UN R999, version 2.1.0 | page n of N". Run from anywhere Playwright is
-// installed:
+// Renders sample.html, tables.html and figures.html to PDFs the way the challenge's PDFs were
+// made: headless Chrome with the footer "UN R999, version 2.1.0 | page n of N". Run from anywhere
+// Playwright is installed:
 //   node agent/tests/fixtures/regulation/make_sample.cjs
 const path = require("node:path");
 const { chromium } = require("playwright");
@@ -8,7 +8,7 @@ const { chromium } = require("playwright");
 (async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage();
-  for (const name of ["sample", "tables"]) {
+  for (const name of ["sample", "tables", "figures"]) {
     await page.goto(`file://${path.join(__dirname, `${name}.html`)}`);
     await page.pdf({
       path: path.join(__dirname, `${name}.pdf`),

@@ -35,11 +35,15 @@ borders, is read by pdf_tables.py: each row becomes one line, "Header A: value; 
 where the table's lines were. Without that, a wrapped cell or a column of crosses came out as
 loose lines and the row could not be rebuilt. On the 92 PDFs every label and page stayed the same.
 
+Figures (#52). A picture a vision model described (figures.py, at import) is written as one line,
+"[Figure: ...]", at the end of the paragraph that is open where the picture sits (before the first
+line below its top edge). It is kept out of the splitting, so labels and pages do not move.
+
 What this does NOT do:
   - split tables out of their paragraph. A table's rows stay in the paragraph it follows, so its
     pages count for that paragraph; a citation "5.1.4.4.1. Table 3" finds "5.1.4.4.1".
   - regroup a table drawn without borders (252 pages of the 92 PDFs): its lines stay as they are.
-  - read text inside pictures (no OCR), or keep the pictures.
+  - read text inside pictures itself, or keep the pictures. figures.py has a model describe them.
   - work on scanned PDFs. A PDF without a text layer raises ExtractionProblem.
   - understand other layouts. A PDF from another source still gets paragraphs if it numbers them
     the UNECE way, but annex and part headings are recognised by their size and weight.
@@ -48,16 +52,24 @@ What this does NOT do:
 import hashlib
 import re
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from agent_service.domain.pdf_tables import Table, read_tables
+from agent_service.domain.pdf_figures import Figure, page_figures
+from agent_service.domain.pdf_tables import Table, char_centre, read_tables
 from agent_service.pdf_lock import PDFIUM
+
+if TYPE_CHECKING:
+    from pypdfium2 import PdfTextPage
 
 # Stored with each version's paragraphs. Changing how paragraphs are split means changing this, so
 # the import extracts every version again instead of keeping paragraphs cut the old way.
 # paragraphs-2 (#52): bordered tables are read as rows under their headers (pdf_tables.py).
-EXTRACTOR = "paragraphs-2"
+# paragraphs-3 (#52): described pictures are lines of their paragraph (figures.py). A version split
+# while some of its pictures had no description yet is split again once they have one
+# (regulation_versions.figures_missing), not through this value.
+EXTRACTOR = "paragraphs-3"
 
 Kind = Literal["paragraph", "text"]
 
@@ -101,6 +113,8 @@ class Extraction:
     paragraphs: list[Paragraph]
     # Things a person should look at, none of which stopped the extraction.
     warnings: list[str] = field(default_factory=list)
+    # Every picture worth describing (pdf_figures.py), described or not.
+    figures: list[Figure] = field(default_factory=list)
 
 
 class ExtractionProblem(Exception):
@@ -118,9 +132,14 @@ class _Line:
     text: str
     size: float
     bold: bool
-    # A row of a bordered table, rebuilt by pdf_tables.py. Never starts a paragraph or a heading:
-    # a row that begins "5.2.1" is a reference in a cell, not the next paragraph.
-    table: bool = False
+    # A line this module wrote rather than read: a row of a bordered table (pdf_tables.py) or a
+    # picture's description (pdf_figures.py). Never starts a paragraph or a heading: a row that
+    # begins "5.2.1" is a reference in a cell, not the next paragraph.
+    verbatim: bool = False
+    # A picture's description. Kept aside and written at the end of the paragraph open where the
+    # picture sits, so the splitting never sees it: put in the flow, it came between "paragraph"
+    # and a wrapped "10." and made that a paragraph of its own, and it moved page ranges.
+    figure: bool = False
 
 
 _FOOTER = re.compile(
@@ -135,14 +154,25 @@ _BANNER = re.compile(
 _BROKEN_HYPHEN = "￾"
 
 
-def _read_lines(data: bytes) -> tuple[list[_Line], int, list[str], list[str]]:
-    """(lines, page count, footer version labels, warnings), footers removed."""
+@dataclass
+class _Read:
+    lines: list[_Line]
+    page_count: int
+    # From the footers.
+    versions: list[str]
+    warnings: list[str]
+    figures: list[Figure]
+
+
+def _read_lines(data: bytes, descriptions: Mapping[str, str]) -> _Read:
+    """The PDF's lines with their style, footers removed, tables as rows, described figures as
+    lines where they sit."""
     # pdfium is not thread-safe, and callers read PDFs in threads (agent_service/pdf_lock.py).
     with PDFIUM:
-        return _read_lines_alone(data)
+        return _read_lines_alone(data, descriptions)
 
 
-def _read_lines_alone(data: bytes) -> tuple[list[_Line], int, list[str], list[str]]:
+def _read_lines_alone(data: bytes, descriptions: Mapping[str, str]) -> _Read:
     import pypdfium2 as pdfium
     import pypdfium2.raw as pdfium_c
 
@@ -153,6 +183,7 @@ def _read_lines_alone(data: bytes) -> tuple[list[_Line], int, list[str], list[st
     lines: list[_Line] = []
     versions: list[str] = []
     warnings: list[str] = []
+    all_figures: list[Figure] = []
     empty = 0
     previous: Table | None = None
     unread_tables = 0
@@ -163,6 +194,8 @@ def _read_lines_alone(data: bytes) -> tuple[list[_Line], int, list[str], list[st
             page = pdf[index]
             textpage = page.get_textpage()
             try:
+                page_figures_here = page_figures(page, number)
+                all_figures += page_figures_here
                 raw = textpage.get_text_range()
                 if not raw.strip():
                     empty += 1
@@ -180,12 +213,20 @@ def _read_lines_alone(data: bytes) -> tuple[list[_Line], int, list[str], list[st
                 # Each table's rows go where its first line was; its other lines are dropped.
                 replaced = {t.lines[0]: t for t in tables}
                 dropped = {n for t in tables for n in t.lines[1:]}
+                # A described picture goes before the first line below its top edge: the caption
+                # under it, or the text that follows it. Inserted after the footer is taken off,
+                # so the footer is still the page's first or last line.
+                described = [f for f in page_figures_here if f.sha256 in descriptions]
+                anchors = _figure_anchors(textpage, texts, starts, described)
+                inserts: list[tuple[int, Figure]] = []
                 for n, (text, start) in enumerate(zip(texts, starts, strict=True)):
+                    inserts += [(len(page_lines), f) for f in anchors.get(n, [])]
                     if n in dropped:
                         continue
                     if n in replaced:
                         page_lines += [
-                            _Line(number, row, 0.0, False, table=True) for row in replaced[n].rows
+                            _Line(number, row, 0.0, False, verbatim=True)
+                            for row in replaced[n].rows
                         ]
                         continue
                     stripped = text.replace(_BROKEN_HYPHEN, "-").strip()
@@ -196,6 +237,7 @@ def _read_lines_alone(data: bytes) -> tuple[list[_Line], int, list[str], list[st
                     size = pdfium_c.FPDFText_GetFontSize(textpage.raw, lead)
                     weight = pdfium_c.FPDFText_GetFontWeight(textpage.raw, lead)
                     page_lines.append(_Line(number, stripped, round(size, 1), weight >= 700))
+                inserts += [(len(page_lines), f) for f in anchors.get(len(texts), [])]
                 # The footer comes first in the text layer of the challenge's PDFs and last in
                 # other renders of the same kind; it is never part of a paragraph.
                 for edge in {0, len(page_lines) - 1}:
@@ -209,6 +251,9 @@ def _read_lines_alone(data: bytes) -> tuple[list[_Line], int, list[str], list[st
                             f"{footer['of']}; the PDF page index is used."
                         )
                     page_lines[edge] = replace(page_lines[edge], text="")
+                for at, figure in reversed(inserts):
+                    text = f"[Figure: {' '.join(descriptions[figure.sha256].split())}]"
+                    page_lines.insert(at, _Line(number, text, 0.0, False, figure=True))
                 lines += [line for line in page_lines if line.text]
             finally:
                 textpage.close()
@@ -227,7 +272,30 @@ def _read_lines_alone(data: bytes) -> tuple[list[_Line], int, list[str], list[st
         warnings.append(
             f"{unread_tables} bordered area(s) did not read as tables; their text is kept as lines."
         )
-    return lines, page_count, versions, warnings
+    return _Read(lines, page_count, versions, warnings, all_figures)
+
+
+def _figure_anchors(
+    textpage: "PdfTextPage", texts: list[str], starts: list[int], figures: list[Figure]
+) -> dict[int, list[Figure]]:
+    """For each figure, the index of the first line whose first character is below the figure's
+    top edge (len(texts) if none): the figure's line goes before it. The footer is not an anchor,
+    because its place in the text layer is not its place on the page."""
+    anchors: dict[int, list[Figure]] = {}
+    if not figures:
+        return anchors
+    heights: list[float | None] = []
+    for text, start in zip(texts, starts, strict=True):
+        lead = start + (len(text) - len(text.lstrip()))
+        centre = char_centre(textpage, lead) if text.strip() else None
+        footer = _FOOTER.match(text.strip()) is not None
+        heights.append(None if centre is None or footer else centre[1])
+    for figure in sorted(figures, key=lambda f: (-f.top, f.left)):
+        at = next(
+            (n for n, y in enumerate(heights) if y is not None and y < figure.top), len(texts)
+        )
+        anchors.setdefault(at, []).append(figure)
+    return anchors
 
 
 # ------------------------------------------------------------------------------------------
@@ -290,6 +358,8 @@ class _Open:
     lines: list[str]
     page_start: int
     page_end: int
+    # "[Figure: ...]" lines of pictures that sit in this paragraph, written after its text.
+    figures: list[str] = field(default_factory=list)
 
 
 class _Splitter:
@@ -319,6 +389,8 @@ class _Splitter:
         self.headed = False
         self.open: _Open | None = None
         self.last_was_heading = False
+        # Figure lines that came before any paragraph was open: they go to the next one.
+        self.waiting: list[str] = []
 
     # Style classes, relative to the body size so another renderer's scale still works.
 
@@ -347,9 +419,12 @@ class _Splitter:
         return " ".join(levels)
 
     def feed(self, line: _Line) -> None:
+        if line.figure:
+            (self.open.figures if self.open is not None else self.waiting).append(line.text)
+            return
         heading = self.last_was_heading
         self.last_was_heading = False
-        if line.table:
+        if line.verbatim:
             self.append(line)
             return
         if self.is_title(line) or self.is_footnote(line):
@@ -552,7 +627,9 @@ class _Splitter:
             lines=lines,
             page_start=page,
             page_end=page,
+            figures=self.waiting,
         )
+        self.waiting = []
 
     def append(self, line: _Line) -> None:
         if self.open is None:
@@ -565,11 +642,19 @@ class _Splitter:
 
     def close(self) -> None:
         current, self.open = self.open, None
-        if current is not None and current.lines:
+        if current is None:
+            return
+        if current.lines:
+            current.lines += current.figures
             self.done.append(current)
+        else:
+            self.waiting = current.figures + self.waiting
 
     def finish(self) -> list[Paragraph]:
         self.close()
+        if self.waiting and self.done:
+            # Pictures after the last line of text belong to the last paragraph.
+            self.done[-1].lines += self.waiting
         # The same number in two sections outside the annexes: an introduction or a statement of
         # rationale that numbers its own paragraphs (R171, GTR 9). The regulation's text comes
         # last and keeps the plain label, which is what submissions cite; the others get their
@@ -615,9 +700,13 @@ def _is_title(rest: str) -> bool:
     return 0 < len(rest) <= _MAX_TITLE and not rest.endswith((".", ";", ":", ","))
 
 
-def extract(pdf: bytes) -> Extraction:
-    """The paragraphs of a regulation PDF in document order, or ExtractionProblem."""
-    lines, page_count, versions, warnings = _read_lines(pdf)
+def extract(pdf: bytes, descriptions: Mapping[str, str] | None = None) -> Extraction:
+    """The paragraphs of a regulation PDF in document order, or ExtractionProblem.
+
+    `descriptions` maps a picture's sha256 (pdf_figures.py) to what a vision model read in it.
+    Each described picture is written as one line, "[Figure: ...]", where it sits on its page."""
+    read = _read_lines(pdf, descriptions or {})
+    lines, page_count, warnings = read.lines, read.page_count, read.warnings
     if not lines:
         raise ExtractionProblem("The PDF has no text.")
     # The body size is the one most text is set in. Counted in characters, not lines: R40 has more
@@ -625,7 +714,7 @@ def extract(pdf: bytes) -> Extraction:
     # heading.
     sizes: Counter[float] = Counter()
     for line in lines:
-        if not line.table:
+        if not (line.verbatim or line.figure):
             sizes[line.size] += len(line.text)
     body = sizes.most_common(1)[0][0]
     splitter = _Splitter(body)
@@ -638,7 +727,7 @@ def extract(pdf: bytes) -> Extraction:
     if repeated:
         shown = ", ".join(repeated[:5]) + (" and more" if len(repeated) > 5 else "")
         warnings.append(f"{len(repeated)} label(s) appear more than once: {shown}.")
-    distinct = sorted(set(versions))
+    distinct = sorted(set(read.versions))
     if len(distinct) > 1:
         warnings.append(f"The footers name more than one version: {', '.join(distinct)}.")
     return Extraction(
@@ -646,4 +735,5 @@ def extract(pdf: bytes) -> Extraction:
         version_label=distinct[0] if len(distinct) == 1 else None,
         paragraphs=paragraphs,
         warnings=warnings,
+        figures=read.figures,
     )

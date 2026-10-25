@@ -154,6 +154,15 @@ class Settings(BaseSettings):
     # input-tokens-per-minute of a low Anthropic tier (an estimate: the tier is per key); the
     # Anthropic client waits out a 429 and retries by itself.
     summary_concurrency: int = 4
+    # Describes the pictures of the regulation PDFs during an import (domain/figures.py, #52),
+    # where the organisation chose no model (Admin, Models, process "figures"). It transcribes
+    # values, it does not reason, so a small vision model is enough: about 1,600 distinct pictures
+    # in the challenge's 92 PDFs, roughly $3 to $6 once per organisation (an estimate, not
+    # measured). "scripted" or empty describes none, and the import says so.
+    figure_model: str = "anthropic:claude-haiku-5-5"
+    # Pictures sent at once. Each is one image of up to 1,500 pixels a side, a few thousand
+    # input tokens; the client waits out a 429 and retries by itself.
+    figure_concurrency: int = 4
 
     # The assistant's model (domain/assistant.py), where the organisation chose none (Admin,
     # Models, process "chat"). Not the run's model: an answer reads the project's rows and a few

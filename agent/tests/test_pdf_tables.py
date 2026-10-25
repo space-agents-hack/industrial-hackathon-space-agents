@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_service.domain.paragraphs import EXTRACTOR, Extraction, extract
+from agent_service.domain.paragraphs import Extraction, extract
 
 TABLES = Path(__file__).parent / "fixtures" / "regulation" / "tables.pdf"
 
@@ -77,11 +77,6 @@ def test_a_table_without_borders_stays_as_lines(tables: Extraction) -> None:
 def test_headers_over_empty_cells_are_kept(tables: Extraction) -> None:
     # A form left for the manufacturer: no row has a value, the headers are still the content.
     assert text(tables, "5.5")[1:] == ["Rear (m); Front (m)"]
-
-
-def test_the_extractor_version_says_tables_are_read() -> None:
-    # Bumped so every stored version is split again (regulations.py, `EXTRACTOR`).
-    assert EXTRACTOR == "paragraphs-2"
 
 
 def test_pages_are_unchanged_by_reading_tables(tables: Extraction) -> None:

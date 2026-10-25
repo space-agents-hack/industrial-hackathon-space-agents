@@ -118,7 +118,7 @@ def library() -> InMemoryLibraryStore:
     return InMemoryLibraryStore()
 
 
-def split_fake(data: bytes) -> Extraction:
+def split_fake(data: bytes, _figures: object = None) -> Extraction:
     """One paragraph per PDF, holding its bytes, so a test can tell which file was split."""
     text = data.decode(errors="replace")
     paragraph = Paragraph(0, "1", None, None, None, "1", "", "paragraph", text, 1, 1)
@@ -434,7 +434,7 @@ async def test_a_version_already_split_by_this_extractor_is_not_split_again(
     await run(library, settings, library.add_import(INDEX), Server())
     calls: list[bytes] = []
 
-    def counting(data: bytes) -> Extraction:
+    def counting(data: bytes, _figures: object = None) -> Extraction:
         calls.append(data)
         return split_fake(data)
 
@@ -458,7 +458,7 @@ async def test_a_new_file_under_the_same_version_is_split_again(
 async def test_a_pdf_that_cannot_be_split_is_named_and_the_import_still_succeeds(
     library: InMemoryLibraryStore, settings: Settings
 ) -> None:
-    def refuse_r10(data: bytes) -> Extraction:
+    def refuse_r10(data: bytes, _figures: object = None) -> Extraction:
         if b"R10" in data:
             raise ExtractionProblem("No text layer.")
         return split_fake(data)
@@ -479,13 +479,13 @@ async def test_a_pdf_that_cannot_be_split_is_named_and_the_import_still_succeeds
 async def test_a_splitter_crash_is_recorded_so_the_next_import_does_not_trip_on_it(
     library: InMemoryLibraryStore, settings: Settings
 ) -> None:
-    def crash(_data: bytes) -> Extraction:
+    def crash(_data: bytes, _figures: object = None) -> Extraction:
         raise IndexError("list index out of range")
 
     await run(library, settings, library.add_import(INDEX), Server(), split=crash)
     calls: list[bytes] = []
 
-    def counting(data: bytes) -> Extraction:
+    def counting(data: bytes, _figures: object = None) -> Extraction:
         calls.append(data)
         return split_fake(data)
 
@@ -538,7 +538,7 @@ async def test_splitting_pauses_when_the_slice_ends_and_resumes_where_it_stopped
     clock = [0.0]
     monkeypatch.setattr(regulations.time, "monotonic", lambda: clock[0])
 
-    def slow(data: bytes) -> Extraction:
+    def slow(data: bytes, _figures: object = None) -> Extraction:
         clock[0] += settings.import_slice_s  # the first versions use up the whole slice
         return split_fake(data)
 

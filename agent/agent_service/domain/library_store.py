@@ -7,9 +7,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import UUID
 
+from postgrest import ReturnMethod
 from supabase import AsyncClient, acreate_client
 
+from agent_service.domain.figures import Described
 from agent_service.domain.paragraphs import Extraction
+from agent_service.domain.pdf_figures import Figure
 from agent_service.domain.regulations import (
     BUCKET,
     FileStatus,
@@ -18,6 +21,7 @@ from agent_service.domain.regulations import (
     PlannedFile,
     VersionToSplit,
 )
+from agent_service.providers import Endpoint
 
 # PostgREST's page size (supabase/config.toml `max_rows`, and the hosted default).
 _PAGE = 1000
@@ -230,9 +234,12 @@ class SupabaseLibraryStore:
         while True:
             res = (
                 await self._db.table("regulation_versions")
-                .select("id, version_label, sha256, pdf_path, regulations!inner(code)")
+                .select(
+                    "id, version_label, sha256, pdf_path, extracted_with, figures_missing, "
+                    "regulations!inner(code)"
+                )
                 .eq("organization_id", str(organization_id))
-                .or_(f"extracted_with.is.null,extracted_with.neq.{extractor}")
+                .or_(f"extracted_with.is.null,extracted_with.neq.{extractor},figures_missing.gt.0")
                 .order("created_at")
                 .order("id")
                 .range(start, start + _PAGE - 1)
@@ -246,6 +253,8 @@ class SupabaseLibraryStore:
                     version_label=r["version_label"],
                     sha256=r["sha256"],
                     pdf_path=r["pdf_path"],
+                    extracted_with=r["extracted_with"],
+                    figures_missing=r["figures_missing"] or 0,
                 )
                 for r in page
             ]
@@ -300,6 +309,102 @@ class SupabaseLibraryStore:
                 "p_error": error,
             },
         ).execute()
+
+    async def save_figures(
+        self, version: VersionToSplit, figures: list[Figure], missing: int
+    ) -> None:
+        await self._db.rpc(
+            "replace_regulation_figures",
+            {
+                "p_version_id": str(version.id),
+                "p_sha256": version.sha256,
+                "p_missing": missing,
+                "p_figures": [
+                    {
+                        "page": f.page,
+                        "position": f.position,
+                        "image_sha256": f.sha256,
+                        "width_pt": round(f.width, 1),
+                        "height_pt": round(f.height, 1),
+                    }
+                    for f in figures
+                ],
+            },
+        ).execute()
+
+    # What figures.FigureStep needs (FigureStore): the organisation's model, its key, and where
+    # descriptions and usage go.
+
+    async def organization_model(self, org: UUID, process: str) -> str | None:
+        res = (
+            await self._db.table("organization_models")
+            .select("model")
+            .eq("organization_id", str(org))
+            .eq("process", process)
+            .limit(1)
+            .execute()
+        )
+        rows = _rows(res)
+        model = rows[0].get("model") if rows else None
+        return model if isinstance(model, str) else None
+
+    async def provider_key(self, org: UUID, provider: str) -> str | None:
+        res = await self._db.rpc(
+            "read_provider_key", {"org": str(org), "key_provider": provider}
+        ).execute()
+        return res.data if isinstance(res.data, str) and res.data else None
+
+    async def provider_endpoint(self, org: UUID, provider: str) -> Endpoint | None:
+        # Same rule as read_provider_key: only the secret key may call it.
+        res = await self._db.rpc(
+            "read_provider_endpoint", {"org": str(org), "key_provider": provider}
+        ).execute()
+        data = res.data
+        if not isinstance(data, dict) or not data.get("base_url"):
+            return None
+        row = cast(dict[str, Any], data)
+        return Endpoint(
+            base_url=str(row["base_url"]),
+            auth_scheme=row.get("auth_scheme") or "none",
+            username=row.get("username"),
+            secret=row.get("secret"),
+        )
+
+    async def record_usage(self, rows: list[dict[str, Any]]) -> None:
+        await self._db.table("model_usage").insert(rows, returning=ReturnMethod.minimal).execute()
+
+    async def figure_descriptions(self, org: UUID, shas: list[str]) -> dict[str, Described]:
+        found: dict[str, Described] = {}
+        # In pages: an `in` filter of a thousand hashes is a 70 KB URL.
+        for start in range(0, len(shas), 200):
+            res = (
+                await self._db.table("regulation_figure_descriptions")
+                .select("image_sha256, description, model, error")
+                .eq("organization_id", str(org))
+                .in_("image_sha256", shas[start : start + 200])
+                .execute()
+            )
+            for r in _rows(res):
+                found[r["image_sha256"]] = Described(r["description"], r["model"], r["error"])
+        return found
+
+    async def save_figure_description(self, org: UUID, sha256: str, described: Described) -> None:
+        await (
+            self._db.table("regulation_figure_descriptions")
+            .upsert(
+                {
+                    "organization_id": str(org),
+                    "image_sha256": sha256,
+                    "description": described.description,
+                    "model": described.model,
+                    "error": described.error,
+                    "described_at": datetime.now(UTC).isoformat(),
+                },
+                on_conflict="organization_id,image_sha256",
+                returning=ReturnMethod.minimal,
+            )
+            .execute()
+        )
 
     async def splitting_errors(self, organization_id: UUID, extractor: str) -> list[str]:
         res = (

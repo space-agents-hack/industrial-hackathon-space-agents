@@ -32,7 +32,9 @@ log = logging.getLogger(__name__)
 # The processes of organization_models plus those with no setting of their own: the run's model
 # ("writer"), the query vector of a search during a run, and the run page's chat (#28). The
 # database checks the same list (migration 20261024300000_model_usage).
-Process = Literal["writer", "check", "transcription", "summary", "embedding", "search", "chat"]
+Process = Literal[
+    "writer", "check", "transcription", "summary", "embedding", "search", "chat", "figures"
+]
 KeySource = Literal["organization", "deployment", "server"]
 
 # What the agent library reads when the organisation connected no key (settings.py says the same).

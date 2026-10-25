@@ -588,6 +588,58 @@ def test_ingest_uses_the_organisations_transcription_model(
     assert built == [("anthropic:claude-org-choice", KEY)]
 
 
+def test_ingest_reads_the_part_pictures_with_the_organisations_figure_model(
+    client: TestClient,
+    store: InMemoryRunStore,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # One vision model for every picture, the regulations' and the part's (#52), when chosen.
+    settings.ingest_model = "anthropic:claude-haiku-test"
+    store.process_models[(ORG, "figures")] = "anthropic:claude-figure-choice"
+    seen: dict[str, object] = {}
+
+    async def fake_ingest(_store, _case_id, **kwargs) -> dict[str, int]:
+        seen.update(kwargs)
+        return {"parsed": 1, "failed": 0}
+
+    monkeypatch.setattr(api.case_ingest, "ingest_case", fake_ingest)
+    case_id = uuid4()
+    store.add_case_file(case_id, "photo.png", "png", b"x")
+
+    client.post(f"/cases/{case_id}/ingest", headers=AUTH)
+
+    assert seen["parser_name"] == "model:anthropic:claude-haiku-test"
+    assert seen["describer_name"] == "model:anthropic:claude-figure-choice"
+    assert seen["describe"] is not seen["transcribe"]
+
+
+def test_without_a_figure_choice_the_part_pictures_stay_on_the_transcription_model(
+    client: TestClient,
+    store: InMemoryRunStore,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # FIGURE_MODEL is a default for the library only: an organisation on its own server that
+    # never chose a figure model keeps its part's pictures there (SYS-30).
+    settings.ingest_model = "anthropic:claude-haiku-test"
+    settings.figure_model = "anthropic:claude-other"
+    seen: dict[str, object] = {}
+
+    async def fake_ingest(_store, _case_id, **kwargs) -> dict[str, int]:
+        seen.update(kwargs)
+        return {"parsed": 1, "failed": 0}
+
+    monkeypatch.setattr(api.case_ingest, "ingest_case", fake_ingest)
+    case_id = uuid4()
+    store.add_case_file(case_id, "photo.png", "png", b"x")
+
+    client.post(f"/cases/{case_id}/ingest", headers=AUTH)
+
+    assert seen["describer_name"] == "model:anthropic:claude-haiku-test"
+    assert seen["describe"] is seen["transcribe"]
+
+
 def test_health_names_each_process_default(client: TestClient, settings: Settings) -> None:
     processes = client.get("/health").json()["processes"]
     assert processes["transcription"] == settings.ingest_model

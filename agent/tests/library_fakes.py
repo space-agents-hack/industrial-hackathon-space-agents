@@ -8,7 +8,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
+from agent_service.domain.figures import Described
 from agent_service.domain.paragraphs import Extraction, Paragraph
+from agent_service.domain.pdf_figures import Figure
 from agent_service.domain.regulations import (
     FileStatus,
     ImportRow,
@@ -16,6 +18,7 @@ from agent_service.domain.regulations import (
     PlannedFile,
     VersionToSplit,
 )
+from agent_service.providers import Endpoint
 
 ORG = UUID("00000000-0000-4000-8000-000000000001")
 OTHER_ORG = UUID("00000000-0000-4000-8000-000000000002")
@@ -36,6 +39,8 @@ class StoredVersion:
     extraction_error: str | None = None
     page_count: int | None = None
     paragraphs: list[Paragraph] = field(default_factory=list)
+    figures: list[Figure] = field(default_factory=list)
+    figures_missing: int = 0
 
 
 @dataclass
@@ -51,6 +56,10 @@ class InMemoryLibraryStore:
     # Paths whose download from the bucket fails, as if the storage API did not answer.
     unreachable: set[str] = field(default_factory=set)
     closed: bool = False
+    # What figures.FigureStep reads and writes.
+    models: dict[str, str] = field(default_factory=dict)
+    descriptions: dict[tuple[UUID, str], Described] = field(default_factory=dict)
+    usage: list[dict[str, Any]] = field(default_factory=list)
 
     # Helpers the tests use to play the web's part.
 
@@ -199,9 +208,12 @@ class InMemoryLibraryStore:
         self, organization_id: UUID, extractor: str
     ) -> list[VersionToSplit]:
         return [
-            VersionToSplit(v.id, v.code, v.version_label, v.sha256, v.path)
+            VersionToSplit(
+                v.id, v.code, v.version_label, v.sha256, v.path, v.extracted_with, v.figures_missing
+            )
             for v in self.versions
-            if v.organization_id == organization_id and v.extracted_with != extractor
+            if v.organization_id == organization_id
+            and (v.extracted_with != extractor or v.figures_missing > 0)
         ]
 
     async def download_pdf(self, path: str) -> bytes:
@@ -225,6 +237,31 @@ class InMemoryLibraryStore:
         if stored is not None:
             stored.extracted_with, stored.extraction_error = extractor, error
             stored.paragraphs = []
+
+    async def save_figures(
+        self, version: VersionToSplit, figures: list[Figure], missing: int
+    ) -> None:
+        stored = self._version(version)
+        if stored is not None:
+            stored.figures, stored.figures_missing = list(figures), missing
+
+    async def organization_model(self, org: UUID, process: str) -> str | None:
+        return self.models.get(process)
+
+    async def provider_key(self, org: UUID, provider: str) -> str | None:
+        return None
+
+    async def provider_endpoint(self, org: UUID, provider: str) -> Endpoint | None:
+        return None
+
+    async def record_usage(self, rows: list[dict[str, Any]]) -> None:
+        self.usage += rows
+
+    async def figure_descriptions(self, org: UUID, shas: list[str]) -> dict[str, Described]:
+        return {sha: d for (o, sha), d in self.descriptions.items() if o == org and sha in shas}
+
+    async def save_figure_description(self, org: UUID, sha256: str, described: Described) -> None:
+        self.descriptions[(org, sha256)] = described
 
     async def splitting_errors(self, organization_id: UUID, extractor: str) -> list[str]:
         return [

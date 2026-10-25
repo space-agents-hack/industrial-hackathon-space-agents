@@ -211,7 +211,8 @@ def _grid(group: list[_Segment]) -> _Grid | None:
     return _Grid(xs, ys, group)
 
 
-def _char_box(textpage: "PdfTextPage", index: int) -> tuple[float, float] | None:
+def char_centre(textpage: "PdfTextPage", index: int) -> tuple[float, float] | None:
+    """The centre of a character's box in PDF points, or None if pdfium has no box for it."""
     import pypdfium2.raw as pdfium_c
 
     left, right, bottom, top = (ctypes.c_double() for _ in range(4))
@@ -247,7 +248,7 @@ def read_tables(
     leads = []
     for start, end in zip(line_starts, ends, strict=True):
         lead = start + (len(text[start:end]) - len(text[start:end].lstrip()))
-        leads.append(_char_box(textpage, lead) if lead < end else None)
+        leads.append(char_centre(textpage, lead) if lead < end else None)
     tables: list[Table] = []
     taken: set[int] = set()
     misfits = 0
@@ -274,7 +275,7 @@ def read_tables(
                         content[last].append(" ")
                     in_word = False
                     continue
-                centre = _char_box(textpage, index)
+                centre = char_centre(textpage, index)
                 slot = grid.slot(*centre) if centre else None
                 if slot is None:
                     cut = True

@@ -23,9 +23,14 @@ Resuming is safe here, unlike a run: a file already stored with the same sha256 
 storing one twice writes the same bytes to the same path. So a running import whose heartbeat has
 gone stale is simply taken over, not failed.
 
+Before a version is split, its pictures are described by a vision model (figures.py, #52), when
+the caller passes `figures`: the descriptions go into the paragraphs. A version split while some
+pictures had no description is listed again by the next import, and split again only if more of
+its pictures have one by then.
+
 What this does NOT do:
   - delete anything. An import adds and updates; a version missing from a new index stays.
-  - extract pictures or embeddings. Those are later steps on the stored PDFs.
+  - compute embeddings. That is the indexing (regulation_search.py), on the stored paragraphs.
   - split a library without an import. Importing the same index again is how to ask for it; it
     downloads nothing.
   - follow redirects or fetch from private addresses. The links come from a file a person
@@ -39,7 +44,7 @@ import logging
 import re
 import socket
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 from urllib.parse import urlsplit
@@ -48,7 +53,9 @@ from uuid import UUID
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from agent_service.domain.figures import FigureStore, Outcome
 from agent_service.domain.paragraphs import EXTRACTOR, Extraction, ExtractionProblem, extract
+from agent_service.domain.pdf_figures import Figure
 from agent_service.settings import Settings
 from agent_service.slices import each_until
 
@@ -327,20 +334,35 @@ async def _download(http: httpx.AsyncClient, url: str, sha256: str, max_bytes: i
 
 @dataclass(frozen=True)
 class VersionToSplit:
-    """A stored version whose paragraphs are missing or were cut by an older extractor."""
+    """A stored version whose paragraphs are missing, were cut by an older extractor, or were
+    cut while some of its pictures had no description yet (figures.py)."""
 
     id: UUID
     regulation_code: str
     version_label: str
     sha256: str
     pdf_path: str
+    extracted_with: str | None = None
+    # Distinct pictures without a description or a recorded error when it was last split.
+    figures_missing: int = 0
 
     @property
     def name(self) -> str:
         return f"{self.regulation_code} {self.version_label}"
 
 
-Splitter = Callable[[bytes], Extraction]
+# The PDF, and the descriptions of its pictures by sha256 (figures.py).
+Splitter = Callable[[bytes, Mapping[str, str]], Extraction]
+
+
+class DescribeFigures(Protocol):
+    """figures.FigureStep, or a fake in tests."""
+
+    # Why pictures cannot be described in this slice, once found out. None while they can.
+    unusable: str | None
+    described: int
+
+    async def __call__(self, label: str, pdf: bytes, deadline: float) -> Outcome: ...
 
 
 class ImportRow(BaseModel):
@@ -352,7 +374,9 @@ class ImportRow(BaseModel):
     updated_at: Any
 
 
-class LibraryStore(Protocol):
+class LibraryStore(FigureStore, Protocol):
+    """The import's tables and bucket, and what figures.FigureStep reads and writes."""
+
     async def get_import(self, import_id: UUID) -> ImportRow | None: ...
 
     async def claim_import(
@@ -415,6 +439,12 @@ class LibraryStore(Protocol):
         """The version's file cannot be split by `extractor`: record why, drop its paragraphs."""
         ...
 
+    async def save_figures(
+        self, version: VersionToSplit, figures: list[Figure], missing: int
+    ) -> None:
+        """Replaces where the version's pictures are, and records how many have no description."""
+        ...
+
     async def splitting_errors(self, organization_id: UUID, extractor: str) -> list[str]:
         """ "UN R10 7.2.0: reason" for every version `extractor` could not split."""
         ...
@@ -459,10 +489,13 @@ async def execute(
     *,
     resolve: Resolver = resolve_host,
     split: Splitter = extract,
+    figures: DescribeFigures | None = None,
 ) -> ImportStatus:
-    """Never raises: an unexpected error ends the import as failed, with the reason."""
+    """Never raises: an unexpected error ends the import as failed, with the reason.
+
+    With `figures`, each version's pictures are described before it is split (figures.py)."""
     try:
-        return await _execute(store, http, settings, job, resolve, split)
+        return await _execute(store, http, settings, job, resolve, split, figures)
     except Exception as exc:
         log.exception("Import %s failed", job.id)
         message = f"The import stopped on an unexpected error ({type(exc).__name__}). Resume it."
@@ -477,6 +510,7 @@ async def _execute(
     job: ImportRow,
     resolve: Resolver,
     split: Splitter,
+    figures: DescribeFigures | None,
 ) -> ImportStatus:
     deadline = time.monotonic() + settings.import_slice_s
 
@@ -529,7 +563,7 @@ async def _execute(
         if not await store.touch_import(job.id):
             cancelled = True
             return False
-        if not await _split_one(store, version, split):
+        if not await _split_one(store, version, split, figures, deadline):
             skipped.append(version.name)
         return True
 
@@ -558,6 +592,11 @@ async def _execute(
             f"{len(skipped)} version(s) were not split this time ({', '.join(skipped[:3])}); "
             "import the index again to retry."
         )
+    if figures is not None and figures.unusable:
+        problems.append(
+            f"Pictures were not described: {figures.unusable}. Import the index again once that "
+            "is fixed; only the versions with undescribed pictures are split again."
+        )
     # Only a file that could not be stored fails the import: a version without paragraphs is
     # still in the library, can be opened and cited by page, and is named in the message.
     outcome: ImportStatus = "failed" if failed else "succeeded"
@@ -565,19 +604,41 @@ async def _execute(
     return outcome
 
 
-async def _split_one(store: LibraryStore, version: VersionToSplit, split: Splitter) -> bool:
+async def _split_one(
+    store: LibraryStore,
+    version: VersionToSplit,
+    split: Splitter,
+    figures: DescribeFigures | None,
+    deadline: float,
+) -> bool:
     """False if it failed for a reason that may pass; a PDF that cannot be split is recorded."""
+    fresh = version.extracted_with != EXTRACTOR
+    if not fresh and (figures is None or figures.unusable):
+        # Listed only for pictures without a description, which cannot be described now.
+        return True
     try:
         data = await store.download_pdf(version.pdf_path)
     except Exception:
         log.exception("Paragraphs of %s: download from the bucket failed", version.name)
         return False
+    outcome = Outcome()
+    if figures is not None and hashlib.sha256(data).hexdigest() == version.sha256:
+        try:
+            outcome = await figures(version.name, data, deadline)
+        except Exception:
+            # The paragraphs do not wait for the pictures: split without them, and count the
+            # version as having some missing so a later import comes back to it.
+            log.exception("Figures of %s: failed", version.name)
+            outcome = Outcome(missing=max(version.figures_missing, 1))
+        if not fresh and outcome.missing >= version.figures_missing:
+            # Nothing new to write: the same paragraphs would be saved again.
+            return True
     try:
         if hashlib.sha256(data).hexdigest() != version.sha256:
             raise ExtractionProblem("The stored PDF does not match its sha256; import it again.")
         # Splitting is CPU work (about 0.6 s per 100 pages since tables are read, #52); in a
         # thread, the request keeps streaming its heartbeat meanwhile.
-        extraction = await asyncio.to_thread(split, data)
+        extraction = await asyncio.to_thread(split, data, outcome.descriptions)
     except ExtractionProblem as exc:
         await store.splitting_failed(version, EXTRACTOR, str(exc))
         return True
@@ -597,6 +658,7 @@ async def _split_one(store: LibraryStore, version: VersionToSplit, split: Splitt
         log.info("Paragraphs of %s: %s", version.name, warning)
     try:
         await store.save_paragraphs(version, EXTRACTOR, extraction)
+        await store.save_figures(version, extraction.figures, outcome.missing)
     except Exception:
         log.exception("Paragraphs of %s: saving failed", version.name)
         return False

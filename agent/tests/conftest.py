@@ -31,4 +31,5 @@ def settings() -> Settings:
         # The assistant and the indexer on the scripted model too, unless a test chooses one.
         chat_model="scripted",
         summary_model="scripted",
+        figure_model="scripted",
     )

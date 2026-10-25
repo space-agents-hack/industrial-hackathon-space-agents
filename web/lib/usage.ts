@@ -205,6 +205,7 @@ const PROCESS_LABELS: Record<string, string> = {
   check: "Check agent",
   transcription: "Part transcription",
   summary: "Regulation summaries",
+  figures: "Regulation figures",
   embedding: "Regulation vectors",
   search: "Search queries",
   chat: "Run chat",

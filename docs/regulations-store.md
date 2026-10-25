@@ -324,6 +324,11 @@ it (housing, lens, LED array, reflector, which lamp functions), and that text go
 summaries and `search_paragraphs` like the written specification does. The pictures in the bucket
 are for showing the user the figure a paragraph refers to, not for matching.
 
+At case upload the part's pictures and pages without text are transcribed (`case_ingest.py`) by the
+organisation's figure model when it chose one in Admin ("Figures and part pictures"; Ramón,
+2026-10-25: one vision model reads every picture), else by the transcription model. Only an
+explicit choice moves them, so an organisation on its own server keeps its pictures there (SYS-30).
+
 If the team wants evidence before dropping the idea: embed the 2,443 distinct regulation images with
 a small CLIP model on CPU and check whether the dev drawing's nearest images belong to the
 regulations the dev case expects. Minutes of work, and a yes or no answer.
@@ -398,8 +403,43 @@ regulations, and 1,273 paragraphs change text. 11 sets of borders are rejected. 
 text grows 5 %, and splitting takes 35 s instead of 15 s (R49, the slowest, about 4 s a version).
 The full counts are on #52.
 
+**Figures (#52, extractor `paragraphs-3`).** 2,569 of the 2,572 pictures of at least 40 pt in the
+92 PDFs have no text layer, and in 8 picked at random 6 carried values a requirement needs
+(dimensions, test set-ups, charts). The import now has a vision model read them, just before a
+version is split (`agent/agent_service/domain/figures.py`):
+
+- `pdf_figures.py` lists the pictures of at least 40 x 40 pt and names each by the sha256 of its
+  image stream. Smaller ones are bullets, ticks and inline marks.
+- The organisation's descriptions are looked up by that hash (`regulation_figure_descriptions`), so
+  a picture in base and latest, or in several regulations, is read once per organisation.
+- The missing ones are rendered from the page and sent to the model, `FIGURE_CONCURRENCY` (4) at a
+  time, each saved as soon as it comes back with the model that wrote it. The model is the
+  organisation's choice in Admin ("Figures and part pictures"), else `FIGURE_MODEL` (Haiku). Every
+  call is metered as process `figures` (IF-7).
+- The split writes each description into the paragraph the picture sits in, as a line
+  `[Figure: ...]` after the paragraph's own lines. Figure lines never start a paragraph or count as
+  a heading, so no label or page changes (checked on the 92 PDFs: the same 48,487 label, first
+  page, last page as `paragraphs-2`).
+- `regulation_figures` records where each picture is (version, page, position, hash, size). The
+  regulation page lists them in a collapsed "Figures" section, with each description or error and
+  its model.
+- A version saved with pictures not yet described (no model, a refused key, the slice ran out)
+  has `figures_missing > 0`, so the next import splits it again once more of them are described.
+  Without a usable model it is not split again for nothing.
+
+A picture the provider refuses as such (400, 413, 422) keeps the error and is not sent again. A
+refused key or a rate limit stops the step for that slice instead; the paragraphs are still split,
+without the missing descriptions. Estimated, not measured: about 1,600 distinct pictures, a few
+dollars per library with Haiku, paid once per organisation.
+
+For a diff between versions (the sub-goal): an unchanged picture has the same hash in both, so it
+gets the same cached description and the same text. A picture whose bytes changed (even re-encoded
+alone) is read again and may be worded differently; a reader that must not see that as a change
+leaves out the lines that start with `[Figure:`.
+
 What it does not do: split tables out of their paragraph, regroup a table drawn without borders
-(252 pages have table-sized text and no borders), keep pictures, read text inside figures, or
+(252 pages have table-sized text and no borders), keep the pictures themselves (they are rendered
+again from the stored PDF), read vector drawings (their text is already in the text layer), or
 read scanned PDFs (refused with a message).
 
 ## How we know it works

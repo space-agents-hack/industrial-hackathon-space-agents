@@ -16,7 +16,7 @@ export const PROCESSES = [
   {
     id: "transcription",
     label: "Part transcription",
-    help: "Reads what the parsers cannot: scanned pages, drawings, pictures. It transcribes, it does not reason, so a small model is enough.",
+    help: "Reads the part's files no parser can open (a damaged PDF, an odd image). It also reads the part's pictures and pages without text, unless Regulation figures below has a model of its own. It transcribes, it does not reason, so a small model is enough.",
     used: true,
   },
   {
@@ -29,6 +29,12 @@ export const PROCESSES = [
     id: "summary",
     label: "Regulation summaries",
     help: "Writes the scope summary and keywords of each regulation version when the library is indexed; the agent reads them to choose which regulations to open. A cheap model is enough: it reads the first pages of each PDF once (about 0.7M tokens for 92 versions).",
+    used: true,
+  },
+  {
+    id: "figures",
+    label: "Figures and part pictures",
+    help: "Reads the pictures in the regulation PDFs (test set-ups, dimensions, charts) while the library is imported, and writes what they state into the paragraph they sit in, so the writer can cite their values. A model chosen here also reads the part's pictures and drawing pages when a case is uploaded; left on the default, those stay with Part transcription. It transcribes, it does not reason: a small model with vision is enough. Each regulation picture is read once per organisation, so a change applies to pictures not read yet.",
     used: true,
   },
   {

@@ -61,6 +61,32 @@ async def test_a_drawing_page_is_rendered_stored_and_transcribed_by_the_model(st
     assert model.seen == ["sheet.pdf, page 2"]
 
 
+async def test_pictures_go_to_the_figure_model_and_a_broken_file_to_the_transcriber(
+    store,
+) -> None:
+    # Admin's figure model reads every picture, the part's included (#52); the transcription
+    # model keeps the files no parser can read.
+    case_id = uuid4()
+    sheet = store.add_case_file(case_id, "sheet.pdf", "pdf", pdf([LONG, ""]))
+    broken = store.add_case_file(case_id, "broken.pdf", "pdf", b"%PDF-1.4 not really")
+    transcriber, figures = FakeTranscriber(), FakeTranscriber()
+
+    await case_ingest.ingest_case(
+        store,
+        case_id,
+        transcribe=transcriber,
+        parser_name=MODEL,
+        describe=figures,
+        describer_name="model:figures",
+        max_model_pages=12,
+    )
+
+    assert figures.seen == ["sheet.pdf, page 2"]
+    assert transcriber.seen == ["broken.pdf"]
+    assert store.blocks[sheet][-1].parser == "model:figures"
+    assert store.blocks[broken][0].parser == MODEL
+
+
 async def test_a_file_the_parser_fails_on_goes_to_the_model_whole(store) -> None:
     case_id = uuid4()
     file_id = store.add_case_file(case_id, "broken.pdf", "pdf", b"%PDF-1.4 not really")

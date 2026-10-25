@@ -73,8 +73,14 @@ async def ingest_case(
     transcribe: Transcriber | None,
     parser_name: str,
     max_model_pages: int,
+    describe: Transcriber | None = None,
+    describer_name: str | None = None,
 ) -> dict[str, int]:
     """Parse every pending file of the case. Returns how many ended parsed and failed.
+
+    `transcribe` reads a file the parser gave up on; `describe` (default: `transcribe`) the
+    pictures and the pages without text, which is the organisation's figure model when it chose
+    one (api.py).
 
     A file is claimed (pending -> parsing) before it is read, so two requests for one case do not
     both parse it. A file left `parsing` by a request that died stays so; uploading it again is
@@ -87,7 +93,15 @@ async def ingest_case(
         if not await store.set_case_file(file.id, "parsing", only_if="pending"):
             continue
         try:
-            status = await _ingest_file(store, file, transcribe, parser_name, max_model_pages)
+            status = await _ingest_file(
+                store,
+                file,
+                transcribe,
+                parser_name,
+                describe or transcribe,
+                describer_name or parser_name,
+                max_model_pages,
+            )
         except Exception as exc:
             log.exception("case file %s failed", file.id)
             await store.set_case_file(
@@ -103,6 +117,8 @@ async def _ingest_file(
     file: CaseFile,
     transcribe: Transcriber | None,
     parser_name: str,
+    describe: Transcriber | None,
+    describer_name: str,
     max_model_pages: int,
 ) -> str:
     fmt = ingest.format_of(f"x.{file.format}")
@@ -172,7 +188,7 @@ async def _ingest_file(
                 parser=block.parser,
             )
         )
-        if transcribe is None:
+        if describe is None:
             continue
         if model_pages >= max_model_pages:
             left_untranscribed.append(block.label or "image")
@@ -180,7 +196,7 @@ async def _ingest_file(
         model_pages += 1
         what = f"{file.filename}, {block.label}" if block.label else file.filename
         try:
-            text = await transcribe(
+            text = await describe(
                 BinaryContent(content.data, media_type=content.media_type, identifier=what),
                 f"Transcribe this image from {what}.",
             )
@@ -191,11 +207,11 @@ async def _ingest_file(
             continue
         rows.append(
             _text_row(
-                file, len(rows), ingest.Block(text, block.label, block.page, parser_name), text
+                file, len(rows), ingest.Block(text, block.label, block.page, describer_name), text
             )
         )
 
-    if transcribe is None and any(r.kind == "image" for r in rows):
+    if describe is None and any(r.kind == "image" for r in rows):
         notes.append("No model configured for transcription; images are stored but not described.")
     if left_untranscribed:
         notes.append(

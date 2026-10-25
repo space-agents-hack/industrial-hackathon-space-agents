@@ -35,6 +35,7 @@ from agent_service.domain import (
     case_ingest,
     certivity,
     changes,
+    figures,
     regulation_search,
     regulations,
     subgoal,
@@ -124,6 +125,7 @@ def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, ob
             "summary": settings.summary_model,
             "chat": settings.chat_model,
             "embedding": settings.embedding_model,
+            "figures": settings.figure_model,
         },
     }
 
@@ -283,8 +285,14 @@ async def advance_import(
         raise HTTPException(409, str(exc)) from None
 
     async def work() -> str:
-        async with download_client() as http:
-            return await regulations.execute(library, http, settings, job)
+        # The pictures are described in the import itself (#52), metered like any model call.
+        meter = metering.Meter(job.organization_id)
+        step = figures.FigureStep(library, settings, job.organization_id, meter)
+        try:
+            async with download_client() as http:
+                return await regulations.execute(library, http, settings, job, figures=step)
+        finally:
+            await meter.flush(library)
 
     async def body() -> AsyncIterator[str]:
         yield _line(event="accepted", import_id=str(import_id))
@@ -337,29 +345,49 @@ async def ingest_case(
             # without anyone choosing it; it stays untranscribed and the file's notes say so. A
             # hosted model the organisation picked itself in Admin is its choice, and is used.
             name = ""
-        transcribe = None
-        key: str | None = None
+        # The pictures (photos, drawings, pages without text) go to the vision model the
+        # organisation chose for figures, when it chose one (Ramón, 2026-10-25: one model reads
+        # every picture, the regulations' and the part's). Only an explicit choice: without one
+        # they stay on the transcription model, so an organisation on its own server keeps its
+        # pictures there (SYS-30), and nothing changes for one that never opened that row.
+        figure_choice = await store.organization_model(org, figures.PROCESS)
+        picture_name = (figure_choice or "").strip() or name
         meter = metering.Meter(org, case_id=case_id)
-        if name and name != "scripted":
-            key, endpoint = await providers.credentials(store, org, name)
+        secrets: list[str | None] = []
+
+        async def reader(model_name: str) -> case_ingest.Transcriber | None:
+            if not model_name or model_name == "scripted":
+                return None
+            key, endpoint = await providers.credentials(store, org, model_name)
+            secrets.append(key)
             credential = metering.Credential.for_model(
-                name, key, endpoint.root() if endpoint else None
+                model_name, key, endpoint.root() if endpoint else None
             )
-            model = providers.build_model(name, key, endpoint)
-            transcribe = case_ingest.transcriber(
-                metering.metered(model, meter, "transcription", name, credential)
+            model = providers.build_model(model_name, key, endpoint)
+            # Metered as transcription either way: the work is the case's, and Usage shows it
+            # with the case, not with the regulation library.
+            return case_ingest.transcriber(
+                metering.metered(model, meter, "transcription", model_name, credential)
             )
+
+        transcribe = await reader(name)
+        describe = transcribe if picture_name == name else await reader(picture_name)
         try:
             return await case_ingest.ingest_case(
                 store,
                 case_id,
                 transcribe=transcribe,
                 parser_name=f"model:{name}",
+                describe=describe,
+                describer_name=f"model:{picture_name}",
                 max_model_pages=settings.ingest_max_model_pages,
             )
         except Exception as exc:
             # The files that failed say so in their rows; this keeps the key out of the log.
-            log.error("ingest of case %s failed: %s", case_id, providers.scrub(str(exc), key))
+            reason = str(exc)
+            for secret in secrets:
+                reason = providers.scrub(reason, secret)
+            log.error("ingest of case %s failed: %s", case_id, reason)
             raise
         finally:
             await meter.flush(store)

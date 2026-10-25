@@ -15,9 +15,12 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from pydantic_ai.messages import ModelResponse, TextPart
+from pydantic_ai.models.function import FunctionModel
 from supabase import AsyncClient, acreate_client
 
-from agent_service.domain import regulations
+from agent_service import metering, providers
+from agent_service.domain import figures, regulations
 from agent_service.domain.library_store import SupabaseLibraryStore
 from agent_service.domain.paragraphs import (
     EXTRACTOR,
@@ -98,9 +101,10 @@ def index(code: str, *versions: tuple[str, str, bytes]) -> list[dict[str, Any]]:
 
 
 SAMPLE = (Path(__file__).parent / "fixtures" / "regulation" / "sample.pdf").read_bytes()
+FIGURES = (Path(__file__).parent / "fixtures" / "regulation" / "figures.pdf").read_bytes()
 
 
-def split_fake(data: bytes) -> Extraction:
+def split_fake(data: bytes, _figures: object = None) -> Extraction:
     """The made-up bytes of the tests below are not PDFs: one paragraph holding them instead."""
     text = data.decode()
     paragraph = Paragraph(0, "1", None, None, None, "1", "", "paragraph", text, 1, 1)
@@ -113,6 +117,7 @@ async def run_import(
     raw: list[dict[str, Any]],
     bodies: dict[str, bytes],
     split: Splitter = split_fake,
+    describe: bool = False,
 ) -> UUID:
     res = (
         await db.table("regulation_imports")
@@ -129,10 +134,15 @@ async def run_import(
 
     store = await SupabaseLibraryStore.connect(URL, KEY)
     settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+    meter = metering.Meter(org)
+    step = figures.FigureStep(store, settings, org, meter) if describe else None
     try:
         job = await regulations.prepare(store, settings, import_id)
         async with httpx.AsyncClient(transport=httpx.MockTransport(serve)) as http:
-            await regulations.execute(store, http, settings, job, resolve=public, split=split)
+            await regulations.execute(
+                store, http, settings, job, resolve=public, split=split, figures=step
+            )
+        await meter.flush(store)
     finally:
         await store.aclose()
     return import_id
@@ -264,7 +274,7 @@ async def test_a_new_file_under_the_same_version_supersedes_the_old_paragraphs(
     first, second = b"%PDF-1.7 first", b"%PDF-1.7 second"
     await run_import(db, org, index(code, ("1.0.0", "base", first)), {"/1.0.0.pdf": first})
 
-    def refuse(_data: bytes) -> Extraction:
+    def refuse(_data: bytes, _figures: object = None) -> Extraction:
         raise ExtractionProblem("Not a PDF this time.")
 
     import_id = await run_import(
@@ -354,3 +364,73 @@ async def test_keys_are_added_in_batches_until_every_current_paragraph_has_one(
         assert await store.refresh_keys(org) == 0
     finally:
         await store.aclose()
+
+
+async def test_an_import_describes_the_pictures_and_keeps_them_with_the_model(
+    db: AsyncClient, code: str, org: UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The organisation's figure model from Admin (organization_models), answered by a fake.
+    await (
+        db.table("organization_models")
+        .insert(
+            {"organization_id": str(org), "process": "figures", "model": "anthropic:claude-test"}
+        )
+        .execute()
+    )
+    monkeypatch.setattr(
+        providers,
+        "build_model",
+        lambda *_: FunctionModel(lambda _m, _i: ModelResponse(parts=[TextPart("A 0.5 m set-up.")])),
+    )
+
+    await run_import(
+        db,
+        org,
+        index(code, ("2.1.0", "base", FIGURES)),
+        {"/2.1.0.pdf": FIGURES},
+        split=extract,
+        describe=True,
+    )
+
+    [version] = rows(
+        await db.table("regulation_versions")
+        .select("id, figures_missing, regulations!inner(code)")
+        .eq("regulations.code", code)
+        .execute()
+    )
+    assert version["figures_missing"] == 0
+    placed = rows(
+        await db.table("regulation_figures")
+        .select("page, position, image_sha256")
+        .eq("version_id", version["id"])
+        .order("page")
+        .order("position")
+        .execute()
+    )
+    assert [(f["page"], f["position"]) for f in placed] == [(1, 0), (2, 0), (2, 1)]
+    described = rows(
+        await db.table("regulation_figure_descriptions")
+        .select("image_sha256, description, model")
+        .eq("organization_id", str(org))
+        .execute()
+    )
+    assert {d["image_sha256"] for d in described} == {f["image_sha256"] for f in placed}
+    assert {(d["description"], d["model"]) for d in described} == {
+        ("A 0.5 m set-up.", "anthropic:claude-test")
+    }
+    [paragraph] = rows(
+        await db.table("regulation_paragraphs")
+        .select("text")
+        .eq("version_id", version["id"])
+        .eq("label", "7.1")
+        .is_("superseded_at", "null")
+        .execute()
+    )
+    assert paragraph["text"].endswith("[Figure: A 0.5 m set-up.]")
+    usage = rows(
+        await db.table("model_usage")
+        .select("process, requests")
+        .eq("organization_id", str(org))
+        .execute()
+    )
+    assert usage == [{"process": "figures", "requests": 2}]

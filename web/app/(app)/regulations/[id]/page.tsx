@@ -15,6 +15,8 @@ export const metadata: Metadata = { title: "Regulation" };
 // their labels and pages exactly as a requirement cites them (SYS-6, IF-3). What the agent can
 // cite is what is listed here, so this is the page to check a citation against.
 const SHOWN = 400;
+// More pictures than any of the challenge's PDFs has (the most is under 200).
+const FIGURES_SHOWN = 500;
 const LINK_SECONDS = 60 * 60;
 
 export default function RegulationPage(props: PageProps<"/regulations/[id]">) {
@@ -40,7 +42,7 @@ async function Regulation({ params, searchParams }: PageProps<"/regulations/[id]
     supabase
       .from("regulations")
       .select(
-        "id, code, title, organization_id, organizations(name), regulation_versions(id, version_label, role, status, pdf_path, paragraph_count, extraction_error)",
+        "id, code, title, organization_id, organizations(name), regulation_versions(id, version_label, role, status, pdf_path, paragraph_count, extraction_error, figures_missing)",
       )
       .eq("id", id)
       .maybeSingle(),
@@ -68,6 +70,7 @@ async function Regulation({ params, searchParams }: PageProps<"/regulations/[id]
   let paragraphs: { id: string; label: string | null; heading: string; text: string; page_start: number; page_end: number }[] = [];
   let readError = false;
   let pdfLink: string | null = null;
+  let figures: Figure[] = [];
   if (version) {
     let request = supabase
       .from("regulation_paragraphs")
@@ -77,10 +80,12 @@ async function Regulation({ params, searchParams }: PageProps<"/regulations/[id]
       .is("superseded_at", null);
     // The import's full-text index: labels weigh most, then headings, then the text.
     if (q) request = request.textSearch("fts", q, { type: "websearch", config: "english" });
-    const [{ data, error: e }, signed] = await Promise.all([
+    const [{ data, error: e }, signed, read] = await Promise.all([
       request.order("position").limit(SHOWN),
       supabase.storage.from("regulations").createSignedUrl(version.pdf_path, LINK_SECONDS),
+      readFigures(supabase, regulation.organization_id, version.id),
     ]);
+    figures = read;
     if (e) {
       console.error("Regulation: paragraphs read failed", e);
       readError = true;
@@ -139,6 +144,7 @@ async function Regulation({ params, searchParams }: PageProps<"/regulations/[id]
               </a>
             ) : null}
           </p>
+          <Figures figures={figures} missing={version.figures_missing} pdfLink={pdfLink} />
           <form className="flex gap-2" action={`/regulations/${regulation.id}`}>
             <input type="hidden" name="v" value={version.id} />
             <input
@@ -198,6 +204,98 @@ async function Regulation({ params, searchParams }: PageProps<"/regulations/[id]
         </>
       )}
     </>
+  );
+}
+
+type Figure = {
+  page: number;
+  position: number;
+  width_pt: number;
+  height_pt: number;
+  description: string | null;
+  error: string | null;
+  model: string | null;
+};
+
+// A version's pictures with what the vision model read in them (#52). The descriptions are kept
+// per organisation by picture, not by version (the same picture in two versions is read once), so
+// they are joined here rather than through a foreign key. A failed read hides the section: the
+// paragraphs, which carry the same descriptions, are what a citation is checked against.
+async function readFigures(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  org: string,
+  version: string,
+): Promise<Figure[]> {
+  const { data: placed, error } = await supabase
+    .from("regulation_figures")
+    .select("page, position, image_sha256, width_pt, height_pt")
+    .eq("version_id", version)
+    .order("page")
+    .order("position")
+    .limit(FIGURES_SHOWN);
+  if (error) {
+    console.error("Regulation: figures read failed", error);
+    return [];
+  }
+  if (!placed?.length) return [];
+  const shas = [...new Set(placed.map((f) => f.image_sha256))];
+  const { data: described, error: e } = await supabase
+    .from("regulation_figure_descriptions")
+    .select("image_sha256, description, error, model")
+    .eq("organization_id", org)
+    .in("image_sha256", shas);
+  if (e) console.error("Regulation: figure descriptions read failed", e);
+  const bySha = new Map((described ?? []).map((d) => [d.image_sha256, d]));
+  return placed.map((f) => {
+    const d = bySha.get(f.image_sha256);
+    return { ...f, description: d?.description ?? null, error: d?.error ?? null, model: d?.model ?? null };
+  });
+}
+
+function Figures({ figures, missing, pdfLink }: { figures: Figure[]; missing: number; pdfLink: string | null }) {
+  if (figures.length === 0) return null;
+  const read = figures.filter((f) => f.description !== null).length;
+  return (
+    <details className="rounded-xl border bg-card text-sm">
+      <summary className="cursor-pointer px-3 py-2">
+        <span className="font-medium">Figures ({figures.length})</span>
+        <span className="text-muted-foreground">
+          {" "}
+          · {read} read by a vision model
+          {missing > 0 ? `; ${missing} distinct ${missing === 1 ? "picture" : "pictures"} not read yet, tried again on the next import` : ""}
+        </span>
+      </summary>
+      <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+        The pictures in the PDF have no text of their own. What the model read in each is written into the paragraph the
+        picture sits in, as [Figure: …], so the writer can cite it. Check a value against the PDF before relying on it.
+      </p>
+      <ol className="divide-y border-t">
+        {figures.map((f) => (
+          <li key={`${f.page}-${f.position}`} className="grid gap-1 px-3 py-2">
+            <p className="flex flex-wrap items-baseline gap-x-2 text-xs text-muted-foreground">
+              {pdfLink ? (
+                <a href={`${pdfLink}#page=${f.page}`} target="_blank" rel="noreferrer" className="underline-offset-4 hover:underline">
+                  page {f.page}
+                </a>
+              ) : (
+                <span>page {f.page}</span>
+              )}
+              <span>
+                {Math.round(f.width_pt)} × {Math.round(f.height_pt)} pt
+              </span>
+              {f.model ? <span className="ml-auto font-mono">{f.model}</span> : null}
+            </p>
+            {f.description !== null ? (
+              <p className="whitespace-pre-wrap">{f.description}</p>
+            ) : f.error ? (
+              <p className="text-danger">Not read: {f.error}</p>
+            ) : (
+              <p className="text-muted-foreground">Not read yet.</p>
+            )}
+          </li>
+        ))}
+      </ol>
+    </details>
   );
 }
 
