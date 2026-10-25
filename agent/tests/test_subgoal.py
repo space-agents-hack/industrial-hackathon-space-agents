@@ -183,15 +183,29 @@ async def test_a_run_on_two_uploaded_pdfs_gives_the_rules_file_through_the_main_
     # The scripted reviewer agrees with the comparison, so the file is exactly the rules' file:
     # what the CLI writes for the same inputs.
     assert json.loads(store.outputs[run_id] or "null") == rules_file()
+    # No writer step by default (SUBGOAL_WRITE, off since 2026-10-25).
     assert tools(store, run_id) == [
         "read_case",
         "extract_versions",
         "compare_versions",
         "review_changes",
-        "write_changes",
     ]
     # No pause: nothing is submitted, a person uploads the file (SYS-13).
     assert store.approvals == []
+
+
+async def test_with_the_writer_on_the_run_has_a_writing_step(store, settings) -> None:
+    case_id = subgoal_case(
+        store, requirements_file(), ("old.pdf", "pdf", b"old-pdf"), ("new.pdf", "pdf", b"new-pdf")
+    )
+    run_id = store.add_run("Find the changes.", case_id=case_id)
+
+    on = settings.model_copy(update={"subgoal_write": True})
+    assert await advance(store, on, run_id) == "succeeded"
+
+    assert tools(store, run_id)[-1] == "write_changes"
+    # The scripted writer keeps every text, so the file is still the rules' file.
+    assert json.loads(store.outputs[run_id] or "null") == rules_file()
 
 
 async def test_the_two_versions_are_never_read_at_the_same_time(

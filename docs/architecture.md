@@ -109,7 +109,8 @@ differs is inside the agent:
   - the rules diff (`domain/regdiff.py`);
   - reviewer agents (`domain/subgoal_review.py`), in parallel batches, on the requirements whose
     cited paragraph changed. Code keeps a verdict only if its quotes are found in the PDFs' text;
-  - a writer step (`domain/subgoal_write.py`) writes each change's text as a requirement: the old
+  - off by default since 2026-10-25 (`SUBGOAL_WRITE=true` turns it on): a writer step
+    (`domain/subgoal_write.py`) writes each change's text as a requirement: the old
     requirement updated, or one requirement per new obligation. Code checks every text against the
     regulation (the changed words and numbers present, deleted numbers gone, nothing the
     regulation does not say, at most 2,000 characters) and keeps the regulation's wording where a

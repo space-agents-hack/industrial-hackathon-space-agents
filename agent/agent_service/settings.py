@@ -109,9 +109,12 @@ class Settings(BaseSettings):
     subgoal_review_concurrency: int = 16
     subgoal_review_timeout_s: float = 90
     # Whether a writer step (domain/subgoal_write.py) writes each change's text as a requirement,
-    # on the reviewer's model and limits. Off means the regulation's wording as printed, which
-    # lost change accuracy on the dev upload of 2026-10-24.
-    subgoal_write: bool = True
+    # on the reviewer's model and limits. Off (Clemente, 2026-10-25 07:02 UTC): on dev the
+    # regulation's wording as printed matched 22 of 24 changes (23:45 CEST upload), the writer
+    # 20 of 24 with 5 extra entries (05:20 CEST), because it split sentences that hold one
+    # obligation and borrowed conditions from parent headings. Off is also the same file on
+    # every run. design/subgoal-improvement-plan.html.
+    subgoal_write: bool = False
 
     # Case ingestion (domain/case_ingest.py): the model that reads what the parsers cannot (a
     # scanned page, a drawing, a file a parser fails on). Small and cheap on purpose: it
