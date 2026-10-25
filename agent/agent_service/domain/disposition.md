@@ -111,6 +111,18 @@ What to set aside:
   requires of the vehicle or of other devices (after the test, the other devices still work, no
   piece comes loose), and a property of the vehicle's outer surface where the part forms that
   surface, are the part's own obligations: they apply, and cover `the part`.
+  It is also `not_this_product` in these cases, even when the profile does not say the part lacks
+  the function. A regulation that covers a device with several functions (several signalling
+  functions, several modes) has obligations specific to each: when the case names or describes
+  one, through its purpose, colour or position, take the function it fits best, not every
+  function it might serve, and set aside those specific to the others. The obligations common to
+  every device the regulation covers still apply. A test of the whole vehicle in which the part
+  is one system among many (the vehicle's own emissions or immunity) is not the part's, when the
+  regulation also states what a component or sub-assembly must meet: those are the part's, and
+  so is vehicle-level text that states what a component must meet or how it is marked. An
+  obligation for an operating mode or configuration that needs a component the profile does not
+  list is not the part's either. Nor is a test whose target area or impact point lies on another
+  part of the vehicle, unless a sentence of it also binds this part.
 - `not_an_obligation`: it imposes nothing (a permission, a reference only, a note).
 - `test_method`: how a test is carried out, as above.
 - `same_as_another_clause`: it restates an obligation you answered elsewhere in this window.
