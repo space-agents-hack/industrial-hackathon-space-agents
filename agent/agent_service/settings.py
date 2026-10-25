@@ -81,10 +81,11 @@ class Settings(BaseSettings):
     # search (Certivity, 2026-10-25: "top 10 instead of top 5", and queries from the product's
     # functions and components that look inside the regulation itself). Those paragraphs are
     # marked in the window the writers read, so the obligations about the part's own functions
-    # and components are the ones read closely. 10 per query per regulation; with about 20
-    # entries that is up to 200 marked paragraphs per regulation, a few per page of a 15-page
-    # window. 0 turns the search off.
-    focus_k: int = Field(default=10, ge=0, le=50)
+    # and components are the ones read closely. 20 per query per regulation (Clemente, 2026-10-25:
+    # recall first, so deeper than the 10 Certivity named): with about 20 entries that is up to
+    # 400 marked paragraphs per regulation, and fewer windows left to the triage. The same database
+    # cost per search: each half fetches its candidates whatever k is. 0 turns the search off.
+    focus_k: int = Field(default=20, ge=0, le=50)
     # Windows that none of those searches points to go first to a quick triage call on this
     # model, which may skip a window that holds nothing the part could have to meet (a test
     # procedure, a form, another kind of device). Windows a search points to are always read.
