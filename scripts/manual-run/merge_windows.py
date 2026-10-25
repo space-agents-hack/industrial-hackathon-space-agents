@@ -3,8 +3,11 @@
 Each <work_dir>/out/<name>.json is an array of {"page", "paragraph", "text", "test_case"}.
 Exact duplicate texts within a regulation are dropped; --drop "<code>|<paragraph>" removes items
 a reviewer judged to repeat another (passed on the command line so no regulation is named here).
+--extra "<submission.json>:R-001,R-002" appends chosen items of an earlier submission, for a
+reading of the case the agents' brief left out.
 
 Usage: python3 merge_windows.py <work_dir> <team_id> <case_id> <out.json> [--drop "code|para"]...
+    [--extra "file:ids"]...
 """
 
 import json
@@ -14,6 +17,7 @@ from pathlib import Path
 
 def main(argv: list[str]) -> None:
     drop = {argv[i + 1] for i, a in enumerate(argv) if a == "--drop"}
+    extras = [argv[i + 1] for i, a in enumerate(argv) if a == "--extra"]
     work, team_id, case_id, out = argv[:4]
     jobs = json.loads((Path(work) / "jobs.json").read_text())
     reqs, seen, dropped = [], set(), 0
@@ -39,6 +43,18 @@ def main(argv: list[str]) -> None:
                     "test_case": item.get("test_case", "").strip(),
                 }
             )
+    for extra in extras:
+        path, ids = extra.rsplit(":", 1)
+        wanted = set(ids.split(","))
+        earlier = json.loads(Path(path).read_text())["requirements"]
+        for item in earlier:
+            if item["id"] not in wanted:
+                continue
+            key = (item["source"]["regulation"], item["text"].strip())
+            if key in seen:
+                continue
+            seen.add(key)
+            reqs.append({**item, "id": f"R-{len(reqs) + 1:03d}"})
     doc = {"team_id": team_id, "case_id": case_id, "requirements": reqs}
     Path(out).write_text(json.dumps(doc, indent=2, ensure_ascii=False))
     print(f"{len(reqs)} requirements, {dropped} dropped")
