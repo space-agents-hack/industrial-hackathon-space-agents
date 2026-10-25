@@ -51,7 +51,7 @@ async function Run({ params, searchParams }: PageProps<"/runs/[id]">) {
     // What the check found (SYS-29), shown under the trace.
     supabase
       .from("requirements")
-      .select("ext_id, status, regulation, paragraph, text, findings")
+      .select("ext_id, status, regulation, version_label, page, paragraph, text, findings")
       .eq("run_id", run.id)
       .order("ext_id"),
   ]);
@@ -85,7 +85,7 @@ async function Run({ params, searchParams }: PageProps<"/runs/[id]">) {
         agentUnreachable={query.agent === "unreachable"}
         canAct={canAct}
       />
-      <CheckFindings rows={flagged(requirements)} total={requirements.length} />
+      <CheckFindings rows={flagged(requirements)} total={requirements.length} runId={run.id} />
     </>
   );
 }

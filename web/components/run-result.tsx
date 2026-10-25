@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { type RequirementRow, countByRegulation, requirementRows } from "@/lib/requirement-rows";
+import { sourceHref } from "@/lib/requirement-source";
 import { describeResult } from "@/lib/trace";
 
 // A long submission is thousands of rows; the first ones say what the run did, and the whole list
@@ -52,7 +53,7 @@ export function RunResult({ output, runId, title = "Result" }: { output: string;
           </Button>
         </div>
       </div>
-      {rows && rows.length > 0 ? <Requirements rows={rows} /> : null}
+      {rows && rows.length > 0 ? <Requirements rows={rows} runId={runId} /> : null}
       <details>
         <summary className="cursor-pointer text-xs text-muted-foreground select-none hover:text-foreground">
           {rows ? "Show the file" : "Show the result"}
@@ -66,9 +67,9 @@ export function RunResult({ output, runId, title = "Result" }: { output: string;
 }
 
 // The submission as an engineer reads it: each requirement next to the regulation, page and
-// paragraph it cites, and above them how many each regulation gave, which is where a missing
-// regulation shows first.
-function Requirements({ rows }: { rows: RequirementRow[] }) {
+// paragraph it cites, the citation opening the regulation's PDF at that page (SYS-12), and above
+// them how many each regulation gave, which is where a missing regulation shows first.
+function Requirements({ rows, runId }: { rows: RequirementRow[]; runId: string }) {
   const [all, setAll] = useState(false);
   const shown = all ? rows : rows.slice(0, FIRST_ROWS);
   return (
@@ -102,15 +103,7 @@ function Requirements({ rows }: { rows: RequirementRow[] }) {
                 <td className="px-3 py-2.5 font-mono text-xs whitespace-nowrap text-muted-foreground">{row.id}</td>
                 <td className="min-w-64 px-3 py-2.5 leading-relaxed">{row.text}</td>
                 <td className="px-3 py-2.5 whitespace-nowrap">
-                  <div className="font-medium">
-                    {row.regulation}
-                    {row.version ? <span className="font-normal text-muted-foreground"> {row.version}</span> : null}
-                  </div>
-                  <div className="text-xs text-muted-foreground tabular-nums">
-                    {[row.page ? `p. ${row.page}` : null, row.paragraph ? `§ ${row.paragraph}` : null]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </div>
+                  <Source row={row} runId={runId} />
                 </td>
               </tr>
             ))}
@@ -123,5 +116,28 @@ function Requirements({ rows }: { rows: RequirementRow[] }) {
         </Button>
       ) : null}
     </div>
+  );
+}
+
+// One link for the whole citation, so the target is easy to hit; without a page there is nothing
+// to open and it stays text.
+function Source({ row, runId }: { row: RequirementRow; runId: string }) {
+  const href = sourceHref(runId, row);
+  const body = (
+    <>
+      <span className={`block font-medium ${href ? "text-tint underline-offset-4 group-hover:underline" : ""}`}>
+        {row.regulation}
+        {row.version ? <span className="font-normal text-muted-foreground"> {row.version}</span> : null}
+      </span>
+      <span className="block text-xs text-muted-foreground tabular-nums">
+        {[row.page ? `p. ${row.page}` : null, row.paragraph ? `§ ${row.paragraph}` : null].filter(Boolean).join(" · ")}
+      </span>
+    </>
+  );
+  if (!href) return body;
+  return (
+    <a href={href} target="_blank" rel="noreferrer" title={`Open ${row.regulation} at page ${row.page}`} className="group block">
+      {body}
+    </a>
   );
 }

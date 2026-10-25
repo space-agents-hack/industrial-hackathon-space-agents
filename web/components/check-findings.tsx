@@ -1,13 +1,16 @@
 import { type FlaggedRequirement } from "@/lib/check-findings";
+import { sourceHref } from "@/lib/requirement-source";
 
 // The check's findings on this run, under the trace (SYS-29). Collapsed: the counts say whether
 // the check ran and what it did; the list is for whoever reviews before approving.
 export function CheckFindings({
   rows,
   total,
+  runId,
 }: {
   rows: FlaggedRequirement[];
   total: number;
+  runId: string;
 }) {
   if (total === 0) return null;
   const rejected = rows.filter((r) => r.status === "rejected").length;
@@ -38,9 +41,7 @@ export function CheckFindings({
                   >
                     {r.status}
                   </span>{" "}
-                  <span className="text-muted-foreground">
-                    {r.regulation} {r.paragraph}
-                  </span>
+                  <Citation row={r} runId={runId} />
                 </p>
                 <p className="text-muted-foreground">{r.text}</p>
                 {r.findings.map((f, i) => (
@@ -57,5 +58,25 @@ export function CheckFindings({
         </details>
       ) : null}
     </section>
+  );
+}
+
+// The cited regulation and paragraph, opening the PDF at the page when there is one (SYS-12).
+function Citation({ row, runId }: { row: FlaggedRequirement; runId: string }) {
+  const text = [row.regulation, row.page ? `p. ${row.page}` : null, row.paragraph ? `§ ${row.paragraph}` : null]
+    .filter(Boolean)
+    .join(" · ");
+  const href = sourceHref(runId, row);
+  if (!href) return <span className="text-muted-foreground">{text}</span>;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title={`Open ${row.regulation} at page ${row.page}`}
+      className="text-tint underline-offset-4 hover:underline"
+    >
+      {text}
+    </a>
   );
 }

@@ -8,6 +8,8 @@ export type FlaggedRequirement = {
   extId: string;
   status: string;
   regulation: string;
+  version: string;
+  page: number | null;
   paragraph: string;
   text: string;
   findings: Finding[];
@@ -32,6 +34,8 @@ export function flagged(
     ext_id: string;
     status: string;
     regulation: string;
+    version_label: string;
+    page: number;
     paragraph: string | null;
     text: string;
     findings: unknown;
@@ -42,6 +46,8 @@ export function flagged(
       extId: r.ext_id,
       status: r.status,
       regulation: r.regulation,
+      version: r.version_label,
+      page: r.page > 0 ? r.page : null,
       paragraph: r.paragraph ?? "",
       text: r.text,
       findings: parseFindings(r.findings),
