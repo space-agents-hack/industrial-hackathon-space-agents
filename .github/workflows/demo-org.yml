@@ -46,6 +46,15 @@ on:
       review_runs:
         description: Latest succeeded sub-goal reviews to copy
         default: "2"
+      paragraphs:
+        description: Paragraph text to copy (scripts/demo-org.sql says why not always all)
+        type: choice
+        options: [cited_regulations, cited, current, all]
+        default: cited_regulations
+      vectors:
+        description: Copy the search vectors too (a read-only organisation never uses them)
+        type: boolean
+        default: false
       password:
         description: Demo account's password (empty keeps the current one)
         required: false
@@ -118,6 +127,8 @@ jobs:
           REVIEW_RUNS: ${{ inputs.review_runs }}
           EMAIL: ${{ inputs.email }}
           REPLACE: ${{ inputs.replace && '1' || '0' }}
+          PARAGRAPHS: ${{ inputs.paragraphs }}
+          VECTORS: ${{ inputs.vectors && '1' || '0' }}
           DEMO_PASSWORD: ${{ inputs.password }}
         run: |
           [[ -z "$DEMO_PASSWORD" ]] || echo "::add-mask::$DEMO_PASSWORD"
@@ -125,7 +136,8 @@ jobs:
           # The password reaches psql through the environment only (\getenv in the script).
           psql "$DB_URL" -v ON_ERROR_STOP=1 -v source="$SOURCE" -v target="$TARGET" \
             -v project="$PROJECT" -v main_runs="$MAIN_RUNS" -v review_runs="$REVIEW_RUNS" \
-            -v email="$EMAIL" -v replace="$REPLACE" -f scripts/demo-org.sql 2>&1 | tee "$out"
+            -v email="$EMAIL" -v replace="$REPLACE" -v paragraphs="$PARAGRAPHS" \
+            -v vectors="$VECTORS" -f scripts/demo-org.sql 2>&1 | tee "$out"
           { echo '```'; cat "$out"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/setup-node@v7

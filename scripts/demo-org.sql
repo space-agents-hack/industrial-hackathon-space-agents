@@ -4,17 +4,25 @@
 --
 --   DEMO_PASSWORD=... psql "$DB_URL" -v ON_ERROR_STOP=1 -v source=team-09 -v target=certivity \
 --     -v project=dev-rear-lamp -v main_runs=2 -v review_runs=2 -v email=demo@certivity.demo \
---     [-v replace=1] -f scripts/demo-org.sql
+--     [-v paragraphs=cited_regulations] [-v vectors=0] [-v replace=1] -f scripts/demo-org.sql
 --
 -- Copy, never move: the source is only read. Every id is new, and every id the copied rows carry
 -- (in columns, in Storage paths, inside traces and notes) is mapped to its copy, so nothing in the
 -- demo points back into the source, where its people could not follow it anyway.
 --
--- What is copied, and why that much:
---   - the whole library (regulations, every version, paragraphs including superseded ones, search
---     keys, vectors, scope summaries, figures and their descriptions): a requirement cites a
---     paragraph that may since have been superseded, and search reads vectors that would cost
---     money to make again, which a read-only organisation never does;
+-- What is copied, and why:
+--   - every regulation and version, with its PDF, scope summary and figures with descriptions;
+--   - their paragraphs, as `paragraphs` says: `all` (superseded ones too), `current`,
+--     `cited_regulations` (the current paragraphs of every regulation the copied runs cite or
+--     compare) or `cited` (only the paragraphs the copied requirements cite). Whatever the choice,
+--     the cited ones are always in, superseded or not, so every copied requirement keeps its link.
+--     Not always `all`, because of size: on 2026-10-25 production's database held 401 MB on a
+--     plan whose limit is 500 MB (docs/regulations-store.md), and every paragraph of team-09 came
+--     to about 100 MB on disk with its indexes, its vectors about as much again. A database over
+--     its limit becomes read-only for everyone. `cited_regulations` was about 10 MB;
+--   - search keys and vectors only with `vectors=1`: a read-only organisation never searches by
+--     meaning, since the question itself would have to be embedded, a model call. Word search over
+--     the paragraphs needs no vector;
 --   - the project, all its cases (the main case and its sub-goal case) and their parsed files;
 --   - the latest `main_runs` succeeded runs on the main cases and `review_runs` on the sub-goal
 --     cases, with their trace, requirements, approvals and stored checks.
@@ -40,6 +48,14 @@
 \else
   \set replace 0
 \endif
+\if :{?paragraphs}
+\else
+  \set paragraphs cited_regulations
+\endif
+\if :{?vectors}
+\else
+  \set vectors 0
+\endif
 \if :{?demo_password}
 \else
   \set demo_password ''
@@ -59,7 +75,9 @@ select set_config('demo.source', :'source', true) as s1,
        set_config('demo.review_runs', :'review_runs', true) as s5,
        set_config('demo.email', lower(:'email'), true) as s6,
        set_config('demo.password', :'demo_password', true) as s7,
-       set_config('demo.replace', :'replace', true) as s8 \gset ignored_
+       set_config('demo.replace', :'replace', true) as s8,
+       set_config('demo.paragraphs', :'paragraphs', true) as s9,
+       set_config('demo.vectors', :'vectors', true) as s10 \gset ignored_
 
 -- Every old id and its copy. Paths, traces and notes are rewritten through this one table.
 create temp table id_map (old_id uuid primary key, new_id uuid not null unique) on commit drop;
@@ -146,6 +164,43 @@ begin
     raise exception 'no project named % in %', current_setting('demo.project'), current_setting('demo.source');
   end if;
 
+  -- ---------------------------------------------------------------- what the runs need
+  -- The latest that succeeded: a failed run shows a failure, not the product.
+  create temp table chosen_runs on commit drop as
+  select r.id from (
+    select r.id, c.kind, row_number() over (partition by c.kind order by r.created_at desc) as nth
+    from public.runs r join public.cases c on c.id = r.case_id
+    where c.project_id = proj and r.status = 'succeeded'
+  ) r
+  where (r.kind = 'main' and r.nth <= current_setting('demo.main_runs')::integer)
+     or (r.kind = 'subgoal' and r.nth <= current_setting('demo.review_runs')::integer);
+
+  -- What the copied runs point at in the library: the paragraphs their requirements cite, and
+  -- the regulations those belong to or the sub-goal cases compare.
+  create temp table cited_paragraphs on commit drop as
+  select distinct q.paragraph_id as id from public.requirements q
+  where q.run_id in (select id from chosen_runs) and q.paragraph_id is not null;
+  create temp table cited_regulations on commit drop as
+  select distinct v.regulation_id as id from public.regulation_versions v
+  where v.id in (
+    select q.version_id from public.requirements q where q.run_id in (select id from chosen_runs)
+    union
+    select unnest(array[c.old_version_id, c.new_version_id]) from public.cases c where c.project_id = proj);
+
+  if current_setting('demo.paragraphs') not in ('all', 'current', 'cited_regulations', 'cited') then
+    raise exception 'paragraphs must be all, current, cited_regulations or cited, not %',
+      current_setting('demo.paragraphs');
+  end if;
+  create temp table copied_paragraphs on commit drop as
+  select p.id from public.regulation_paragraphs p
+  join public.regulation_versions v on v.id = p.version_id
+  where p.organization_id = src
+    and (p.id in (select id from cited_paragraphs)
+         or current_setting('demo.paragraphs') = 'all'
+         or (current_setting('demo.paragraphs') = 'current' and p.superseded_at is null)
+         or (current_setting('demo.paragraphs') = 'cited_regulations' and p.superseded_at is null
+             and v.regulation_id in (select id from cited_regulations)));
+
   insert into public.organizations (name, read_only) values (current_setting('demo.target'), true)
   returning id into dst;
   insert into id_map values (src, dst);
@@ -169,24 +224,29 @@ begin
     v.summary_model, v.summary_sha256, v.summarized_at, v.figures_missing
   from public.regulation_versions v where v.organization_id = src;
 
-  insert into id_map select id, gen_random_uuid() from public.regulation_paragraphs where organization_id = src;
+  insert into id_map select id, gen_random_uuid() from copied_paragraphs;
   insert into public.regulation_paragraphs (
     id, version_id, organization_id, position, label, annex, appendix, part, number, heading, kind,
     text, page_start, page_end, content_hash, context, created_at, superseded_at)
   select pg_temp.mapped(p.id), pg_temp.mapped(p.version_id), dst, p.position, p.label, p.annex,
     p.appendix, p.part, p.number, p.heading, p.kind, p.text, p.page_start, p.page_end,
     p.content_hash, p.context, p.created_at, p.superseded_at
-  from public.regulation_paragraphs p where p.organization_id = src;
+  from public.regulation_paragraphs p where p.id in (select id from copied_paragraphs);
 
   -- The key is a hash of the regulation's and the paragraph's text, not of any id, so it and the
   -- vectors stored under it are valid as they are.
-  insert into public.regulation_paragraph_keys (paragraph_id, organization_id, input_sha256)
-  select pg_temp.mapped(k.paragraph_id), dst, k.input_sha256
-  from public.regulation_paragraph_keys k where k.organization_id = src;
+  if current_setting('demo.vectors') = '1' then
+    insert into public.regulation_paragraph_keys (paragraph_id, organization_id, input_sha256)
+    select pg_temp.mapped(k.paragraph_id), dst, k.input_sha256
+    from public.regulation_paragraph_keys k where k.paragraph_id in (select id from copied_paragraphs);
 
-  insert into public.regulation_embeddings (organization_id, model, input_sha256, embedding, created_at)
-  select dst, e.model, e.input_sha256, e.embedding, e.created_at
-  from public.regulation_embeddings e where e.organization_id = src;
+    insert into public.regulation_embeddings (organization_id, model, input_sha256, embedding, created_at)
+    select dst, e.model, e.input_sha256, e.embedding, e.created_at
+    from public.regulation_embeddings e
+    where e.organization_id = src
+      and e.input_sha256 in (select k.input_sha256 from public.regulation_paragraph_keys k
+                             where k.paragraph_id in (select id from copied_paragraphs));
+  end if;
 
   insert into public.regulation_figure_descriptions (organization_id, image_sha256, description, model, error, described_at)
   select dst, d.image_sha256, d.description, d.model, d.error, d.described_at
@@ -267,16 +327,6 @@ begin
   insert into public.memberships (organization_id, user_id, role) values (dst, demo_user, 'viewer');
 
   -- ---------------------------------------------------------------- the runs
-  -- The latest that succeeded: a failed run shows a failure, not the product.
-  create temp table chosen_runs on commit drop as
-  select r.id from (
-    select r.id, c.kind, row_number() over (partition by c.kind order by r.created_at desc) as nth
-    from public.runs r join public.cases c on c.id = r.case_id
-    where c.project_id = proj and r.status = 'succeeded'
-  ) r
-  where (r.kind = 'main' and r.nth <= current_setting('demo.main_runs')::integer)
-     or (r.kind = 'subgoal' and r.nth <= current_setting('demo.review_runs')::integer);
-
   insert into id_map select id, gen_random_uuid() from chosen_runs;
   -- Started by the demo account: runs.created_by may not be empty, and nobody else is in the
   -- organisation. The trace says which model wrote it and when.

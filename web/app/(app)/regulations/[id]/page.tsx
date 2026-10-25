@@ -164,7 +164,15 @@ async function Regulation({ params, searchParams }: PageProps<"/regulations/[id]
               The paragraphs could not be loaded.
             </p>
           ) : paragraphs.length === 0 ? (
-            <p className="text-muted-foreground">{q ? `No paragraph matches "${q}".` : "No paragraphs stored."}</p>
+            <p className="text-muted-foreground">
+              {q
+                ? `No paragraph matches "${q}".`
+                : // Split once, but its text was left out here: a demo copy keeps only the
+                  // paragraphs of the regulations its runs cite, for size (scripts/demo-org.sql).
+                  version.paragraph_count
+                  ? "Its paragraphs are not stored in this organisation. The PDF has the full text."
+                  : "No paragraphs stored."}
+            </p>
           ) : (
             <>
               {paragraphs.length === SHOWN ? (
