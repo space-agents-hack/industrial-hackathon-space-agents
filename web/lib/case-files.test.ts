@@ -4,6 +4,7 @@ import { test } from "node:test";
 
 import {
   ACCEPT,
+  answersIn,
   CASE_FORMATS,
   MAX_FILE_BYTES,
   MAX_FILES,
@@ -13,6 +14,7 @@ import {
   formatOf,
   isSettled,
   refusal,
+  screenCaseFiles,
   storagePath,
   textPreview,
   viewOf,
@@ -99,4 +101,38 @@ test("JSON is indented, broken JSON is shown raw, and long text is cut", () => {
   const long = textPreview("text", "x".repeat(TEXT_PREVIEW_CHARS + 1));
   assert.equal(long.cut, true);
   assert.equal(long.text.length, TEXT_PREVIEW_CHARS);
+});
+
+// Made up here, in Certivity's shape: a requirements file cites regulation paragraphs.
+const ANSWERS = JSON.stringify({
+  team_id: "t",
+  case_id: "c",
+  requirements: [{ id: "G-1", text: "The part shall be marked.", source: { regulation: "UN R<n>", paragraph: "x.y" } }],
+});
+
+test("an answer file is told by its content, in either of Certivity's formats", () => {
+  assert.equal(answersIn(ANSWERS), "A requirements file");
+  assert.equal(answersIn(JSON.stringify({ case_id: "c", changes: [] })), "A changes file");
+  // A spec with plain requirement strings, a list, and text that is not JSON are case content.
+  assert.equal(answersIn(JSON.stringify({ part: "housing", requirements: ["waterproof"] })), null);
+  assert.equal(answersIn(JSON.stringify([{ id: "x", text: "y" }])), null);
+  assert.equal(answersIn("# Spec\nnot json"), null);
+});
+
+test("a part's upload holds answer files back whatever they are called, and keeps the rest", async () => {
+  const file = (name: string, text: string) => ({ name, size: text.length, text: async () => text });
+  const screened = await screenCaseFiles([
+    file("expected.json", ANSWERS),
+    file("notes.txt", ANSWERS),
+    file("spec.json", JSON.stringify({ requirements: ["waterproof"] })),
+    file("deck.pptx", "x"),
+    file("view.png", "png bytes"),
+  ]);
+  assert.deepEqual(
+    screened.keep.map((f) => f.name),
+    ["spec.json", "view.png"],
+  );
+  assert.equal(screened.answerFiles.length, 2);
+  assert.match(screened.answerFiles[0], /^expected\.json: a requirements file in Certivity's format/);
+  assert.match(screened.problems[0], /deck\.pptx/);
 });

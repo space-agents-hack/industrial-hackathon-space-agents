@@ -85,6 +85,57 @@ export function refusal(file: { name: string; size: number }): string | null {
   return null;
 }
 
+// Certivity's case folders ship expected.json beside the inputs, and a part takes .json files, so a
+// picked folder would hand the answer key to every model of the run: the dev score goes up and says
+// nothing about the held-out case (SYS-42). Decided by content and not by name, because a renamed
+// copy gives the answers away the same; a run's own output has the same shape. The agent applies
+// the same rule as a backstop (ingest.py, answers_in), so keep the two in step.
+export function answersIn(text: string): "A requirements file" | "A changes file" | null {
+  if (!text.trimStart().startsWith("{")) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const { requirements, changes } = value as { requirements?: unknown; changes?: unknown };
+  // A spec with a list of plain requirement strings is case content, not an answer file.
+  const cites = (r: unknown) => typeof r === "object" && r !== null && ("source" in r || "regulation" in r);
+  if (Array.isArray(requirements) && requirements.some(cites)) return "A requirements file";
+  if (Array.isArray(changes)) return "A changes file";
+  return null;
+}
+
+const ANSWER_FORMATS: ReadonlySet<CaseFormat> = new Set(["json", "md", "txt"]);
+
+type Screenable = { name: string; size: number; text(): Promise<string> };
+
+// What goes up from a pick for a part: other formats and sizes refused with the reason, answer
+// files held back with their own message. Only text files are read, and only to decide.
+export async function screenCaseFiles<T extends Screenable>(
+  files: readonly T[],
+): Promise<{ keep: T[]; problems: string[]; answerFiles: string[] }> {
+  const result = { keep: [] as T[], problems: [] as string[], answerFiles: [] as string[] };
+  for (const file of files) {
+    const reason = refusal(file);
+    if (reason) {
+      result.problems.push(reason);
+      continue;
+    }
+    const format = formatOf(file.name);
+    const kind = format && ANSWER_FORMATS.has(format) ? answersIn(await file.text().catch(() => "")) : null;
+    if (kind) {
+      result.answerFiles.push(
+        `${file.name}: ${kind.toLowerCase()} in Certivity's format (an answer key, or a run's output). It is not added to the part, so no run can read it; the checks already have Certivity's answer keys.`,
+      );
+      continue;
+    }
+    result.keep.push(file);
+  }
+  return result;
+}
+
 export function describeSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} kB`;

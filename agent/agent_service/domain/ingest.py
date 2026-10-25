@@ -16,6 +16,8 @@ What this does NOT do:
 - Interpret CAD geometry. STEP and IGES are read for their header, part names and assembly
   structure; STL for its name, triangle count and bounding box.
 - Read .doc, .ppt, .pptx or ZIP. The database refuses those formats (run_files.format).
+- Read an answer file (`answers_in`): Certivity's answer key, or a run's own output, is reported
+  and given to no model (SYS-42).
 
 Later: PDFs should go through the regulation ingestion layer (#3) once it exists, so that case
 PDFs and regulation PDFs are split into pages the same way.
@@ -23,6 +25,7 @@ PDFs and regulation PDFs are split into pages the same way.
 
 import csv
 import io
+import json
 import re
 import struct
 from collections.abc import Sequence
@@ -461,6 +464,41 @@ class ParsedFile:
     blocks: list[Block]
 
 
+# Certivity's case folders ship expected.json next to the inputs, and a Part takes .json files, so
+# dropping the folder in would hand the answer key to every model of the run: the dev score goes
+# up and says nothing about the held-out case (SYS-42; overfitting audit, 2026-10-25). Decided by
+# content and not by name, because a renamed copy gives the answers away just the same. A run's
+# own output has the same shape and is not case content either. The web holds these back before
+# upload (web/lib/case-files.ts, answersIn); this is the backstop for a file that got in anyway.
+ANSWERS_NOTE = (
+    "{kind} in Certivity's format (an answer key, or a run's output): not given to the run, so the "
+    "result cannot be tuned to it (SYS-42). The checks read Certivity's own copy."
+)
+
+
+def answers_in(text: str) -> str | None:
+    """ "A requirements file" or "A changes file" when the text is one in Certivity's format (the
+    `requirements` list cites regulations; `changes` is the sub-goal's list), else None. A JSON
+    case file with a `requirements` list of plain strings, a product spec, is not one."""
+    if not text.lstrip().startswith("{"):
+        return None
+    try:
+        value = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(value, dict):
+        return None
+    requirements = value.get("requirements")  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+    if isinstance(requirements, list) and any(
+        isinstance(r, dict) and ("source" in r or "regulation" in r)
+        for r in requirements  # pyright: ignore[reportUnknownVariableType]
+    ):
+        return "A requirements file"
+    if isinstance(value.get("changes"), list):  # pyright: ignore[reportUnknownMemberType]
+        return "A changes file"
+    return None
+
+
 def parse(file: CaseFile) -> ParsedFile:
     """One file to blocks. Never raises: a file that cannot be read has an error in its report
     and no blocks, and the caller decides whether a model gets a second try."""
@@ -470,6 +508,11 @@ def parse(file: CaseFile) -> ParsedFile:
     except Exception as exc:
         report.error = f"Could not be read: {type(exc).__name__}: {exc}"[:500]
         blocks = []
+    if file.format in ("json", "md", "txt"):
+        text = "".join(b.content for b in blocks if isinstance(b.content, str))
+        if kind := answers_in(text):
+            report.error = ANSWERS_NOTE.format(kind=kind)
+            blocks = []
     return ParsedFile(file.filename, file.format, report, blocks)
 
 

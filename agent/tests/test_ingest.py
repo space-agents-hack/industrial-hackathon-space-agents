@@ -251,6 +251,43 @@ def test_a_broken_file_is_reported_and_the_others_still_read() -> None:
     assert spec.error is None and spec.characters == 2
 
 
+# Made up here, in Certivity's shape: a requirements file cites regulation paragraphs.
+ANSWERS = (
+    '{"team_id": "t", "case_id": "c", "requirements": [{"id": "G-1", "text": "The part shall '
+    'be marked.", "source": {"regulation": "UN R<n>", "version": "1", "page": 3, '
+    '"paragraph": "x.y"}}]}'
+)
+
+
+def test_an_answer_file_is_reported_and_given_to_no_model_whatever_its_name() -> None:
+    content = read_case(
+        [
+            CaseFile("expected.json", "json", ANSWERS.encode()),
+            CaseFile("notes.txt", "txt", ANSWERS.encode()),
+            CaseFile("review.json", "json", b'{"case_id": "c", "changes": []}'),
+            CaseFile("spec.md", "md", b"M1"),
+        ]
+    )
+
+    *answers, spec = content.reports
+    assert [r.error is not None and "not given to the run" in r.error for r in answers] == [
+        True
+    ] * 3
+    assert "The part shall be marked" not in texts(content.parts)
+    assert spec.error is None and spec.characters == 2
+
+
+def test_a_spec_with_a_list_of_plain_requirements_is_case_content() -> None:
+    spec = b'{"part": "a housing", "requirements": ["waterproof", "-40 to 85 C"]}'
+
+    content = read_case([CaseFile("spec.json", "json", spec)])
+
+    assert content.reports[0].error is None
+    assert "waterproof" in texts(content.parts)
+    assert ingest.answers_in("not json {") is None
+    assert ingest.answers_in("[1, 2]") is None
+
+
 def test_past_the_limits_the_rest_is_reported_not_silently_dropped() -> None:
     content = read_case(
         [

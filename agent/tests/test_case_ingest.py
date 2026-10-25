@@ -7,7 +7,7 @@ from pydantic_ai import BinaryContent
 
 from agent_service import runner
 from agent_service.domain import case_ingest
-from tests.test_ingest import LONG, pdf, png
+from tests.test_ingest import ANSWERS, LONG, pdf, png
 
 pytestmark = pytest.mark.anyio
 
@@ -122,6 +122,24 @@ async def test_a_run_on_a_case_reads_the_stored_blocks_not_the_files(store, sett
     saved = str(store.conversations[run_id])
     assert "Vehicle category M1." in saved
     assert "The rear lamp housing" not in saved
+
+
+async def test_an_answer_key_in_a_part_is_never_read_by_a_run(store, settings) -> None:
+    # Certivity's case folder holds expected.json beside the inputs (SYS-42).
+    case_id = uuid4()
+    key = store.add_case_file(case_id, "expected.json", "json", ANSWERS.encode())
+    store.add_case_file(case_id, "spec.md", "md", b"Vehicle category M1.")
+
+    assert await ingest(store, case_id, FakeTranscriber()) == {"parsed": 1, "failed": 1}
+    assert "not given to the run" in (store.case_file(key).error or "")
+    assert key not in store.blocks or store.blocks[key] == []
+
+    run_id = store.add_run("Find the requirements.", case_id=case_id)
+    plan = await runner.prepare(store, settings, run_id)
+    await runner.execute(store, settings, plan)
+    saved = str(store.conversations[run_id])
+    assert "Vehicle category M1." in saved
+    assert "The part shall be marked" not in saved
 
 
 async def test_a_model_that_fails_leaves_the_parsed_file_parsed_and_says_why(store) -> None:

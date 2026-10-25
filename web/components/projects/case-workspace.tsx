@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ACCEPT, CASE_FILES_BUCKET, MAX_FILES, describeSize, isSettled, refusal } from "@/lib/case-files";
+import { ACCEPT, CASE_FILES_BUCKET, MAX_FILES, describeSize, isSettled, screenCaseFiles } from "@/lib/case-files";
 import { parseCase, removeCaseFile, startCaseRun, uploadCaseFiles } from "@/lib/case-upload";
 import { type CaseBlockView, type CaseFileView, describeParser, fetchCaseBlocks } from "@/lib/cases";
 import { type CaseKind, type EntryLike, SUBGOAL_ACCEPT, filesInEntries, screenSubgoalFiles } from "@/lib/subgoal";
@@ -55,7 +55,8 @@ export function CaseWorkspace({
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
-  // Answer keys held back from a sub-goal upload: said apart from errors, since nothing went wrong.
+  // Answer keys held back from an upload (a part's or a sub-goal's): said apart from errors, since
+  // nothing went wrong.
   const [heldBack, setHeldBack] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
   const busy = pending !== null;
@@ -71,11 +72,10 @@ export function CaseWorkspace({
       problems.push(...screened.problems);
       setHeldBack(screened.answerKeys);
     } else {
-      for (const file of Array.from(list)) {
-        const reason = refusal(file);
-        if (reason) problems.push(reason);
-        else chosen.push(file);
-      }
+      const screened = await screenCaseFiles(Array.from(list));
+      chosen = screened.keep;
+      problems.push(...screened.problems);
+      setHeldBack(screened.answerFiles);
     }
     if (chosen.length > MAX_FILES) problems.push(`At most ${MAX_FILES} files at a time; the first ${MAX_FILES} are added.`);
     setError(problems.length ? problems.join(" ") : null);
