@@ -277,6 +277,42 @@ def test_a_bare_number_cited_on_an_introduction_page_is_the_introduction_paragra
     assert [s.label for s in regdiff.evidence(req, old)] == ["Introduction 2"]
 
 
+def test_a_requirement_that_points_to_a_table_changes_when_the_tables_rows_do() -> None:
+    old, new = _versions(
+        [
+            SPEC,
+            P(
+                "5.1",
+                "5.1. The tester shall record at least the values listed in the table below.\n"
+                "Mass of the widget.\nColour of the widget.",
+            ),
+            P("5.2", "5.2. The record shall be kept for a year.\nAll entries are dated."),
+        ],
+        [
+            SPEC,
+            P(
+                "5.1",
+                "5.1. The tester shall record at least the values listed in the table below.\n"
+                "Mass of the widget.\nColour of the widget.\nHum of the widget in dB.",
+            ),
+            P("5.2", "5.2. The record shall be kept for a year.\nAll entries are signed."),
+        ],
+    )
+    reqs = [
+        _req(
+            "R-001", "The tester shall record at least the values listed in the table below.", "5.1"
+        ),
+        _req("R-002", "The record shall be kept for a year.", "5.2"),
+    ]
+
+    changes = regdiff.diff_versions(reqs, old, new)
+
+    # R-002's paragraph changed too, but R-002 names no table.
+    assert [(c.requirement_id, c.change) for c in changes] == [("R-001", "modified")]
+    assert "Hum of the widget in dB." in (changes[0].new_text or "")
+    assert "1 row(s) added" in changes[0].reason
+
+
 def test_the_submission_is_valid_against_certivitys_schema() -> None:
     old, new = _versions(
         [SPEC, P("5.1", "5.1. The widget shall be blue.\nThe widget may be tested twice.")],
