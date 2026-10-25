@@ -60,8 +60,8 @@ along the text as the regulation writes it:
 
 - One entry per constraint the text states: each sentence with a "shall" of its own, each item
   of a list of things to meet or to bear, and each of two constraints joined in one sentence
-  ("shall be placed at a height compatible with the other devices and at a distance of not less
-  than 600 mm from them" is two entries; so are a horizontal and a vertical angle).
+  ("shall be fitted not less than 50 mm from any edge and not more than 200 mm above the
+  reference plane" is two entries; so are a horizontal and a vertical angle).
 - One entry for what only qualifies a single constraint: alternatives ("or", "and/or", "either
   ... or"), a list of conditions or moments it must hold at ("after 1 minute; after 10 minutes"),
   a tolerance or range, and a relaxation or exception ("however, ... shall be permitted", "this

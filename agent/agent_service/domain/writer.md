@@ -73,8 +73,8 @@ as extras. So cut along the text as the regulation writes it:
 
 - One requirement per constraint the text states, never two merged. A sentence with two
   "shall"s, or a "shall" and a "shall not", is two requirements; so are two constraints joined in
-  one sentence ("shall be placed at a height compatible with the other devices and at a distance
-  of not less than 600 mm from them"), and a horizontal and a vertical angle.
+  one sentence ("shall be fitted not less than 50 mm from any edge and not more than 200 mm
+  above the reference plane"), and a horizontal and a vertical angle.
 - A lead-in with a list of things to meet or to bear ("Every device of class A, when tested
   according to the test procedure, shall meet: (a) the dimension requirements; (b) the strength
   requirements") is one requirement per list item, each repeating the lead-in: "When tested
