@@ -131,6 +131,12 @@ class Window:
     focus: Mapping[UUID, Sequence[str]] = field(
         default_factory=dict[UUID, Sequence[str]], hash=False, compare=False
     )
+    # Paragraph id -> the labels of paragraphs that already hold requirements of this run and cite
+    # it for their values or conditions (`cited_by`). Shown so a writer reading it alone, under
+    # another device's heading, still sees it as part of an obligation the part has.
+    cited: Mapping[UUID, Sequence[str]] = field(
+        default_factory=dict[UUID, Sequence[str]], hash=False, compare=False
+    )
 
     @property
     def focused(self) -> bool:
@@ -160,6 +166,11 @@ class Window:
             lines.append(f"[#{p.position}] {label} (page {p.page_start})")
             if found_by := self.focus.get(p.id):
                 lines.append(f"(Found by the search for: {'; '.join(found_by[:_FOCUS_SHOWN])}.)")
+            if citers := self.cited.get(p.id):
+                lines.append(
+                    f"(Cited for its values or conditions by {', '.join(citers[:_FOCUS_SHOWN])}, "
+                    "which the part already has requirements for.)"
+                )
             lines.append(p.text)
             found = self.clauses.get(p.position, [])
             if found:
@@ -1028,24 +1039,91 @@ def uncovered(
     version: LibraryVersion,
     set_aside: Mapping[UUID, str] | None = None,
     focus: Mapping[UUID, Sequence[str]] | None = None,
+    cites: Mapping[UUID, Sequence[str]] | None = None,
 ) -> list[dict[str, Any]]:
     """Obligation paragraphs ("shall", "must") of a read version that no requirement cites, less
     those a writer set aside clause by clause (`set_aside`): a writer that judged a paragraph a
     test method or a restatement in its window decided it, and the check does not undo that. One
-    that a search for the profile found (`focus`) says for which entries, as `found_by`."""
+    that a search for the profile found (`focus`) says for which entries, as `found_by`.
+
+    A paragraph that a paragraph with requirements cites for its values (`cites`, from
+    `cited_paragraphs`) is listed with `cited_by` even without a "shall" and even when set aside:
+    its window judged it alone, under its own heading, without knowing an obligation of the part
+    takes its numbers from it."""
     cited = {r.paragraph_id for r in rows}
     skip = set_aside or {}
     marks = focus or {}
+    refs = cites or {}
     return [
         {"regulation": version.regulation, "paragraph": p.label, "page": p.page_start}
         | ({"found_by": list(marks[p.id][:_FOCUS_SHOWN])} if p.id in marks else {})
+        | ({"cited_by": list(refs[p.id][:_FOCUS_SHOWN])} if p.id in refs else {})
         for p in paragraphs
         if p.kind == "paragraph"
         and p.label
         and p.id not in cited
-        and p.id not in skip
-        and OBLIGATION.search(p.text)
+        and (p.id in refs or (p.id not in skip and OBLIGATION.search(p.text)))
     ]
+
+
+# "paragraph 6.2.1", "paragraphs 5.1 and 5.2", "paragraph 2.3 of Annex 4", "Annex 4, paragraph 2.3".
+# Only labels with a dot: "paragraph 5" names a whole section, too broad to list as one obligation.
+_REF = re.compile(
+    r"\bparagraphs?\s+(\d+(?:\.\d+)+(?:\s*(?:,|and|or|to|and/or)\s*\d+(?:\.\d+)+)*)",
+    re.IGNORECASE,
+)
+_REF_NUMBER = re.compile(r"\d+(?:\.\d+)+")
+_REF_ANNEX_AFTER = re.compile(r"^\.?\s*,?\s*of\s+annex\s+(\d+)", re.IGNORECASE)
+_REF_ANNEX_BEFORE = re.compile(r"annex\s+(\d+)\s*,?\s*$", re.IGNORECASE)
+# A paragraph of another document: its number means nothing in this regulation.
+_REF_ELSEWHERE = re.compile(
+    r"^\.?\s*,?\s*(?:of|in)\s+(?:the\s+)?(?:un\s+|ece\s+)?(?:regulations?\s+no|iso|iec|cispr|"
+    r"directive|gtr|global|standard|en\s|sae)",
+    re.IGNORECASE,
+)
+
+
+def cited_paragraphs(
+    paragraphs: Sequence[Paragraph], rows: Sequence[Requirement]
+) -> dict[UUID, list[str]]:
+    """Paragraph id -> labels of the paragraphs with requirements that cite it by number, for the
+    paragraphs of one version that no requirement cites yet.
+
+    Why: a kept obligation often takes its angles, area or test conditions from another paragraph
+    ("visible within the angles of paragraph x.y"). The writers read that paragraph in its own
+    window, under another device's or a test's heading, and set it aside, so the obligation the
+    part has came out without its numbers. Following the numbers is general: it uses only what
+    the regulation's own text cites."""
+    with_rows = {r.paragraph_id for r in rows}
+    by_label = {p.label: p for p in paragraphs if p.label and p.kind == "paragraph"}
+    found: dict[UUID, list[str]] = {}
+    for citer in paragraphs:
+        if citer.id not in with_rows or not citer.label:
+            continue
+        own_annex = re.match(r"(annex\s+\d+)\s", citer.label, re.IGNORECASE)
+        for m in _REF.finditer(citer.text):
+            after = citer.text[m.end() : m.end() + 60]
+            if _REF_ELSEWHERE.match(after):
+                continue
+            annex = _REF_ANNEX_AFTER.match(after) or _REF_ANNEX_BEFORE.search(
+                citer.text[max(0, m.start() - 20) : m.start()]
+            )
+            prefixes = (
+                [f"Annex {annex.group(1)} "]
+                if annex
+                else ([f"{own_annex.group(1)} ", ""] if own_annex else [""])
+            )
+            for number in _REF_NUMBER.findall(m.group(1)):
+                target = next(
+                    (by_label[f"{x}{number}"] for x in prefixes if f"{x}{number}" in by_label),
+                    None,
+                )
+                if target is None or target.id in with_rows or target.id == citer.id:
+                    continue
+                labels = found.setdefault(target.id, [])
+                if citer.label not in labels:
+                    labels.append(citer.label)
+    return found
 
 
 # ------------------------------------------------------------------------------------------

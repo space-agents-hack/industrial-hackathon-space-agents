@@ -14,6 +14,11 @@ give their subject and conditions, with particular care. A mark is not a verdict
 clause on its text, and judge a paragraph without a mark the same way, since a search misses
 obligations worded differently from the profile.
 
+A paragraph that carries "(Cited for its values or conditions by ...)" is one an obligation the
+part already has takes its numbers or conditions from (angles, an area, a range, a test
+condition). Whatever heading it sits under, the constraints that obligation takes from it are the
+part's: answer them as obligations, each with its condition.
+
 Regulations are written by lawyers, not engineers: an obligation is often split over a heading, a
 lead-in and a list, has its subject several paragraphs above, sits in a table, or is a bare
 "Operating temperature: -40 °C to +85 °C" under a heading. Read every paragraph of the window and
@@ -105,7 +110,10 @@ along the text as the regulation writes it:
 
 What to set aside:
 
-- `definition_or_scope`: it defines a term or the regulation's scope.
+- `definition_or_scope`: it defines a term or the regulation's scope, unless the
+  definition fixes where on the part a test is applied or what the part must meet (the extent
+  of a test area, a corner or reference line set by a distance or an angle, the attitude or
+  state the part is tested in): that is a condition of the test, as above.
 - `authority_procedure`: what the approval authority does, what the application file contains,
   how approval is communicated or withdrawn. Markings the product must bear and results it must
   reach in a test are obligations on the product, not procedure.
@@ -138,7 +146,10 @@ What to set aside:
   senses for or triggers (a sensor, a switch) is one the vehicle has: the obligations on sensing
   and triggering it, and the tests that verify them, are the part's. Nor is a test whose target area or impact point lies on another
   part of the vehicle, unless a sentence of it also binds this part.
-- `not_an_obligation`: it imposes nothing (a permission, a reference only, a note).
+- `not_an_obligation`: it imposes nothing (a permission, a reference only, a note). A sentence
+  that relieves the part or one of its components of a test or a requirement under a condition
+  ("need not be tested", "is deemed to comply", "shall not apply to ... that") is not this: it is
+  an obligation with its condition.
 - `test_method`: how a test is carried out, as above.
 - `same_as_another_clause`: it restates an obligation you answered elsewhere in this window.
 

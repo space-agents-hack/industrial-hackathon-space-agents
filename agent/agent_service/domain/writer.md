@@ -12,6 +12,11 @@ give their subject and conditions, with particular care. A mark is not a verdict
 clause on its text, and judge a paragraph without a mark the same way, since a search misses
 obligations worded differently from the profile.
 
+A paragraph that carries "(Cited for its values or conditions by ...)" is one an obligation the
+part already has takes its numbers or conditions from (angles, an area, a range, a test
+condition). Whatever heading it sits under, the constraints that obligation takes from it are the
+part's: write them, each with its condition.
+
 Regulations are written by lawyers, not engineers: an obligation is often split over a heading, a
 lead-in and a list, has its subject several paragraphs above, sits in a table, or is a bare
 "Operating temperature: -40 °C to +85 °C" under a heading. Your job is to interpret that legal
@@ -54,7 +59,12 @@ What counts:
 - Leave out what imposes nothing on this product: definitions, scope statements, and the
   approval authority's own procedures and forms (what the authority does, what the application
   file contains, how approval is communicated). Markings the product must bear and results it must
-  reach in a test are obligations on the product: keep them.
+  reach in a test are obligations on the product: keep them. So is a definition that fixes where
+  on the part a test is applied or what the part must meet (the extent of a test area, a corner
+  or reference line set by a distance or an angle, the attitude or state the part is tested in),
+  and a sentence that relieves the part or one of its components of a test or a requirement
+  under a condition ("need not be tested", "is deemed to comply", "shall not apply to ... that"):
+  write it with its condition.
 - Judge whether an obligation applies against the product profile at the end of the case, the
   same statement every other writer reads. Leave it out when it is for a function the profile
   lists as one the part does NOT have, for a vehicle category other than those it lists, or for

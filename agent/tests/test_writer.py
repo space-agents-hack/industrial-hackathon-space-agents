@@ -198,6 +198,35 @@ def test_uncovered_lists_obligations_nobody_cites() -> None:
     assert writer.uncovered([cited, missed], [row(cited, "R-001")], v, {missed.id: "x"}) == []
 
 
+def test_a_paragraph_an_obligation_cites_for_its_values_is_listed_even_when_set_aside() -> None:
+    v = version()
+    citer = paragraph(0, 4, "It shall be visible within the angles of paragraph 6.9.5.2.", "6.18.1")
+    angles = paragraph(1, 9, "Horizontal angle: 45 deg outwards.", "6.9.5.2")
+    other_doc = paragraph(2, 9, "Values.", "7.1.1")
+    in_annex = paragraph(3, 30, "Speed 40 km/h.", "Annex 3 2.2")
+    main_twin = paragraph(4, 5, "Main text.", "2.2")
+    annex_citer = paragraph(
+        5,
+        31,
+        "As in paragraph 2.2. Measured per paragraph 7.1.1 of UN Regulation No. 10.",
+        "Annex 3 2.3",
+    )
+    every = [citer, angles, other_doc, in_annex, main_twin, annex_citer]
+    rows = [row(citer, "R-001"), row(annex_citer, "R-002")]
+
+    cites = writer.cited_paragraphs(every, rows)
+
+    # Its own annex first; another document's paragraph numbers mean nothing here.
+    assert cites == {angles.id: ["6.18.1"], in_annex.id: ["Annex 3 2.3"]}
+    out = writer.uncovered(every, rows, v, {angles.id: "not_this_product"}, None, cites)
+    assert [(m["paragraph"], m.get("cited_by")) for m in out] == [
+        ("6.9.5.2", ["6.18.1"]),
+        ("Annex 3 2.2", ["Annex 3 2.3"]),
+    ]
+    rendered = writer.Window(v, [angles], cited=cites).render()
+    assert "Cited for its values or conditions by 6.18.1" in rendered
+
+
 async def test_a_writer_citing_a_paragraph_outside_its_window_is_asked_again() -> None:
     window = writer.Window(version(), [paragraph(3, 4)])
     calls: list[int] = []

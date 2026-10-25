@@ -43,7 +43,9 @@ How to work:
    - reject with `reject_requirements` what the check marks `reject`, unless the paragraph shows
      the check is wrong;
    - for the obligations it lists as uncovered that apply to this product, `write_for_paragraphs`,
-     first those with `found_by` (a search for the part's own function or component found them);
+     first those with `cited_by` (an obligation the part has takes its values or conditions from
+     them: write them even under another device's heading), then those with `found_by` (a search
+     for the part's own function or component found them);
      ignore the ones that do not apply by the profile (a function it does not have, another
      vehicle category, a device it neither is nor contains) or that bind the approval authority;
    - write again a window that failed, with `write_for_paragraphs`.

@@ -113,6 +113,10 @@ class Deps:
     # (write_requirements, regulation_search.focus). Lost on a pause, like `read`: the check then
     # lists the uncovered ones unmarked.
     focus: dict[UUID, list[str]] = field(default_factory=dict[UUID, list[str]])
+    # Paragraph id -> labels of paragraphs with requirements that cite it (check_requirements,
+    # writer.cited_paragraphs), shown to the writers when the orchestrator writes it. Lost on a
+    # pause: the next check finds them again.
+    cited: dict[UUID, list[str]] = field(default_factory=dict[UUID, list[str]])
 
 
 class OutOfTime(Exception):
@@ -610,7 +614,7 @@ async def write_for_paragraphs(
     if not chosen:
         raise ModelRetry(f"None of these labels is in {regulation}: {', '.join(missing)}.")
     deps.read.add(version.id)
-    jobs = writer.windows(version, chosen)
+    jobs = [replace(w, focus=deps.focus, cited=deps.cited) for w in writer.windows(version, chosen)]
     results = await _write_windows(ctx, jobs)
     return {
         "requirements": sum(count for count, _ in results),
@@ -690,13 +694,17 @@ async def check_requirements(ctx: RunContext[Deps]) -> dict[str, Any]:
     missed: list[dict[str, Any]] = []
     for vid in sorted(version_ids, key=str):
         if vid in versions:
+            paragraphs = await _paragraphs(deps, vid)
+            cites = writer.cited_paragraphs(paragraphs, rows)
+            deps.cited |= cites
             missed += writer.uncovered(
-                await _paragraphs(deps, vid), rows, versions[vid], deps.set_aside, deps.focus
+                paragraphs, rows, versions[vid], deps.set_aside, deps.focus, cites
             )
-    # The ones a search for the part's own functions and components found come first, so the
-    # orchestrator's few write_for_paragraphs calls go to the likeliest misses, and the list's cap
-    # (_MAX_LISTED) never cuts them. A stable sort: inside each group, document order stays.
-    missed.sort(key=lambda m: "found_by" not in m)
+    # The ones an obligation the part has cites, then those a search for the part's own functions
+    # and components found, come first, so the orchestrator's few write_for_paragraphs calls go to
+    # the likeliest misses, and the list's cap (_MAX_LISTED) never cuts them. A stable sort:
+    # inside each group, document order stays.
+    missed.sort(key=lambda m: ("cited_by" not in m, "found_by" not in m))
 
     checked = certivity.check(
         json.dumps(await _submission(deps)), await _reference(deps), with_score=False
@@ -712,6 +720,7 @@ async def check_requirements(ctx: RunContext[Deps]) -> dict[str, Any]:
         "uncovered_obligations": missed[:_MAX_LISTED],
         "uncovered_total": len(missed),
         "uncovered_found_by_search": sum("found_by" in m for m in missed),
+        "uncovered_cited_by_requirements": sum("cited_by" in m for m in missed),
         # Obligation paragraphs left uncited because the writers set every clause aside: counted
         # by reason so none is silent, and not to be written again.
         "set_aside_paragraphs": dict(
