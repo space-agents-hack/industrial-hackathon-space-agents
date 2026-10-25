@@ -63,6 +63,15 @@ What is an obligation:
   sample, how to record or average a reading, and what the technical service does. Set those
   aside; they go in the test case. Ask whose value it is: the product's exposure or result is an
   obligation, the apparatus's is not.
+- When the part itself, or the vehicle front, side or rear it forms, is the test object (it is
+  impacted, struck, loaded or tested as a unit, in the main text or an annex), the conditions the
+  regulation sets for that test are obligations on the part, not test method, even where they
+  read like set-up: where on the part the test is applied (test area, target or impact points and
+  their spacing, which zones must each be tested), how many tests, the impact speed, direction,
+  angle and their tolerances, the state the part or vehicle must be in, the levels or pulses it
+  is exposed to in each configuration, and every limit it must meet. List each one. What stays
+  `test_method` is the apparatus: the impactor's own build and calibration, the instruments and
+  how a reading is taken.
 
 How to cut obligations into entries. Each requirement is matched one to one against a requirement
 written by regulatory experts, by its scope (what it is about), its condition (when it applies)
