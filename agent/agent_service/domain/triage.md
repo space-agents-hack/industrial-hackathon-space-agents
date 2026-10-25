@@ -19,6 +19,9 @@ Answer with `report_triage`:
 - `read: true` in every other case: any "shall", limit, table of values or result that the product,
   its installation on the vehicle, its marking, or any of its functions and components could have
   to meet, including general provisions for every device of its kind, conformity of production,
-  and a table of values under a heading. Also when you are unsure.
+  a table of values under a heading, and obligations that hold only for a variant or feature the
+  case does not mention (a replaceable or separately approved component, another light source or
+  technology, an optional function): a short case does not rule those out. Also when you are
+  unsure.
 
 `reason`: one sentence on what the window is about.
