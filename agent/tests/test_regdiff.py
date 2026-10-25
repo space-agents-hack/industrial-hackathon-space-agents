@@ -277,6 +277,38 @@ def test_a_bare_number_cited_on_an_introduction_page_is_the_introduction_paragra
     assert [s.label for s in regdiff.evidence(req, old)] == ["Introduction 2"]
 
 
+def test_a_new_duty_inside_a_modified_paragraph_is_also_added_a_new_condition_is_not() -> None:
+    old, new = _versions(
+        [
+            SPEC,
+            P(
+                "5.1",
+                "5.1. The widget shall hum when:\n(a) the widget is switched on;\n"
+                "(b) the room is cold.",
+            ),
+        ],
+        [
+            SPEC,
+            P(
+                "5.1",
+                "5.1. The widget shall hum when:\n(a) the widget is switched on;\n"
+                "(b) the room is freezing.\n"
+                "The hum is at least 30 dB.\nThe manufacturer shall document the hum.",
+            ),
+        ],
+    )
+    reqs = [_req("R-001", "The widget shall hum when switched on or the room is cold.", "5.1")]
+
+    changes = regdiff.diff_versions(reqs, old, new)
+
+    # The new limit, with no modal of its own, is part of the rule; the new duty is not.
+    assert [(c.requirement_id, c.change) for c in changes] == [
+        ("R-001", "modified"),
+        (None, "added"),
+    ]
+    assert changes[1].new_text == "The manufacturer shall document the hum."
+
+
 def test_the_submission_is_valid_against_certivitys_schema() -> None:
     old, new = _versions(
         [SPEC, P("5.1", "5.1. The widget shall be blue.\nThe widget may be tested twice.")],

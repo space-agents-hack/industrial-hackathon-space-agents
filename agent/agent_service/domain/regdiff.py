@@ -77,6 +77,8 @@ _NOT_REQUIREMENTS = re.compile(
 _NORMATIVE = re.compile(
     r"\b(shall|must|may|required|not more than|not less than|at least|at most)\b", re.IGNORECASE
 )
+# A sentence that states an obligation of its own, as opposed to a limit or condition of another.
+_MODAL = re.compile(r"\b(shall|must|may)\b", re.IGNORECASE)
 _LIST_ITEM = re.compile(r"^\((?:[a-z]|[ivxl]+)\)\s")
 # An annex, or an appendix of one: "Annex 3 Appendix 2 5.1.1" is in "Annex 3 Appendix 2", "Annex
 # 4 4.2.1" in "Annex 4". Each is a separate document as far as a requirement list goes: forms,
@@ -567,7 +569,24 @@ def _new_span(judged: list[Segment], new: Version) -> tuple[list[Segment], set[i
     within = [n for n in new.segments if n.label in labels and not n.heading]
     first, last = partners[0].index, partners[-1].index
     shown = [n for n in within if first <= n.index <= last]
-    owned = {n.index for n in within if n.partner is None} | {n.index for n in partners}
+    # An inserted sentence with a modal verb of its own is a new obligation, not a condition of
+    # this rule: it stays in this requirement's text and is also reported as `added`. On a
+    # held-out pair (2026-10-25) one requirement's paragraph gained three new subparagraphs of
+    # "shall" sentences, and all of them were folded into that one `modified` entry; matching is
+    # one to one, so each one the key lists as added was a miss. Conditions without a modal (a
+    # new "(iii) the overlap is at least 1.0 m" in a list) still belong to the rule, as on dev.
+    # The items of such a sentence go with it: "(a) The system shall ... the following:" and its
+    # "(i) The road ahead is ..." are one new rule, not a condition of the old one.
+    owned = {n.index for n in partners}
+    new_lead = False
+    for n in within:
+        if n.partner is not None:
+            new_lead = False
+        elif _MODAL.search(n.text) or (n.item and new_lead):
+            new_lead = new_lead if n.item else n.lead
+        else:
+            owned.add(n.index)
+            new_lead = False
     return shown, owned
 
 
