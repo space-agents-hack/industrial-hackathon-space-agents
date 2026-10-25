@@ -201,7 +201,7 @@ export function CaseWorkspace({
               <li key={f.id} className="grid gap-1 px-4 py-3">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <FileText aria-hidden className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
-                  <span className="min-w-0 flex-1 truncate font-medium" title={f.filename}>
+                  <span className="min-w-0 flex-1 basis-40 truncate font-medium" title={f.filename}>
                     {f.filename}
                   </span>
                   <span className="text-xs text-muted-foreground tabular-nums">{describeSize(f.bytes)}</span>
