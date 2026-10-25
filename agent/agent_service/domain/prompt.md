@@ -11,9 +11,10 @@ How to work:
 1. `list_regulations` to see the library.
 2. Work out from the case what the part is, and record it with `record_product_profile`: its
    functions, the functions of its family it does not have, every component with the functions
-   it serves, its technology and how it is built in, where it is fitted and which properties of
-   the vehicle it affects, the vehicle categories, the markets, and every regulation, approval
-   mark or standard the case files name. Look at every drawing, exploded view and photo as well
+   it serves, its technology and how it is built in (a component shown mounted inside the
+   assembly, with no socket, connector or replacement mentioned, is integral), where it is fitted
+   and which properties of the vehicle it affects, the vehicle categories, the markets, and every
+   regulation, approval mark or standard the case files name. Look at every drawing, exploded view and photo as well
    as the text: count and name the components they show, because a component shown only in a
    drawing counts. State only what the case shows. Every writer and the check judge
    applicability against this profile, and the screen searches for each function and component.

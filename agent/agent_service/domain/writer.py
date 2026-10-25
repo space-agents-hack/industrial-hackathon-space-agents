@@ -227,6 +227,13 @@ Build = Literal["integral", "replaceable", "separately_approved", "stated_type",
 # How each build reads in the profile. Scopes set conditions in these terms ("replaceable",
 # "approved as a component", "of a type listed in"), so the screen's "as built" test (screen.md)
 # and the writers can compare word for word.
+# Why "mounted inside the assembly" counts as integral (Ramón, 2026-10-25 04:43 UTC): a spec that
+# lists a component as fitted on a board inside the part, without saying "not replaceable", was
+# read as not_stated, so the screen's "as built" test gave `possibly` to a regulation that covers
+# only replaceable or separately approved items of that kind, and the search kept it. On dev that
+# was one regulation with 36 obligations and no expected requirement. The risk is the other way:
+# a terse spec of a component that is in fact replaceable now drops a regulation, so the rule
+# asks for no socket, connector, holder or replacement mentioned, not just silence.
 _BUILD_TEXT: dict[str, str] = {
     "integral": "integral to the part, not replaceable on its own",
     "replaceable": "a replaceable item",
@@ -256,7 +263,10 @@ class Component(BaseModel):
     build: Build = Field(
         description="How the case shows it is built into the part: integral (not replaceable), "
         "replaceable, separately_approved (a component approved on its own), stated_type (the "
-        "case names its category, class or standard), or not_stated."
+        "case names its category, class or standard), or not_stated. A component the case shows "
+        "mounted inside the assembly (on a circuit board, moulded or bonded in, part of a sealed "
+        "unit) with no socket, connector, holder or replacement mentioned is integral; not_stated "
+        "is for a component of which the case shows nothing of how it is fitted."
     )
 
 
