@@ -59,8 +59,32 @@ _CLAUSE_WORDS = re.compile(r"\b(?:shall|must)\b|\bnot (?:be )?permitted\b|\bproh
 _LIST_ITEM = re.compile(r"(?:^|\n)\s*(?:\([a-z]{1,3}\)|[a-z]\)|[-\u2013\u2022])\s+")
 _SENTENCE_END = re.compile(r"(?<=[.;])\s+(?=[A-Z(])")
 _LEADING_NUMBER = re.compile(r"^\s*\S+\s+")
+# A lead-in that announces a list, with or without a "shall" of its own.
+_INTRODUCES_LIST = re.compile(r"(?::|\bfollowing\b[^.]*\.)\s*$")
 # Words of each clause shown to the writer: enough to tell clauses apart, the full text is above.
 _CLAUSE_PREVIEW_WORDS = 14
+
+
+# An enumeration inside a sentence: "shall bear (i) the mark, (ii) the code and (iii) the voltage".
+# The marker must follow a word or a ",;:" so a cross-reference ("paragraph 3.3.5. (a)") is not one.
+_INLINE_MARKER = re.compile(r"(?:(?<=[A-Za-z,;:])|(?<=[A-Za-z,;:] ))\(([ivx]{1,4}|[a-h])\)\s+")
+_ROMAN = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"]
+
+
+def _inline_items(sentence: str) -> list[str]:
+    """The items of an inline enumeration that runs (i), (ii)... or (a), (b)... from the start,
+    or [] when the sentence has none. Each item is one obligation under the sentence's lead-in."""
+    found = list(_INLINE_MARKER.finditer(sentence))
+    if len(found) < 2:
+        return []
+    marks = [m.group(1) for m in found]
+    roman = _ROMAN[: len(marks)]
+    letters = [chr(ord("a") + k) for k in range(len(marks))]
+    if marks != roman and marks != letters:
+        return []
+    ends = [m.start() for m in found[1:]] + [len(sentence)]
+    items = [sentence[m.end() : end].strip(" ,;") for m, end in zip(found, ends, strict=True)]
+    return [re.sub(r"[,;]?\s+(?:and|or)$", "", i) for i in items]
 
 
 def clauses(text: str) -> list[str]:
@@ -68,10 +92,18 @@ def clauses(text: str) -> list[str]:
     body = _LEADING_NUMBER.sub("", text, count=1)
     lead, *items = _LIST_ITEM.split(body)
     items = [" ".join(i.split()) for i in items if i.strip()]
-    sentences = [s for s in _SENTENCE_END.split(" ".join(lead.split())) if _CLAUSE_WORDS.search(s)]
-    if items and _CLAUSE_WORDS.search(lead):
+    sentences: list[str] = []
+    for s in _SENTENCE_END.split(" ".join(lead.split())):
+        if _CLAUSE_WORDS.search(s):
+            # Inline (i), (ii) items are one obligation each, as a list on separate lines is.
+            sentences += _inline_items(s) or [s]
+    if items and (_CLAUSE_WORDS.search(lead) or _INTRODUCES_LIST.search(lead)):
         # "shall meet: (a) ...; (b) ..." is one obligation per item; the lead-in is not one more.
-        return [s for s in sentences if not s.endswith(":")] + items
+        # So is "bear the following markings: (a) ...", whose "shall" is in the paragraph above.
+        # An item that only heads a sub-list ("(a) On the module:") is not one either.
+        return [s for s in sentences if not s.endswith(":")] + [
+            i for i in items if not i.endswith(":")
+        ]
     return sentences + [i for i in items if _CLAUSE_WORDS.search(i)]
 
 

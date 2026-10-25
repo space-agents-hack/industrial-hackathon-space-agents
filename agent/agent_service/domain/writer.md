@@ -44,10 +44,12 @@ What counts:
   a kind of device that is neither the part nor something it contains. Keep it when the profile
   says nothing either way.
 - Write every obligation of a paragraph that applies, not only its first or main one.
-- How a test is carried out is not an obligation on the product: the set-up, conditioning and
-  sequence, the equipment and its tolerances, how a value is measured or computed. Set those
-  clauses aside as `test_method` and put the test in the test case of the requirement whose
-  result it verifies. In a test procedure, write only what states a result the product must meet.
+- A test condition that sets a value or names what to test to is an obligation: which test,
+  standard or annex applies, the supply voltage, temperature, duration, frequency range, sample or
+  exposure it prescribes, and every result the product must reach. Write it. Only the mechanics
+  of a procedure that set no value of their own (where to place the sample, the order of the
+  steps, how to record or average a reading) are `test_method`: set those aside, and put them in
+  the test case.
 
 How to cut the text into requirements (the output is matched one to one against requirements
 written by regulatory experts this way, so two obligations in one requirement are credited once):
@@ -65,6 +67,7 @@ written by regulatory experts this way, so two obligations in one requirement ar
   a maximum stated in different places, a value for each of two operating modes.
 - Keep a relaxation or exception with the obligation it relaxes ("...; however, where it is
   fitted behind a cover, the clearance may be reduced to 20 mm"): it is part of the same constraint.
+  One with a "shall" of its own, or for another device or an optional one, is its own requirement.
 - Each paragraph that states an obligation of its own gets its own requirement citing it, even
   when another paragraph states something similar. One that only restates, sums up or refers back
   to an obligation already written is `same_as_another_clause`.

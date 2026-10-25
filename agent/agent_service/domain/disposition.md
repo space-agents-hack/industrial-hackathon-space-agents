@@ -33,14 +33,16 @@ What is an obligation:
   values. List those even though no clause shows them, with empty `clauses`.
 - One obligation per entry, never two merged: each list item, each table row or class, each
   separate quantity (a minimum and a maximum stated apart, a value per operating mode) is its own
-  entry. A relaxation or exception stays with the obligation it relaxes.
+  entry. A relaxation or exception in the same sentence stays with the obligation it relaxes; one
+  with a "shall" of its own, or for another device or an optional one, is its own entry.
 - Each paragraph that states an obligation of its own gets its own entry, even when another
   paragraph states something similar. A paragraph that only restates, sums up or refers back to
   an obligation already listed is `same_as_another_clause`.
-- How a test is carried out is not an obligation on the product: the set-up, conditioning and
-  sequence, the equipment and its tolerances, how a value is measured or computed. Set those
-  clauses aside as `test_method`: the test belongs in the test case of the requirement whose
-  result it verifies. In a test procedure, list only what states a result the product must meet.
+- A test condition that sets a value or names what to test to is an obligation: which test,
+  standard or annex applies, the supply voltage, temperature, duration, frequency range, sample or
+  exposure it prescribes, and every result the product must reach. List it. Only the mechanics of
+  a procedure that set no value of their own (where to place the sample, the order of the steps,
+  how to record or average a reading) are `test_method`: set those aside, they go in the test case.
 
 What to set aside:
 

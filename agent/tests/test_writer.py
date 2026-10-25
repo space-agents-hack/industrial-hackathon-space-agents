@@ -227,6 +227,15 @@ def test_a_paragraph_is_cut_into_one_clause_per_obligation() -> None:
         "It shall not be opened without a tool.",
     ]
     assert writer.clauses("2.1. 'Housing' means the outer shell.") == []
+    # A list whose "shall" is in the paragraph above, and an enumeration inside one sentence.
+    marks = (
+        "3.5. Bear the following markings.\n(a) On the module:\n(i) The trade name;\n(ii) The code."
+    )
+    assert writer.clauses(marks) == ["The trade name;", "The code."]
+    inline = "4.1. Each module shall bear (i) the trade name, (ii) the code and (iii) the voltage."
+    assert writer.clauses(inline) == ["the trade name", "the code", "the voltage."]
+    reference = "4.2. It shall carry the code as prescribed in paragraph 3.5. (a), (ii)."
+    assert writer.clauses(reference) == ["It shall carry the code as prescribed in paragraph 3.5."]
 
 
 def answering(*answers: dict[str, object]) -> tuple[FunctionModel, list[int]]:
