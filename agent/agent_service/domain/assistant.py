@@ -37,7 +37,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, FunctionToolset, RunContext, UsageLimits
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 
-from agent_service import providers
+from agent_service import providers, read_only
 from agent_service.domain import regulation_search
 from agent_service.domain.regulation_search import ProjectScope
 from agent_service.metering import Credential, Meter, metered
@@ -553,6 +553,9 @@ async def answer(
     if project is None:
         raise ChatRefused("No such project.", 404)
     org = project.organization_id
+    # Viewers may ask (SYS-39), but in a read-only organisation nobody makes it spend (SYS-47).
+    if await store.organization_read_only(org):
+        raise ChatRefused(read_only.REFUSAL, 409)
     if (refusal := await _over_cap(store, settings, org)) is not None:
         raise ChatRefused(refusal, 409)
 

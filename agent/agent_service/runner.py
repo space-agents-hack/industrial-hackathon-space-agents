@@ -50,7 +50,7 @@ from pydantic_ai.models.anthropic import AnthropicModelSettings
 from pydantic_ai.usage import RunUsage
 from pydantic_core import to_jsonable_python
 
-from agent_service import domain
+from agent_service import domain, read_only
 from agent_service.domain import case_ingest, ingest, subgoal, subgoal_review
 from agent_service.domain.figures import FigureStep
 from agent_service.metering import Credential, Meter, metered
@@ -87,6 +87,13 @@ async def prepare(store: RunStore, settings: Settings, run_id: UUID) -> Plan:
     run = await store.get_run(run_id)
     if run is None:
         raise RunNotFound(str(run_id))
+    if await store.organization_read_only(run.organization_id):
+        # Only a platform admin can put a run there (has_role counts everyone else as a viewer).
+        # A queued one fails with the reason, so it does not sit queued forever; any other is left
+        # as it is.
+        if run.status == "queued":
+            await _fail(store, run_id, read_only.REFUSAL, expected="queued")
+        raise CannotAdvance(read_only.REFUSAL)
 
     if run.status == "queued":
         config = await _config(store, settings, run)

@@ -72,6 +72,11 @@ async function Where() {
         ) : (
           <OrgSwitcher organizations={visible} currentId={current.id} />
         )}
+        {current.readOnly ? (
+          <span className="text-xs text-muted-foreground">
+            Read-only: everything can be opened, nothing can be changed, and no model is called.
+          </span>
+        ) : null}
       </div>
       <div className="grid gap-1">
         <span className="text-xs font-medium text-muted-foreground">Project</span>

@@ -38,6 +38,7 @@ class InMemorySearchStore:
     scopes: dict[UUID, ProjectScope] = field(default_factory=dict)
     refreshes: int = 0
     analyses: int = 0
+    read_only: set[UUID] = field(default_factory=set)
     matches: list[dict[str, object]] = field(default_factory=list)
     # What every match answers, best first, cut to k: the ranking is the SQL's, tested there.
     hits: list[Hit] = field(default_factory=list)
@@ -62,6 +63,9 @@ class InMemorySearchStore:
 
     async def provider_key(self, org: UUID, provider: str) -> str | None:
         return self.keys.get(provider)
+
+    async def organization_read_only(self, org: UUID) -> bool:
+        return org in self.read_only
 
     async def record_usage(self, rows: list[dict[str, Any]]) -> None:
         self.usage += rows

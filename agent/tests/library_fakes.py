@@ -56,6 +56,7 @@ class InMemoryLibraryStore:
     # Paths whose download from the bucket fails, as if the storage API did not answer.
     unreachable: set[str] = field(default_factory=set)
     closed: bool = False
+    read_only: set[UUID] = field(default_factory=set)
     # What figures.FigureStep reads and writes.
     models: dict[str, str] = field(default_factory=dict)
     descriptions: dict[tuple[UUID, str], Described] = field(default_factory=dict)
@@ -93,6 +94,9 @@ class InMemoryLibraryStore:
         return self.version(code, version_label, org).role
 
     # The LibraryStore interface.
+
+    async def organization_read_only(self, org: UUID) -> bool:
+        return org in self.read_only
 
     async def get_import(self, import_id: UUID) -> ImportRow | None:
         return self.imports.get(import_id)

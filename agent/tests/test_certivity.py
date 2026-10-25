@@ -456,3 +456,20 @@ async def test_checks_endpoint_takes_an_expected_file(client: TestClient) -> Non
     body = {"text": json.dumps(_expected()), "expected": _expected()}
     result = client.post("/checks", headers=AUTH, json=body).json()
     assert result["score"]["regulation_level"]["f1"] == 1.0
+
+
+def test_a_check_of_a_read_only_organisations_run_is_not_stored(
+    client: TestClient, store: InMemoryRunStore
+) -> None:
+    # Checked like any other, since no model is called, but it keeps the checks it has (SYS-47).
+    store.library[ORG] = _library()
+    store.read_only.add(ORG)
+    run_id = store.add_run("Write.", status="succeeded", org=ORG)
+    text = json.dumps(_expected())
+    store.outputs[run_id] = text
+
+    result = client.post("/checks", headers=AUTH, json={"text": text, "run_id": str(run_id)}).json()
+
+    assert result["valid"] is True
+    assert result["saved_as"] is None
+    assert store.checks == {}

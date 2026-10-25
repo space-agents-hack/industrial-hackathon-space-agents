@@ -29,7 +29,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from supabase_auth.errors import AuthApiError
 
-from agent_service import domain, metering, providers, runner
+from agent_service import domain, metering, providers, read_only, runner, storage_copies
 from agent_service.domain import (
     assistant,
     case_ingest,
@@ -332,6 +332,10 @@ async def ingest_case(
     if not files:
         await store.aclose()
         raise HTTPException(404, "No files in this case.")
+    if await store.organization_read_only(files[0].organization_id):
+        # Parsing can call a model (scanned pages, pictures), and it rewrites the case's blocks.
+        await store.aclose()
+        raise HTTPException(409, read_only.REFUSAL)
 
     async def work() -> dict[str, int]:
         org = files[0].organization_id
@@ -476,6 +480,38 @@ async def advance_index(
             await store.aclose()
 
     return StreamingResponse(body(), media_type="application/x-ndjson")
+
+
+# ------------------------------------------------------------------------------------------
+# Admin: files queued for copying inside Storage (agent_service/storage_copies.py). Called by
+# .github/workflows/demo-org.yml after scripts/demo-org.sql, again while `remaining` is not 0. Not
+# by the web: no page queues copies.
+# ------------------------------------------------------------------------------------------
+
+# Under Vercel's 800 s, with room for the count at the end. About 92 PDFs and a dozen case files
+# for the demo copy; a copy is one request each.
+STORAGE_COPY_SLICE_S = 240.0
+
+
+async def get_copy_queue(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> storage_copies.CopyQueue:
+    if not settings.supabase_url or not settings.supabase_secret_key:
+        raise HTTPException(503, "SUPABASE_URL and SUPABASE_SECRET_KEY are not configured.")
+    return await storage_copies.SupabaseCopyQueue.connect(
+        settings.supabase_url, settings.supabase_secret_key
+    )
+
+
+@app.post("/admin/storage-copies/advance", dependencies=[Depends(require_secret)])
+async def advance_storage_copies(
+    queue: Annotated[storage_copies.CopyQueue, Depends(get_copy_queue)],
+) -> dict[str, int]:
+    try:
+        progress = await storage_copies.advance(queue, slice_s=STORAGE_COPY_SLICE_S)
+    finally:
+        await queue.aclose()
+    return {"copied": progress.copied, "failed": progress.failed, "remaining": progress.remaining}
 
 
 # ------------------------------------------------------------------------------------------
@@ -677,7 +713,12 @@ async def certivity_checks(
         result = certivity.check(body.text, reference, expected=body.expected)
         source = None
         # A score against an answer key someone chose is theirs to read, not the draft's score.
-        if run and body.expected is None:
+        # A read-only organisation is checked like any other but keeps the checks it has (SYS-47).
+        if (
+            run
+            and body.expected is None
+            and not await store.organization_read_only(run.organization_id)
+        ):
             source = await _save_run_check(store, run, body.text, reference.commit, result)
     finally:
         await store.aclose()

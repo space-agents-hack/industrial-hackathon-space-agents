@@ -634,3 +634,17 @@ async def test_ranking_regulations_costs_one_embedding_and_one_search(settings: 
     assert [m["k"] for m in store.matches] == [regulation_search.RANK_PARAGRAPHS]
     assert store.matches[0]["versions"] == [a, b]
     assert [r.regulation_code for r in ranked] == ["X-A", "X-B"]
+
+
+async def test_a_read_only_library_is_not_indexed(index_settings: Settings) -> None:
+    # Vectors and summaries are paid calls; it keeps the ones it has (SYS-47).
+    store = InMemorySearchStore(keys={"openai": KEY}, read_only={ORG})
+    store.inputs = ["text 1"]
+    provider = Provider()
+
+    async with provider.client as http:
+        with pytest.raises(PermissionError, match="read-only"):
+            await index_library(store, http, index_settings, ORG)
+
+    assert provider.requests == []
+    assert store.vectors == {}

@@ -53,6 +53,8 @@ class InMemoryRunStore:
         self.endpoints: dict[tuple[UUID, str], Endpoint] = {}
         # Cost already spent this month per organisation, standing in for older runs' usage.
         self.spent: dict[UUID, float] = {}
+        # Organisations marked read-only (SYS-47).
+        self.read_only: set[UUID] = set()
         self.users: dict[UUID, tuple[str, str]] = {}
         self.outputs: dict[UUID, str | None] = {}
         self.errors: dict[UUID, str | None] = {}
@@ -425,6 +427,9 @@ class InMemoryRunStore:
     async def provider_endpoint(self, org: UUID, provider: str) -> Endpoint | None:
         return self.endpoints.get((org, provider))
 
+    async def organization_read_only(self, org: UUID) -> bool:
+        return org in self.read_only
+
     async def month_cost(self, org: UUID) -> float:
         # As private.usage_entries: the ledger, plus runs.usage for a run with no ledger rows.
         metered = {r["run_id"] for r in self.usage_rows}
@@ -518,6 +523,9 @@ class TextSearch:
     def __init__(self, store: InMemoryRunStore) -> None:
         self.store = store
         self.queries: list[str | None] = []
+
+    async def organization_read_only(self, org: UUID) -> bool:
+        return await self.store.organization_read_only(org)
 
     async def provider_key(self, org: UUID, provider: str) -> str | None:
         return None

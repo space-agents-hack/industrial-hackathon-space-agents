@@ -53,6 +53,7 @@ from uuid import UUID
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from agent_service import read_only
 from agent_service.domain.figures import FigureStore, Outcome
 from agent_service.domain.paragraphs import EXTRACTOR, Extraction, ExtractionProblem, extract
 from agent_service.domain.pdf_figures import Figure
@@ -403,6 +404,8 @@ class LibraryStore(SplitStore, Protocol):
 
     async def get_import(self, import_id: UUID) -> ImportRow | None: ...
 
+    async def organization_read_only(self, org: UUID) -> bool: ...
+
     async def claim_import(
         self, import_id: UUID, expected: ImportStatus, *, idle_s: float = 0
     ) -> bool:
@@ -474,6 +477,10 @@ async def prepare(store: LibraryStore, settings: Settings, import_id: UUID) -> I
     job = await store.get_import(import_id)
     if job is None:
         raise ImportNotFound(str(import_id))
+    # Before the claim, so a refused import is left as it was: an import describes figures with a
+    # model, which a read-only organisation never pays for (SYS-47).
+    if await store.organization_read_only(job.organization_id):
+        raise CannotAdvance(read_only.REFUSAL)
     if job.status in ("queued", "paused"):
         if not await store.claim_import(import_id, job.status):
             raise CannotAdvance("Another request picked this import up first.")

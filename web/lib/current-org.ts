@@ -9,6 +9,7 @@ import {
   type OrganizationEntry,
   type Permissions,
   NO_ACCESS,
+  isReadOnly,
   parseAccess,
   permissionsIn,
   pickCurrentOrganization,
@@ -84,13 +85,17 @@ export async function actsInRunOrganization(
   return permissionsIn(await fetchAccess(supabase), run.organization_id).startRuns ? "yes" : "no";
 }
 
+export const READ_ONLY_ASSISTANT =
+  "This organisation is read-only: the assistant is off here, because every answer is a model call.";
+
 // Whether the person may read a project's organisation: the assistant (app/api/chat) reads the
 // project with the secret key, so this is checked before the agent is called. "missing" also when
-// RLS hides the project, which is the same answer for the person.
+// RLS hides the project, which is the same answer for the person. "read_only": they may read it,
+// but nobody asks the assistant there (SYS-47); the agent refuses it too.
 export async function readsProjectOrganization(
   supabase: SupabaseClient<Database>,
   projectId: string,
-): Promise<"yes" | "no" | "missing"> {
+): Promise<"yes" | "no" | "missing" | "read_only"> {
   const { data: project, error } = await supabase
     .from("projects")
     .select("organization_id")
@@ -98,7 +103,9 @@ export async function readsProjectOrganization(
     .maybeSingle();
   if (error) console.error(`could not read project ${projectId}`, error);
   if (!project) return "missing";
-  return permissionsIn(await fetchAccess(supabase), project.organization_id).read ? "yes" : "no";
+  const access = await fetchAccess(supabase);
+  if (!permissionsIn(access, project.organization_id).read) return "no";
+  return isReadOnly(access, project.organization_id) ? "read_only" : "yes";
 }
 
 // The same for a case: the agent parses with the secret key, so the role is checked here.

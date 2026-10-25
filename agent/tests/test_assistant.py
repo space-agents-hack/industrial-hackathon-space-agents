@@ -477,3 +477,16 @@ def test_post_chat_of_an_unknown_project_is_404(client: TestClient) -> None:
         json={"project_id": str(uuid4()), "messages": [{"role": "user", "content": "x"}]},
     )
     assert response.status_code == 404
+
+
+async def test_a_read_only_organisation_gets_no_answer(store, projects, settings) -> None:
+    # Its viewers may read everything, but a question would be a model call (SYS-47).
+    project_id, _ = await finished_run(store, projects, settings)
+    store.read_only.add(ORG)
+
+    with pytest.raises(ChatRefused) as refused:
+        await assistant.answer(store, projects, settings, project_id, Page(), ask("anything"))
+
+    assert refused.value.status == 409
+    assert "read-only" in str(refused.value)
+    assert not store.usage_rows

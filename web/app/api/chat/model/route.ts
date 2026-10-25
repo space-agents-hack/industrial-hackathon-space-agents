@@ -1,6 +1,6 @@
 import { agentFailure, fail } from "@/lib/admin-route";
 import { assistantModel } from "@/lib/agent-admin";
-import { readsProjectOrganization } from "@/lib/current-org";
+import { READ_ONLY_ASSISTANT, readsProjectOrganization } from "@/lib/current-org";
 import { createClient, getSessionUser } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/validation";
 
@@ -16,6 +16,7 @@ export async function GET(request: Request) {
   const reads = await readsProjectOrganization(supabase, projectId);
   if (reads === "missing") return fail("Unknown project.", 404);
   if (reads === "no") return fail("You cannot read this project's organisation.", 403);
+  if (reads === "read_only") return fail(READ_ONLY_ASSISTANT, 409);
 
   try {
     return Response.json({ model: await assistantModel(projectId) });

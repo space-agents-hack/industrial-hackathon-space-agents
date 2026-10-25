@@ -642,3 +642,16 @@ async def test_files_are_downloaded_several_at_once(
 
     assert await run(library, settings, library.add_import(INDEX), SlowServer()) == "succeeded"
     assert SlowServer.peak == min(len(BODIES), settings.import_concurrency) > 1
+
+
+async def test_an_import_of_a_read_only_organisation_is_not_claimed(
+    library: InMemoryLibraryStore, settings: Settings
+) -> None:
+    # Its figures would be described by a model (SYS-47); left queued, as it was.
+    library.read_only.add(ORG)
+    import_id = library.add_import(INDEX)
+
+    with pytest.raises(CannotAdvance, match="read-only"):
+        await regulations.prepare(library, settings, import_id)
+
+    assert library.imports[import_id].status == "queued"

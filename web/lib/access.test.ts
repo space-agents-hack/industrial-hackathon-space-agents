@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   type Access,
   hasNoAccess,
+  isReadOnly,
   parseAccess,
   permissionsFor,
   permissionsIn,
@@ -102,4 +103,25 @@ test("signed in but in no organisation means no access, unless a platform admin"
   assert.equal(hasNoAccess({ platformAdmin: false, organizations: [], allOrganizations: [] }), true);
   assert.equal(hasNoAccess({ platformAdmin: true, organizations: [], allOrganizations: [] }), false);
   assert.equal(hasNoAccess(member), false);
+});
+
+test("a read-only organisation is flagged only by a literal true, for members and platform admins", () => {
+  const access = parseAccess({
+    platform_admin: true,
+    organizations: [
+      { id: A, name: "certivity", role: "viewer", read_only: true },
+      { id: B, name: "Client", role: "admin", read_only: "true" },
+    ],
+    all_organizations: [
+      { id: A, name: "certivity", read_only: true },
+      { id: C, name: "Other", read_only: false },
+    ],
+  });
+  assert.deepEqual(access.organizations[0], { id: A, name: "certivity", role: "viewer", readOnly: true });
+  assert.equal(isReadOnly(access, A), true);
+  assert.equal(isReadOnly(access, B), false);
+  assert.equal(isReadOnly(access, C), false);
+  assert.equal(visibleOrganizations(access).find((o) => o.id === A)?.readOnly, true);
+  // The role the database reports is already the one in effect: a viewer starts nothing.
+  assert.equal(permissionsIn({ ...access, platformAdmin: false }, A).startRuns, false);
 });

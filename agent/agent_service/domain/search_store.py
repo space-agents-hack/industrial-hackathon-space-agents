@@ -18,6 +18,7 @@ from agent_service.domain.regulation_search import (
     VersionToSummarize,
 )
 from agent_service.domain.regulations import BUCKET
+from agent_service.read_only import is_read_only
 
 
 def _rows(response: Any) -> list[dict[str, Any]]:
@@ -48,6 +49,9 @@ class SupabaseSearchStore:
     @classmethod
     async def connect(cls, url: str, secret_key: str) -> "SupabaseSearchStore":
         return cls(await acreate_client(url, secret_key))
+
+    async def organization_read_only(self, org: UUID) -> bool:
+        return await is_read_only(self._db, org)
 
     async def record_usage(self, rows: list[dict[str, Any]]) -> None:
         await self._db.table("model_usage").insert(rows, returning=ReturnMethod.minimal).execute()

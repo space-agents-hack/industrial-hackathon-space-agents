@@ -42,6 +42,13 @@ database, checked by row-level security and by the functions that change things
 - **Member**: starts runs and decides approvals.
 - **Viewer**: reads runs; changes nothing.
 
+A **read-only** organisation (`organizations.read_only`, SYS-47) is one where every member counts
+as a viewer, whatever their role, and the agent starts nothing that calls a model: no run, no
+assistant answer, no case parsing, no import, no indexing. Only SQL sets it. The judges' demo
+account is a viewer in one, `certivity`, made by `.github/workflows/demo-org.yml` from a copy of
+team-09's library and its dev-rear-lamp project (`scripts/demo-org.sql`); the files are copied by
+the agent from the queue `storage_copies`, since only it holds the Storage key.
+
 Settings have their defaults in the agent's environment; an organisation's row stores only what
 it changed. Provider keys live in Supabase Vault; the browser sees provider and last four
 characters, only the agent reads a key back. Ollama is the exception to "one key": it is a server

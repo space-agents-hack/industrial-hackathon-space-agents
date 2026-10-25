@@ -566,18 +566,21 @@ export type Database = {
           created_by: string | null
           id: string
           name: string
+          read_only: boolean
         }
         Insert: {
           created_at?: string
           created_by?: string | null
           id?: string
           name: string
+          read_only?: boolean
         }
         Update: {
           created_at?: string
           created_by?: string | null
           id?: string
           name?: string
+          read_only?: boolean
         }
         Relationships: []
       }
@@ -1497,6 +1500,47 @@ export type Database = {
           },
           {
             foreignKeyName: "runs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      storage_copies: {
+        Row: {
+          bucket_id: string
+          copied_at: string | null
+          created_at: string
+          error: string | null
+          id: number
+          organization_id: string
+          source_path: string
+          target_path: string
+        }
+        Insert: {
+          bucket_id: string
+          copied_at?: string | null
+          created_at?: string
+          error?: string | null
+          id?: never
+          organization_id: string
+          source_path: string
+          target_path: string
+        }
+        Update: {
+          bucket_id?: string
+          copied_at?: string | null
+          created_at?: string
+          error?: string | null
+          id?: never
+          organization_id?: string
+          source_path?: string
+          target_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "storage_copies_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"

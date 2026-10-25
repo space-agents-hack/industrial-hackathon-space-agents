@@ -31,11 +31,14 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
 
 // What `my_access()` returns, parsed. `organizations` are the ones the person is an active
 // member of, with their role; `allOrganizations` is filled only for a platform admin.
-export type OrganizationEntry = { id: string; name: string; role: Role | null };
+// `readOnly` is present only for a read-only organisation (SYS-47): the database already counts
+// every member there as a viewer, so `role` says "viewer"; the flag says why, and that nobody
+// may ask the assistant there either, since an answer is a model call.
+export type OrganizationEntry = { id: string; name: string; role: Role | null; readOnly?: true };
 export type Access = {
   platformAdmin: boolean;
   organizations: OrganizationEntry[];
-  allOrganizations: { id: string; name: string }[];
+  allOrganizations: { id: string; name: string; readOnly?: true }[];
 };
 
 export const NO_ACCESS: Access = { platformAdmin: false, organizations: [], allOrganizations: [] };
@@ -48,16 +51,27 @@ function entries(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter(isRecord) : [];
 }
 
+// Only the literal true: a malformed answer must not hide the assistant from everyone, and the
+// database refuses the writes whatever the page shows.
+function readOnlyFlag(o: Record<string, unknown>): { readOnly?: true } {
+  return o.read_only === true ? { readOnly: true } : {};
+}
+
 // Anything malformed is dropped rather than trusted: an entry without an id cannot be selected,
 // and an unknown role grants nothing.
 export function parseAccess(value: unknown): Access {
   if (!isRecord(value)) return NO_ACCESS;
   const organizations = entries(value.organizations)
     .filter((o) => typeof o.id === "string" && typeof o.name === "string")
-    .map((o) => ({ id: o.id as string, name: o.name as string, role: isRole(o.role) ? o.role : null }));
+    .map((o) => ({
+      id: o.id as string,
+      name: o.name as string,
+      role: isRole(o.role) ? o.role : null,
+      ...readOnlyFlag(o),
+    }));
   const allOrganizations = entries(value.all_organizations)
     .filter((o) => typeof o.id === "string" && typeof o.name === "string")
-    .map((o) => ({ id: o.id as string, name: o.name as string }));
+    .map((o) => ({ id: o.id as string, name: o.name as string, ...readOnlyFlag(o) }));
   return { platformAdmin: value.platform_admin === true, organizations, allOrganizations };
 }
 
@@ -106,6 +120,13 @@ export function permissionsFor(role: Role | null, platformAdmin: boolean): Permi
 export function permissionsIn(access: Access, organizationId: string | null | undefined): Permissions {
   const role = access.organizations.find((o) => o.id === organizationId)?.role ?? null;
   return permissionsFor(role, access.platformAdmin);
+}
+
+// A read-only organisation (SYS-47), whether the person is a member or a platform admin looking in.
+export function isReadOnly(access: Access, organizationId: string | null | undefined): boolean {
+  return [...access.organizations, ...access.allOrganizations].some(
+    (o) => o.id === organizationId && o.readOnly === true,
+  );
 }
 
 // The admin area is in the nav for whoever manages the current organisation, and always for a

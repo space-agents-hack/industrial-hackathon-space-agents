@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Assistant } from "@/components/assistant";
+import { getCurrentOrg } from "@/lib/current-org";
 import { getCurrentProject } from "@/lib/current-project";
 
 // Everything in this group needs a session. proxy.ts enforces that; this layout only adds the
@@ -23,9 +24,10 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
 }
 
 // The assistant's bubble, on every page once the person is inside a project (SYS-39, #31). Keyed
-// by project: switching project starts that project's own conversation.
+// by project: switching project starts that project's own conversation. Not in a read-only
+// organisation (SYS-47): an answer is a model call, which the API and the agent refuse there.
 async function ProjectAssistant() {
-  const project = await getCurrentProject();
-  if (!project) return null;
+  const [project, { current }] = await Promise.all([getCurrentProject(), getCurrentOrg()]);
+  if (!project || current?.readOnly) return null;
   return <Assistant key={project.id} projectId={project.id} projectName={project.name} />;
 }

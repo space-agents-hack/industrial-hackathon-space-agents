@@ -13,6 +13,7 @@ from supabase import AsyncClient, acreate_client
 from supabase_auth.errors import AuthApiError
 
 from agent_service.providers import Endpoint
+from agent_service.read_only import is_read_only
 from agent_service.records import (
     Approval,
     ApprovalRequest,
@@ -217,6 +218,10 @@ class RunStore(Protocol):
 
     async def provider_endpoint(self, org: UUID, provider: str) -> Endpoint | None:
         """The organisation's own server for this provider (Ollama), or None if it set none."""
+        ...
+
+    async def organization_read_only(self, org: UUID) -> bool:
+        """True for a read-only organisation (agent_service/read_only.py): start nothing for it."""
         ...
 
     async def month_cost(self, org: UUID) -> float:
@@ -752,6 +757,9 @@ class SupabaseRunStore:
             username=row.get("username"),
             secret=row.get("secret"),
         )
+
+    async def organization_read_only(self, org: UUID) -> bool:
+        return await is_read_only(self._db, org)
 
     async def month_cost(self, org: UUID) -> float:
         # The same entries as the usage page sums (migration 20261024300000_model_usage), so the

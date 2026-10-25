@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pypdf import PdfReader
 
-from agent_service import metering, providers
+from agent_service import metering, providers, read_only
 from agent_service.metering import Credential, Meter
 from agent_service.settings import Settings
 from agent_service.slices import each_until
@@ -347,6 +347,7 @@ class ProjectScope:
 
 
 class SearchStore(Protocol):
+    async def organization_read_only(self, org: UUID) -> bool: ...
     async def record_usage(self, rows: list[dict[str, Any]]) -> None: ...
     async def provider_key(self, org: UUID, provider: str) -> str | None: ...
     async def project_scope(self, case_id: UUID) -> ProjectScope | None: ...
@@ -423,6 +424,10 @@ async def index_library(
     *,
     slice_s: float | None = None,
 ) -> Progress:
+    # Vectors and summaries are model calls: a read-only organisation keeps the ones it has
+    # (SYS-47). Raised like a provider's refusal, so the caller reports it the same way.
+    if await store.organization_read_only(org):
+        raise PermissionError(read_only.REFUSAL)
     deadline = time.monotonic() + (settings.index_slice_s if slice_s is None else slice_s)
     progress = Progress()
     meter = Meter(org)

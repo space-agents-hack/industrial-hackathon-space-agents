@@ -349,3 +349,15 @@ def test_a_long_tool_result_is_cut_but_stays_json_a_person_can_read() -> None:
     assert isinstance(clipped, list) and clipped[0]["regulation"] == "UN R0"
     assert clipped[0]["pages"] == 0 and clipped[0]["scope"].endswith("…")
     assert clipped[-1] == f"… {300 - (len(clipped) - 1)} more not shown here (300 in all)"
+
+
+async def test_a_run_in_a_read_only_organisation_fails_before_any_model(store, settings) -> None:
+    # Only a platform admin can queue one there (SYS-47); it ends with the reason, never running.
+    store.read_only.add(ORG)
+    run_id = store.add_run(QUIET)
+
+    with pytest.raises(runner.CannotAdvance, match="read-only"):
+        await runner.prepare(store, settings, run_id)
+
+    assert store.runs[run_id].status == "failed"
+    assert not store.usage_rows

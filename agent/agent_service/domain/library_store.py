@@ -23,6 +23,7 @@ from agent_service.domain.regulations import (
     VersionToSplit,
 )
 from agent_service.providers import Endpoint
+from agent_service.read_only import is_read_only
 
 # PostgREST's page size (supabase/config.toml `max_rows`, and the hosted default).
 _PAGE = 1000
@@ -41,6 +42,9 @@ class SupabaseLibraryStore:
     @classmethod
     async def connect(cls, url: str, secret_key: str) -> "SupabaseLibraryStore":
         return cls(await acreate_client(url, secret_key))
+
+    async def organization_read_only(self, org: UUID) -> bool:
+        return await is_read_only(self._db, org)
 
     async def get_import(self, import_id: UUID) -> ImportRow | None:
         res = (

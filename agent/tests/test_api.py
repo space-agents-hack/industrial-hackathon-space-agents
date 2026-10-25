@@ -857,3 +857,19 @@ def test_an_organisation_on_its_own_server_never_sends_case_files_to_a_hosted_mo
     client.post(f"/cases/{case_id}/ingest", headers=AUTH)
 
     assert (seen[0] is not None) == transcribes
+
+
+def test_ingest_refuses_a_read_only_organisation(
+    client: TestClient, store: InMemoryRunStore
+) -> None:
+    # Parsing can call a model and rewrites the case's blocks (SYS-47).
+    case_id = uuid4()
+    store.add_case_file(case_id, "spec.md", "md", b"M1")
+    store.read_only.add(ORG)
+
+    response = client.post(f"/cases/{case_id}/ingest", headers=AUTH)
+
+    assert response.status_code == 409
+    assert "read-only" in response.json()["detail"]
+    assert all(f.status == "pending" for f in store.cases[case_id])
+    assert store.closed

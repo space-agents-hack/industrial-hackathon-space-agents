@@ -6,8 +6,14 @@ name: Demo organisation
 # password, not the API's secret key, as for Certivity's reference files in deploy.yml.
 #
 #   inventory  reads only: what the source holds, so the copy is chosen from facts.
+#   copy       scripts/demo-org.sql (one transaction: the organisation, read-only, its rows and the
+#              account), then the agent copies the files it queued, until none is left.
 #
-# Shares the release queue: a copy never runs while migrations are being applied.
+# Shares the release queue: a copy never runs while migrations are being applied, and the agent
+# it calls is the one the last release promoted.
+#
+# The password is an input, not a secret, because it is meant to be handed out; it is masked in
+# the log all the same. Leave it empty to keep an existing account's password.
 
 on:
   workflow_dispatch:
@@ -15,7 +21,7 @@ on:
       step:
         description: What to do
         type: choice
-        options: [inventory]
+        options: [inventory, copy]
         default: inventory
       source:
         description: Organisation to copy from (its name)
@@ -26,9 +32,33 @@ on:
       email:
         description: Demo account's email
         default: demo@certivity.demo
+      target:
+        description: Organisation to create, read-only (its name)
+        default: certivity
+      project:
+        description: Project to copy, with all its cases and files
+        default: dev-rear-lamp
+      main_runs:
+        description: Latest succeeded requirement drafts to copy
+        default: "2"
+      review_runs:
+        description: Latest succeeded sub-goal reviews to copy
+        default: "2"
+      password:
+        description: Demo account's password (empty keeps the current one)
+        required: false
+      replace:
+        description: Rebuild the target if it exists (only if it is read-only)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+
+env:
+  # The same pins as deploy.yml.
+  VERCEL_CLI_VERSION: "63.1.2"
+  NODE_VERSION: "24"
 
 concurrency:
   group: production-release
@@ -59,6 +89,7 @@ jobs:
           echo "DB_URL=$db_url" >> "$GITHUB_ENV"
 
       - name: Inventory
+        if: inputs.step == 'inventory'
         shell: bash
         env:
           SOURCE: ${{ inputs.source }}
@@ -69,3 +100,63 @@ jobs:
           psql "$DB_URL" -v ON_ERROR_STOP=1 -v source="$SOURCE" -v case_like="$CASE_LIKE" \
             -v email="$EMAIL" -f scripts/demo-org-inventory.sql | tee "$out"
           { echo '```'; cat "$out"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Copy the rows and create the account
+        if: inputs.step == 'copy'
+        shell: bash
+        env:
+          SOURCE: ${{ inputs.source }}
+          TARGET: ${{ inputs.target }}
+          PROJECT: ${{ inputs.project }}
+          MAIN_RUNS: ${{ inputs.main_runs }}
+          REVIEW_RUNS: ${{ inputs.review_runs }}
+          EMAIL: ${{ inputs.email }}
+          REPLACE: ${{ inputs.replace && '1' || '0' }}
+          DEMO_PASSWORD: ${{ inputs.password }}
+        run: |
+          [[ -z "$DEMO_PASSWORD" ]] || echo "::add-mask::$DEMO_PASSWORD"
+          out="$RUNNER_TEMP/copy.txt"
+          # The password reaches psql through the environment only (\getenv in the script).
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -v source="$SOURCE" -v target="$TARGET" \
+            -v project="$PROJECT" -v main_runs="$MAIN_RUNS" -v review_runs="$REVIEW_RUNS" \
+            -v email="$EMAIL" -v replace="$REPLACE" -f scripts/demo-org.sql 2>&1 | tee "$out"
+          { echo '```'; cat "$out"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-node@v7
+        if: inputs.step == 'copy'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Copy the files
+        if: inputs.step == 'copy'
+        shell: bash
+        working-directory: agent
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_AGENT_PROJECT_ID }}
+          SHARED_SECRET: ${{ secrets.AGENT_SHARED_SECRET }}
+        run: |
+          npm install --global --silent "vercel@${VERCEL_CLI_VERSION}"
+          # The agent's production deployment (vercel curl's default), with the shared secret as
+          # the web sends it. A header file, so the secret is in no command line.
+          headers="$RUNNER_TEMP/agent-headers"
+          trap 'rm -f "$headers"' EXIT
+          printf 'Authorization: Bearer %s\n' "$SHARED_SECRET" > "$headers"
+          stuck=0
+          for round in $(seq 1 20); do
+            answer="$(vercel curl /admin/storage-copies/advance -- \
+              --fail-with-body --silent --show-error --request POST --header "@$headers")"
+            echo "round $round: $answer"
+            remaining="$(jq -r .remaining <<<"$answer")"
+            copied="$(jq -r .copied <<<"$answer")"
+            [[ "$remaining" == "0" ]] && break
+            # Only failures left, tried again with nothing copied: say so instead of looping.
+            if [[ "$copied" == "0" ]]; then stuck=$((stuck + 1)); else stuck=0; fi
+            if (( stuck >= 2 )); then
+              echo "::error::$remaining files could not be copied; their reasons are in public.storage_copies.error."
+              exit 1
+            fi
+          done
+          echo "Files copied; $remaining left." >> "$GITHUB_STEP_SUMMARY"
+          [[ "$remaining" == "0" ]]
