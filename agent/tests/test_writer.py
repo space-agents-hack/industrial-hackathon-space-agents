@@ -472,3 +472,12 @@ def test_a_reference_inside_an_annex_resolves_in_that_annex_first() -> None:
     [job] = writer.translation_jobs(window, found, [body, same_annex, rule])
 
     assert [p.label for p in job.referred_to()] == ["Annex 3 1"]
+
+
+def test_an_uncovered_obligation_a_search_found_says_for_what() -> None:
+    v = version()
+    missed = paragraph(1, 5, "It must be fitted.")
+
+    out = writer.uncovered([missed], [], v, focus={missed.id: ["an LED"]})
+
+    assert out == [{"regulation": "UN R148", "paragraph": "5.1", "page": 5, "found_by": ["an LED"]}]

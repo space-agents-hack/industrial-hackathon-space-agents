@@ -1027,14 +1027,18 @@ def uncovered(
     rows: Sequence[Requirement],
     version: LibraryVersion,
     set_aside: Mapping[UUID, str] | None = None,
+    focus: Mapping[UUID, Sequence[str]] | None = None,
 ) -> list[dict[str, Any]]:
     """Obligation paragraphs ("shall", "must") of a read version that no requirement cites, less
     those a writer set aside clause by clause (`set_aside`): a writer that judged a paragraph a
-    test method or a restatement in its window decided it, and the check does not undo that."""
+    test method or a restatement in its window decided it, and the check does not undo that. One
+    that a search for the profile found (`focus`) says for which entries, as `found_by`."""
     cited = {r.paragraph_id for r in rows}
     skip = set_aside or {}
+    marks = focus or {}
     return [
         {"regulation": version.regulation, "paragraph": p.label, "page": p.page_start}
+        | ({"found_by": list(marks[p.id][:_FOCUS_SHOWN])} if p.id in marks else {})
         for p in paragraphs
         if p.kind == "paragraph"
         and p.label

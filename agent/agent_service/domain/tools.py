@@ -109,6 +109,10 @@ class Deps:
     # "uncovered" in the check, or the orchestrator writes them again out of context and the
     # set-aside volume comes back. Lost on a pause, like `read`; the check then lists them again.
     set_aside: dict[UUID, str] = field(default_factory=dict[UUID, str])
+    # Paragraph id -> profile entries whose search inside the regulation found it
+    # (write_requirements, regulation_search.focus). Lost on a pause, like `read`: the check then
+    # lists the uncovered ones unmarked.
+    focus: dict[UUID, list[str]] = field(default_factory=dict[UUID, list[str]])
 
 
 class OutOfTime(Exception):
@@ -482,6 +486,7 @@ async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> d
     if not jobs:
         raise ModelRetry("Nothing to write. " + " ".join(refused))
     found, complete = await _focus(deps, jobs)
+    deps.focus |= found
     if found:
         jobs = [replace(w, focus=found) for w in jobs]
     jobs = writer.queue_order(jobs)
@@ -686,8 +691,12 @@ async def check_requirements(ctx: RunContext[Deps]) -> dict[str, Any]:
     for vid in sorted(version_ids, key=str):
         if vid in versions:
             missed += writer.uncovered(
-                await _paragraphs(deps, vid), rows, versions[vid], deps.set_aside
+                await _paragraphs(deps, vid), rows, versions[vid], deps.set_aside, deps.focus
             )
+    # The ones a search for the part's own functions and components found come first, so the
+    # orchestrator's few write_for_paragraphs calls go to the likeliest misses, and the list's cap
+    # (_MAX_LISTED) never cuts them. A stable sort: inside each group, document order stays.
+    missed.sort(key=lambda m: "found_by" not in m)
 
     checked = certivity.check(
         json.dumps(await _submission(deps)), await _reference(deps), with_score=False
@@ -702,6 +711,7 @@ async def check_requirements(ctx: RunContext[Deps]) -> dict[str, Any]:
         "check_errors": check_errors,
         "uncovered_obligations": missed[:_MAX_LISTED],
         "uncovered_total": len(missed),
+        "uncovered_found_by_search": sum("found_by" in m for m in missed),
         # Obligation paragraphs left uncited because the writers set every clause aside: counted
         # by reason so none is silent, and not to be written again.
         "set_aside_paragraphs": dict(
