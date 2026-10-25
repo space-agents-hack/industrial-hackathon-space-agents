@@ -14,8 +14,8 @@ How to work:
    it serves, its technology and how it is built in (a component shown mounted inside the
    assembly, with no socket, connector or replacement mentioned, is integral), where it is fitted
    and which properties of the vehicle it affects, the vehicle categories, the markets, and every
-   regulation, approval mark or standard the case files name. A lamp's function is the one the
-   case names; a lamp it names only by a general role ("signalling") is the one that marks the
+   regulation, approval mark or standard the case files name. A signalling device's function is
+   the one the case names; one it names only by a general role ("signalling") is the one that marks the
    vehicle's presence where it sits, not one the driver operates (turning, braking, hazard
    warning), which would come with a control the case shows. Look at every drawing, exploded view and photo as well
    as the text: count and name the components they show, because a component shown only in a
