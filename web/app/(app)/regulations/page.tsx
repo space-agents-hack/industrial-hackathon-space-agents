@@ -11,10 +11,12 @@ import { buttonVariants } from "@/components/ui/button";
 import { ClearLibrary, DeleteRegulation } from "@/components/regulations/delete-regulations";
 import { type ImportView, ImportPanel } from "@/components/regulations/import-panel";
 import { IndexPanel } from "@/components/regulations/index-panel";
+import { LazyFigures } from "@/components/regulations/lazy-figures";
 import { hasNoAccess } from "@/lib/access";
 import { agentHealth } from "@/lib/agent-admin";
 import { getCurrentOrg } from "@/lib/current-org";
 import { getCurrentProject } from "@/lib/current-project";
+import { countFigures } from "@/lib/regulation-figures";
 import {
   DEFAULT_EMBEDDING_MODEL,
   DIMENSIONS,
@@ -77,6 +79,9 @@ type Version = {
   paragraphCount: number | null;
   extractionError: string | null;
   summary: VersionSummary;
+  // Pictures in the PDF (regulation_figures), and how many of them the vision model has not read.
+  figures: number;
+  figuresMissing: number;
 };
 
 async function Regulations() {
@@ -91,11 +96,11 @@ async function Regulations() {
   // Each organisation has its own library (ADR-0006); a project uses all of it or a chosen part
   // (SYS-32), and this page shows that part (SYS-36). RLS lets a platform admin read every library,
   // so the filter is what keeps this page to the organisation in the header.
-  const [{ data, error }, scope, indexStatus, chosenEmbedding, health, latestImport, citations] = await Promise.all([
+  const [{ data, error }, scope, indexStatus, chosenEmbedding, health, latestImport, citations, figureCounts] = await Promise.all([
     supabase
       .from("regulations")
       .select(
-        "id, code, kind, title, regulation_versions(id, version_label, role, status, size_bytes, pdf_path, paragraph_count, extraction_error, sha256, scope_summary, scope_keywords, summary_model, summarized_at, summary_sha256)",
+        "id, code, kind, title, regulation_versions(id, version_label, role, status, size_bytes, pdf_path, paragraph_count, extraction_error, figures_missing, sha256, scope_summary, scope_keywords, summary_model, summarized_at, summary_sha256)",
       )
       .eq("organization_id", current.id),
     supabase
@@ -123,6 +128,7 @@ async function Regulations() {
     permissions.manage
       ? supabase.rpc("regulation_citation_counts", { org: current.id })
       : Promise.resolve({ data: [], error: null }),
+    countFigures(supabase, current.id),
   ]);
   if (citations.error) console.error("Regulations: counting citations failed", citations.error);
   if (indexStatus.error) console.error("Regulations: reading the index status failed", indexStatus.error);
@@ -222,6 +228,8 @@ async function Regulations() {
                     paragraphCount: v.paragraph_count,
                     extractionError: v.extraction_error,
                     summary: versionSummary(v),
+                    figures: figureCounts.get(v.id) ?? 0,
+                    figuresMissing: v.figures_missing,
                   }))
                   .sort((a, b) => a.versionLabel.localeCompare(b.versionLabel, "en", { numeric: true }));
                 return (
@@ -248,7 +256,13 @@ async function Regulations() {
                         blocked={deleteBlocked}
                       />
                     ) : null}
-                    <IndexDetails versions={versions} status={status} model={embeddingModel} />
+                    <IndexDetails
+                      org={current.id}
+                      versions={versions}
+                      links={links}
+                      status={status}
+                      model={embeddingModel}
+                    />
                   </li>
                 );
               })}
@@ -315,22 +329,27 @@ function VersionLink({ version, href }: { version: Version; href: string | undef
   );
 }
 
-// What the agent knows about each version before it opens one: the scope summary it reads to choose
-// regulations, and how much of the version vector search can find (#37). Collapsed: 92 summaries
-// open at once would bury the list.
+// What the agent knows about each version before it opens one: the scope summary and keywords it
+// reads to choose regulations, what the vision model read in the PDF's pictures (#52), and how much
+// of the version vector search can find (#37), each with the model that made it. Collapsed: 92
+// summaries open at once would bury the list.
 function IndexDetails({
+  org,
   versions,
+  links,
   status,
   model,
 }: {
+  org: string;
   versions: Version[];
+  links: ReadonlyMap<string, string>;
   status: ReadonlyMap<string, VersionIndex>;
   model: string;
 }) {
   const key = vectorKey(model);
   return (
     <details className="w-full text-xs">
-      <summary className="cursor-pointer text-muted-foreground">Summary and search index</summary>
+      <summary className="cursor-pointer text-muted-foreground">Summary, keywords, figures and search index</summary>
       <div className="mt-2 grid gap-3">
         {versions.map((version) => {
           const s = version.summary;
@@ -343,23 +362,29 @@ function IndexDetails({
                 {version.versionLabel}
                 {version.role ? ` ${version.role}` : ""}
               </span>
+              {/* The keywords are written in the same call as the summary (agent
+                  regulation_search.py), so one model name covers both. */}
               <span>
-                <span className="text-muted-foreground">Scope summary: </span>
-                {s.summary === null ? (
-                  <span className="text-attention">none yet. The agent sees only the code and title.</span>
-                ) : (
-                  <>
-                    {s.summary}{" "}
-                    <span className="text-muted-foreground">
+                <span className="text-muted-foreground">
+                  Scope summary and keywords
+                  {s.summary !== null ? (
+                    <>
+                      {" "}
                       (<span className="font-mono">{s.model ?? "unknown model"}</span>
                       {s.summarizedAt ? (
                         <>
                           , <RelativeTime iso={s.summarizedAt} />
                         </>
                       ) : null}
-                      {s.stale ? ", from an older file: it is written again at the next indexing" : ""})
-                    </span>
-                  </>
+                      {s.stale ? ", from an older file: written again at the next indexing" : ""})
+                    </>
+                  ) : null}
+                  :{" "}
+                </span>
+                {s.summary === null ? (
+                  <span className="text-attention">none yet. The agent sees only the code and title.</span>
+                ) : (
+                  s.summary
                 )}
               </span>
               {s.keywords.length > 0 ? (
@@ -368,6 +393,13 @@ function IndexDetails({
                   {s.keywords.join(", ")}
                 </span>
               ) : null}
+              <LazyFigures
+                org={org}
+                versionId={version.id}
+                count={version.figures}
+                missing={version.figuresMissing}
+                pdfLink={links.get(version.pdfPath) ?? null}
+              />
               <span>
                 <span className="text-muted-foreground">Vectors: </span>
                 {v ? (
