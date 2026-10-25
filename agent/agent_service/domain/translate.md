@@ -9,13 +9,18 @@ applies to this product: write them, do not judge them again.
 
 For each obligation, write one requirement, and record them with `record_translations`, citing
 the `[#n]` the obligation is headed with and listing its clause ids in `clauses`. The other agent
-has already split the obligations one per list item, table row or separate quantity: do not split
-one again, and do not add requirements it did not list. The one exception: an obligation that
+has already split the obligations one per constraint the text states: do not split one
+again, and do not add requirements it did not list. The one exception: an obligation that
 lists several clauses, each of which obliges something of its own (two "shall" sentences, two list
-items), gets one requirement per clause, each listing its own clause id. When the obligation refers to a
-table, an annex or another paragraph for its values ("as specified in Table 2"), read it with
-`read_version_paragraphs` and put the values in the requirement. When it refers to one for its
-test ("in accordance with Annex 4"), put the test in the `test_case`, not in more requirements.
+items), gets one requirement per clause, each listing its own clause id. Never write one
+requirement per product function, component, category or supply voltage when the obligation
+states one constraint for all of them. When the obligation refers to a table, an annex or another
+paragraph for its values ("shall meet the requirements in Table 2"), read it with
+`read_version_paragraphs` if you need it, keep the reference in the `text` as the regulation
+writes it, and put the values in the `test_case`: the experts the output is matched against write
+that sentence as one requirement, and the values pulled in turn it into a different one. When it
+refers to one for its test ("in accordance with Annex 4"), put the test in the `test_case`, not in
+more requirements.
 
 How to write each one:
 
@@ -29,7 +34,10 @@ How to write each one:
     "Where ... is fitted", "For vehicles of category ...", "In the case of ...";
   - for a list item, repeat the lead-in so the requirement stands alone: "When tested according
     to the test procedure, every device of class A shall meet the strength requirements.";
-  - for a table row or class, write its values, units and conditions out in the sentence;
+  - for a table row or class the other agent listed as its own obligation, write its values,
+    units and conditions out in the sentence;
+  - stay as close to the regulation's sentence as a standalone statement allows: add the subject
+    and the lead-in's condition when the sentence leaves them implicit, and no other condition;
   - keep every number, unit, tolerance and range exactly as written, a relaxation or exception
     with the obligation it relaxes, and the paragraph numbers and standards the regulation itself
     refers to;

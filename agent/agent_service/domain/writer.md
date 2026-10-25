@@ -54,20 +54,36 @@ What counts:
 How to cut the text into requirements (the output is matched one to one against requirements
 written by regulatory experts this way, so two obligations in one requirement are credited once):
 
-- One requirement per obligation, never two merged. A sentence with two "shall"s, or a "shall" and
-  a "shall not", is two requirements. A paragraph with three limits is three.
-- A lead-in with a list ("Every device of class A, when tested according to the test procedure,
-  shall meet: (a) the dimension requirements; (b) the strength requirements") is one requirement
-  per list item, each repeating the lead-in: "When tested according to the test procedure, every
-  device of class A shall meet the dimension requirements." and the same for strength.
-- A table that sets values per row, class, colour or category is one requirement per row or class,
-  with its values, units and conditions written out in a sentence. Cite the table when it is its
-  own paragraph of this window; otherwise cite the paragraph that imposes it.
-- Separate quantities are separate requirements: a horizontal and a vertical angle, a minimum and
-  a maximum stated in different places, a value for each of two operating modes.
-- Keep a relaxation or exception with the obligation it relaxes ("...; however, where it is
-  fitted behind a cover, the clearance may be reduced to 20 mm"): it is part of the same constraint.
-  One with a "shall" of its own, or for another device or an optional one, is its own requirement.
+The matcher compares scope (what it is about), condition (when it applies) and constraint (what
+must be met); one obligation cut into several requirements is credited once and the rest count
+as extras. So cut along the text as the regulation writes it:
+
+- One requirement per constraint the text states, never two merged. A sentence with two
+  "shall"s, or a "shall" and a "shall not", is two requirements; so are two constraints joined in
+  one sentence ("shall be placed at a height compatible with the other devices and at a distance
+  of not less than 600 mm from them"), and a horizontal and a vertical angle.
+- A lead-in with a list of things to meet or to bear ("Every device of class A, when tested
+  according to the test procedure, shall meet: (a) the dimension requirements; (b) the strength
+  requirements") is one requirement per list item, each repeating the lead-in: "When tested
+  according to the test procedure, every device of class A shall meet the dimension
+  requirements." and the same for strength.
+- What only qualifies a single constraint stays in its requirement: alternatives ("or",
+  "and/or", "either ... or"), a list of conditions or moments it must hold at ("after 1 minute;
+  after 10 minutes"), a tolerance or range, and a relaxation or exception ("...; however, where
+  it is fitted behind a cover, the clearance may be reduced to 20 mm"). One with a "shall" of its
+  own for another device, or for an optional one, is its own requirement.
+- A sentence that refers to a table, an annex or another paragraph for its values ("shall meet
+  the requirements in Table N") is one requirement, as written, with the values in the test case:
+  not one per row of that table. The rows of a table are requirements of their own only when no
+  sentence imposes the table (a table that is its own paragraph, or a bare table under a
+  heading), one per row or class with its values written out; cite the table when it is its own
+  paragraph of this window.
+- Do not multiply an obligation by anything the text does not list itself: not once per function
+  or component of the product, per vehicle category or per supply voltage, when the sentence
+  states one constraint for all of them. When the sentences themselves give a different value
+  per class, category or mode, each is its own requirement.
+- The paragraph's own sentences always get their requirements first; what a table or a
+  referenced paragraph adds never replaces them.
 - Each paragraph that states an obligation of its own gets its own requirement citing it, even
   when another paragraph states something similar. One that only restates, sums up or refers back
   to an obligation already written is `same_as_another_clause`.
@@ -80,6 +96,8 @@ How to write each one:
     "Mass: ..."), and keep the regulation's own term for it (the device, the component,
     the system), not the product's trade name;
   - turn fragments and headings into a "shall" statement, and "must" into "shall";
+  - stay as close to the regulation's sentence as a standalone statement allows: add the subject
+    and the lead-in's condition when the sentence leaves them implicit, and no other condition;
   - put the condition that limits it first and make it explicit: "When tested according to ...",
     "Where ... is fitted", "For vehicles of category ...", "In the case of ...";
   - keep every number, unit, tolerance and range exactly as written, and the paragraph numbers and

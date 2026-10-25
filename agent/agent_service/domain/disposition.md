@@ -14,7 +14,8 @@ answer for every clause, with `record_disposition`:
 
 - `obligations`: one entry per engineering obligation that applies to this product, with the
   `[#n]` of the paragraph that states it, the clause ids it comes from, and `what`: the obligation
-  in one line, in the regulation's terms (which list item or table row, under which condition).
+  in one line, in the regulation's terms: its scope, its condition and its constraint (which
+  sentence or list item it is).
   A clause with two obligations gives two entries, both listing it; one obligation cut over two
   clauses gives one entry listing both.
 - `covers` in each entry: what of the product the obligation is about, copied word for word from
@@ -29,12 +30,8 @@ What is an obligation:
 - Something the product, its installation or its marking must meet: "shall", "must", "shall not",
   limits in tables, results it must show in or after a test, and paragraphs it must comply with by
   reference. A heading followed by a value ("Mass: not more
-  than 2 kg") is one too, even with no "shall"; so is each row or class of a table that sets
-  values. List those even though no clause shows them, with empty `clauses`.
-- One obligation per entry, never two merged: each list item, each table row or class, each
-  separate quantity (a minimum and a maximum stated apart, a value per operating mode) is its own
-  entry. A relaxation or exception in the same sentence stays with the obligation it relaxes; one
-  with a "shall" of its own, or for another device or an optional one, is its own entry.
+  than 2 kg") is one too, even with no "shall"; so is a table that sets values when no sentence
+  imposes it. List those even though no clause shows them, with empty `clauses`.
 - Each paragraph that states an obligation of its own gets its own entry, even when another
   paragraph states something similar. A paragraph that only restates, sums up or refers back to
   an obligation already listed is `same_as_another_clause`.
@@ -43,6 +40,33 @@ What is an obligation:
   exposure it prescribes, and every result the product must reach. List it. Only the mechanics of
   a procedure that set no value of their own (where to place the sample, the order of the steps,
   how to record or average a reading) are `test_method`: set those aside, they go in the test case.
+
+How to cut obligations into entries. Each requirement is matched one to one against a requirement
+written by regulatory experts, by its scope (what it is about), its condition (when it applies)
+and its constraint (what must be met). Two obligations in one entry are credited once, and one
+obligation cut into several entries is credited once with the rest counted as extras. So cut
+along the text as the regulation writes it:
+
+- One entry per constraint the text states: each sentence with a "shall" of its own, each item
+  of a list of things to meet or to bear, and each of two constraints joined in one sentence
+  ("shall be placed at a height compatible with the other devices and at a distance of not less
+  than 600 mm from them" is two entries; so are a horizontal and a vertical angle).
+- One entry for what only qualifies a single constraint: alternatives ("or", "and/or", "either
+  ... or"), a list of conditions or moments it must hold at ("after 1 minute; after 10 minutes"),
+  a tolerance or range, and a relaxation or exception ("however, ... shall be permitted", "this
+  condition shall not apply to ..."). A relaxation with a "shall" of its own for another device,
+  or for an optional one, is its own entry.
+- A sentence that refers to a table, an annex or another paragraph for its values ("shall meet
+  the requirements in Table N") is one entry, as written: the values go in the test case. Do not
+  make one entry per row of that table. The rows of a table are entries of their own only when
+  no sentence imposes the table (a table that is its own paragraph, or a bare table under a
+  heading), one per row or class.
+- Do not multiply an obligation by anything the text does not list itself: not once per function
+  or component of the product, per vehicle category or per supply voltage, when the sentence
+  states one constraint for all of them. When the sentences themselves give a different value
+  per class, category or mode, each is its own entry.
+- The paragraph's own sentences always get their entries first; what a table or a referenced
+  paragraph adds never replaces them.
 
 What to set aside:
 

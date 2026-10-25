@@ -525,8 +525,8 @@ class Obligation(BaseModel):
     )
     what: str = Field(
         max_length=400,
-        description="The obligation in one line, in the regulation's terms: which part of the "
-        "paragraph, which list item or table row, under which condition.",
+        description="The obligation in one line, in the regulation's terms: its scope, its "
+        "condition and its constraint, and which sentence or list item of the paragraph it is.",
     )
 
 
