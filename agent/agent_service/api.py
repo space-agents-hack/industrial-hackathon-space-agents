@@ -35,6 +35,7 @@ from agent_service.domain import (
     case_ingest,
     certivity,
     figures,
+    paragraphs,
     regulation_search,
     regulations,
     subgoal,
@@ -126,6 +127,9 @@ def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, ob
             "embedding": settings.embedding_model,
             "figures": settings.figure_model,
         },
+        # The paragraph reader this version splits with: a version split by another one is split
+        # again by the next import, and the Regulations page counts how many are done (#52).
+        "extractor": paragraphs.EXTRACTOR,
     }
 
 

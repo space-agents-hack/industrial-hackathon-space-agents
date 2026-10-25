@@ -84,3 +84,39 @@ export async function countFigures(
     if (data.length < PAGE) return counts;
   }
 }
+
+// Every picture hash in the organisation's split versions, and the hashes the model has read or
+// refused, for the import's progress (#52). Hashes only: about 2,600 and 1,600 for the challenge's
+// library, read in pages.
+export async function pictureHashes(
+  supabase: SupabaseClient<Database>,
+  org: string,
+): Promise<{ placed: string[]; described: Set<string> }> {
+  const placed: string[] = [];
+  const described = new Set<string>();
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("regulation_figures")
+      .select("image_sha256")
+      .eq("organization_id", org)
+      .order("version_id")
+      .order("page")
+      .order("position")
+      .range(from, from + PAGE - 1);
+    if (error) console.error("Regulation figures: reading hashes failed", error);
+    placed.push(...(data ?? []).map((row) => row.image_sha256));
+    if (!data || data.length < PAGE) break;
+  }
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("regulation_figure_descriptions")
+      .select("image_sha256")
+      .eq("organization_id", org)
+      .order("image_sha256")
+      .range(from, from + PAGE - 1);
+    if (error) console.error("Regulation figures: reading descriptions failed", error);
+    for (const row of data ?? []) described.add(row.image_sha256);
+    if (!data || data.length < PAGE) break;
+  }
+  return { placed, described };
+}

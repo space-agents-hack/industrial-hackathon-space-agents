@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from agent_service import api, providers
 from agent_service.api import app, get_http, get_store
+from agent_service.domain import paragraphs
 from agent_service.records import OrganizationSettings
 from agent_service.settings import Settings, get_settings
 from tests.fakes import ORG, InMemoryRunStore, case_run
@@ -644,6 +645,10 @@ def test_health_names_each_process_default(client: TestClient, settings: Setting
     processes = client.get("/health").json()["processes"]
     assert processes["transcription"] == settings.ingest_model
     assert processes["embedding"] == settings.embedding_model
+
+
+def test_health_names_the_paragraph_reader(client: TestClient) -> None:
+    assert client.get("/health").json()["extractor"] == paragraphs.EXTRACTOR
 
 
 def test_ingest_needs_the_secret_and_a_case_with_files(client: TestClient) -> None:

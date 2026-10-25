@@ -112,6 +112,35 @@ export function describeCounts(counts: FileCounts): string {
   return `${counts.total} files: ${parts.join(", ")}`;
 }
 
+// What the import does after the files are stored (#52): split each version into paragraphs with the
+// agent's current reader, and have the vision model read the pictures of each split version.
+export type ImportSteps = {
+  // Versions split by the current reader (a PDF that cannot be split counts: it is recorded with
+  // that reader). Null when the agent did not say which reader is current.
+  split: { done: number; total: number } | null;
+  // Distinct pictures found in the split versions, and how many the model has read or refused.
+  // Pictures of versions not split yet are not known until they are.
+  pictures: { read: number; total: number; model: string | null };
+};
+
+export function countSplit(
+  versions: readonly { extracted_with: string | null }[],
+  extractor: string | null,
+): ImportSteps["split"] {
+  if (!extractor) return null;
+  return { done: versions.filter((v) => v.extracted_with === extractor).length, total: versions.length };
+}
+
+export function countPictures(
+  placed: readonly string[],
+  described: ReadonlySet<string>,
+): { read: number; total: number } {
+  const distinct = new Set(placed);
+  let read = 0;
+  for (const sha of distinct) if (described.has(sha)) read += 1;
+  return { read, total: distinct.size };
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(bytes / 1000))} KB`;

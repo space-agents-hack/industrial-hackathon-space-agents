@@ -11,6 +11,7 @@ import {
   type FileCounts,
   IMPORT_STATUS_LABELS,
   type ImportStatus,
+  type ImportSteps,
   type IndexSummary,
   describeCounts,
   readIndexFile,
@@ -26,6 +27,7 @@ export type ImportView = {
   createdAt: string;
   updatedAt: string;
   counts: FileCounts;
+  steps: ImportSteps;
   failedFiles: { name: string; error: string }[];
 };
 
@@ -161,6 +163,22 @@ export function ImportPanel({
           </div>
           <ImportProgress counts={latest.counts} active={active} />
           <p>{describeCounts(latest.counts)}</p>
+          <StepProgress
+            label="Paragraphs"
+            step={latest.steps.split}
+            unit="versions split"
+          />
+          <StepProgress
+            label="Pictures"
+            step={latest.steps.pictures.total > 0 ? latest.steps.pictures : null}
+            unit="read"
+            model={latest.steps.pictures.model}
+            note={
+              latest.steps.split && latest.steps.split.done < latest.steps.split.total
+                ? "counted in the versions split so far"
+                : undefined
+            }
+          />
           {latest.error ? <p className="text-danger">{latest.error}</p> : null}
           {latest.failedFiles.length > 0 ? (
             <ul className="grid gap-0.5 text-xs">
@@ -261,6 +279,51 @@ export function ImportPanel({
         </details>
       ) : null}
     </section>
+  );
+}
+
+// A step after the files (#52): a thin bar and one line, "41 of 92 versions split". Nothing when
+// there is nothing to count yet (an agent that does not name its reader, no picture found yet).
+function StepProgress({
+  label,
+  step,
+  unit,
+  model,
+  note,
+}: {
+  label: string;
+  step: { done?: number; read?: number; total: number } | null;
+  unit: string;
+  model?: string | null;
+  note?: string;
+}) {
+  if (step === null) return null;
+  const done = step.done ?? step.read ?? 0;
+  const percent = step.total === 0 ? 100 : Math.round((done / step.total) * 100);
+  return (
+    <div className="grid gap-1">
+      <span className="text-xs">
+        <span className="font-medium">{label}</span>
+        {model ? (
+          <span className="text-muted-foreground">
+            {" "}
+            (<span className="font-mono">{model}</span>)
+          </span>
+        ) : null}
+        : {done} of {step.total} {unit} ({percent}%)
+        {note ? <span className="text-muted-foreground">, {note}</span> : null}
+      </span>
+      <div
+        role="progressbar"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={step.total}
+        aria-valuenow={done}
+        className="h-1.5 overflow-hidden rounded-sm bg-muted"
+      >
+        <div className="h-full bg-tint transition-[width] duration-500" style={{ width: `${percent}%` }} />
+      </div>
+    </div>
   );
 }
 

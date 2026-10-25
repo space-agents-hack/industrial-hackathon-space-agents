@@ -16,7 +16,7 @@ import { hasNoAccess } from "@/lib/access";
 import { agentHealth } from "@/lib/agent-admin";
 import { getCurrentOrg } from "@/lib/current-org";
 import { getCurrentProject } from "@/lib/current-project";
-import { countFigures } from "@/lib/regulation-figures";
+import { countFigures, pictureHashes } from "@/lib/regulation-figures";
 import {
   DEFAULT_EMBEDDING_MODEL,
   DIMENSIONS,
@@ -27,7 +27,15 @@ import {
   vectorKey,
   versionSummary,
 } from "@/lib/regulation-index";
-import { ACTIVE_IMPORT, type ImportStatus, type LibraryPart, countFiles, formatBytes } from "@/lib/regulations";
+import {
+  ACTIVE_IMPORT,
+  type ImportStatus,
+  type LibraryPart,
+  countFiles,
+  countPictures,
+  countSplit,
+  formatBytes,
+} from "@/lib/regulations";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Regulations" };
@@ -100,7 +108,7 @@ async function Regulations() {
     supabase
       .from("regulations")
       .select(
-        "id, code, kind, title, regulation_versions(id, version_label, role, status, size_bytes, pdf_path, paragraph_count, extraction_error, figures_missing, sha256, scope_summary, scope_keywords, summary_model, summarized_at, summary_sha256)",
+        "id, code, kind, title, regulation_versions(id, version_label, role, status, size_bytes, pdf_path, paragraph_count, extraction_error, extracted_with, figures_missing, sha256, scope_summary, scope_keywords, summary_model, summarized_at, summary_sha256)",
       )
       .eq("organization_id", current.id),
     supabase
@@ -285,7 +293,12 @@ async function Regulations() {
           page jumps here. Imports fill the organisation's library, shared by all its projects. */}
       {permissions.manage ? (
         <div id="import" className="scroll-mt-6">
-          <Imports org={current.id} />
+          <Imports
+            org={current.id}
+            versions={data.flatMap((r) => r.regulation_versions)}
+            extractor={health?.extractor ?? null}
+            defaultFigureModel={health?.processes.figures ?? null}
+          />
         </div>
       ) : null}
       {permissions.manage && data.length > 0 ? (
@@ -441,14 +454,28 @@ function describeParagraphs(version: Version): string {
 
 // Admins of the organisation (and platform admins): the import form, the latest import's progress
 // and the ones before it.
-async function Imports({ org }: { org: string }) {
+async function Imports({
+  org,
+  versions,
+  extractor,
+  defaultFigureModel,
+}: {
+  org: string;
+  versions: { extracted_with: string | null }[];
+  extractor: string | null;
+  defaultFigureModel: string | null;
+}) {
   const supabase = await createClient();
-  const { data: imports, error } = await supabase
-    .from("regulation_imports")
-    .select("id, status, source_name, error, created_at, updated_at, finished_at")
-    .eq("organization_id", org)
-    .order("created_at", { ascending: false })
-    .limit(6);
+  const [{ data: imports, error }, hashes, figureChoice] = await Promise.all([
+    supabase
+      .from("regulation_imports")
+      .select("id, status, source_name, error, created_at, updated_at, finished_at")
+      .eq("organization_id", org)
+      .order("created_at", { ascending: false })
+      .limit(6),
+    pictureHashes(supabase, org),
+    supabase.from("organization_models").select("model").eq("organization_id", org).eq("process", "figures").maybeSingle(),
+  ]);
   if (error) {
     console.error("Regulations: reading imports failed", error);
     return (
@@ -489,6 +516,13 @@ async function Imports({ org }: { org: string }) {
       createdAt: latest.created_at,
       updatedAt: latest.updated_at,
       counts: countFiles(statuses),
+      steps: {
+        split: countSplit(versions, extractor),
+        pictures: {
+          ...countPictures(hashes.placed, hashes.described),
+          model: figureChoice.data?.model ?? defaultFigureModel,
+        },
+      },
       failedFiles: (failedFiles ?? []).map((f) => ({
         name: `${f.regulation_code} ${f.version_label}`,
         error: f.error ?? "",

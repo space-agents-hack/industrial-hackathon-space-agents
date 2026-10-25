@@ -7,6 +7,8 @@ import {
   batches,
   confirmsClear,
   countFiles,
+  countPictures,
+  countSplit,
   describeConsequences,
   describeCounts,
   describeDeletion,
@@ -115,4 +117,16 @@ test("the confirmation says what goes and what stays", () => {
   assert.match(cited.kept, /1 requirement already written cites it\. It stays with its run/);
   assert.match(cited.kept, /does not restore it/);
   assert.match(describeConsequences({ regulations: 3, versions: 3, paragraphs: 0, requirements: 0 }).kept, /No requirement cites them/);
+});
+
+test("versions count as split only by the reader the agent uses now", () => {
+  const versions = [{ extracted_with: "paragraphs-3" }, { extracted_with: "paragraphs-2" }, { extracted_with: null }];
+  assert.deepEqual(countSplit(versions, "paragraphs-3"), { done: 1, total: 3 });
+  // An agent that does not name its reader: no number rather than a wrong one.
+  assert.equal(countSplit(versions, null), null);
+});
+
+test("pictures are counted once however often they appear", () => {
+  // "a" is in two versions; "c" was refused by the provider, which also counts as handled.
+  assert.deepEqual(countPictures(["a", "b", "a", "c"], new Set(["a", "c", "z"])), { read: 2, total: 3 });
 });

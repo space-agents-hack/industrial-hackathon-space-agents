@@ -169,6 +169,9 @@ export type AgentHealth = {
   // The deployment's model for each process the organisation can override (organization_models).
   // Missing from an agent older than SYS-33, which the Admin page then says it cannot name.
   processes: Partial<Record<string, string>>;
+  // The paragraph reader the agent splits with ("paragraphs-3"). A version split by another is split
+  // again by the next import. Null from an agent older than #52.
+  extractor: string | null;
 };
 
 // The deployment's defaults, for "what applies when a field is empty". Never throws: a page
@@ -183,6 +186,7 @@ export async function agentHealth(): Promise<AgentHealth | null> {
       processes: isRecord(body.processes)
         ? Object.fromEntries(Object.entries(body.processes).filter((e): e is [string, string] => typeof e[1] === "string"))
         : {},
+      extractor: typeof body.extractor === "string" ? body.extractor : null,
     };
   } catch {
     return null;
