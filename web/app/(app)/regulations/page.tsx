@@ -9,7 +9,12 @@ import { NoProject } from "@/components/projects/no-project";
 import { RelativeTime } from "@/components/relative-time";
 import { buttonVariants } from "@/components/ui/button";
 import { ClearLibrary, DeleteRegulation } from "@/components/regulations/delete-regulations";
-import { type ImportView, ImportPanel } from "@/components/regulations/import-panel";
+import {
+  type EarlierImport,
+  ImportForm,
+  type ImportView,
+  LatestImport,
+} from "@/components/regulations/import-panel";
 import { IndexPanel } from "@/components/regulations/index-panel";
 import { LazyFigures } from "@/components/regulations/lazy-figures";
 import { hasNoAccess } from "@/lib/access";
@@ -196,8 +201,35 @@ async function Regulations() {
     }
   }
 
+  // The import and the search index first (Ramón, 2026-10-25): while they run, their progress is
+  // what the page is for; once complete each is one green line above the list.
+  const imports = permissions.manage
+    ? await readImports({
+        org: current.id,
+        versions: data.flatMap((r) => r.regulation_versions),
+        extractor: health?.extractor ?? null,
+        defaultFigureModel: health?.processes.figures ?? null,
+      })
+    : null;
+
   return (
     <div className="grid gap-6">
+      {imports?.latest || data.length > 0 ? (
+        <div className="grid gap-3">
+          {imports ? <LatestImport latest={imports.latest} /> : null}
+          {data.length > 0 ? (
+            <IndexPanel
+              org={current.id}
+              index={index}
+              model={embeddingModel}
+              canManage={permissions.manage}
+              // An import added paragraphs the indexer has not seen yet, and is no longer adding more.
+              autoStart={!importActive && index.unkeyed > 0}
+              importing={importActive}
+            />
+          ) : null}
+        </div>
+      ) : null}
       <section className="grid gap-2">
         <h2 className="text-base font-semibold">Regulations of {project.name}</h2>
         <p className="text-sm text-muted-foreground">
@@ -278,27 +310,17 @@ async function Regulations() {
           </>
         )}
       </section>
-      {data.length > 0 ? (
-        <IndexPanel
-          org={current.id}
-          index={index}
-          model={embeddingModel}
-          canManage={permissions.manage}
-          // An import added paragraphs the indexer has not seen yet, and is no longer adding more.
-          autoStart={!importActive && index.unkeyed > 0}
-          importing={importActive}
-        />
-      ) : null}
       {/* Last: the library is what people come to read, and "Add regulations" at the top of the
           page jumps here. Imports fill the organisation's library, shared by all its projects. */}
       {permissions.manage ? (
         <div id="import" className="scroll-mt-6">
-          <Imports
-            org={current.id}
-            versions={data.flatMap((r) => r.regulation_versions)}
-            extractor={health?.extractor ?? null}
-            defaultFigureModel={health?.processes.figures ?? null}
-          />
+          {imports ? (
+            <ImportForm org={current.id} active={importActive} earlier={imports.earlier} />
+          ) : (
+            <p role="alert" className="text-danger">
+              The imports could not be loaded.
+            </p>
+          )}
         </div>
       ) : null}
       {permissions.manage && data.length > 0 ? (
@@ -452,9 +474,9 @@ function describeParagraphs(version: Version): string {
   return `${version.paragraphCount} paragraphs`;
 }
 
-// Admins of the organisation (and platform admins): the import form, the latest import's progress
-// and the ones before it.
-async function Imports({
+// Admins of the organisation (and platform admins): the latest import with its progress, and the
+// ones before it. Null when they cannot be read.
+async function readImports({
   org,
   versions,
   extractor,
@@ -464,7 +486,7 @@ async function Imports({
   versions: { extracted_with: string | null }[];
   extractor: string | null;
   defaultFigureModel: string | null;
-}) {
+}): Promise<{ latest: ImportView | null; earlier: EarlierImport[] } | null> {
   const supabase = await createClient();
   const [{ data: imports, error }, hashes, figureChoice] = await Promise.all([
     supabase
@@ -478,11 +500,7 @@ async function Imports({
   ]);
   if (error) {
     console.error("Regulations: reading imports failed", error);
-    return (
-      <p role="alert" className="text-danger">
-        The imports could not be loaded.
-      </p>
-    );
+    return null;
   }
 
   const [latest, ...earlier] = imports;
@@ -530,17 +548,14 @@ async function Imports({
     };
   }
 
-  return (
-    <ImportPanel
-      org={org}
-      latest={latestView}
-      earlier={earlier.map((i) => ({
-        id: i.id,
-        status: i.status as ImportStatus,
-        sourceName: i.source_name,
-        createdAt: i.created_at,
-        error: i.error,
-      }))}
-    />
-  );
+  return {
+    latest: latestView,
+    earlier: earlier.map((i) => ({
+      id: i.id,
+      status: i.status as ImportStatus,
+      sourceName: i.source_name,
+      createdAt: i.created_at,
+      error: i.error,
+    })),
+  };
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
@@ -14,6 +15,7 @@ import {
   type ImportSteps,
   type IndexSummary,
   describeCounts,
+  importComplete,
   readIndexFile,
   summarizeIndex,
 } from "@/lib/regulations";
@@ -45,29 +47,20 @@ const POLL_MS = 4000;
 // over on the next call (import_stale_after_s in agent/agent_service/settings.py), so Resume shows.
 const STALE_MS = 150_000;
 
-export function ImportPanel({
-  org,
-  latest,
-  earlier,
-}: {
-  org: string;
-  latest: ImportView | null;
-  earlier: EarlierImport[];
-}) {
+// The latest import, at the top of the page: its progress while it runs or needs attention, one
+// green line once it is complete. Re-reads the page while the import is active and hands a paused
+// import back to the agent for its next slice.
+export function LatestImport({ latest }: { latest: ImportView | null }) {
   const router = useRouter();
-  const [chosen, setChosen] = useState<{ name: string; index: unknown; summary: IndexSummary } | null>(null);
-  const [fileError, setFileError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const continued = useRef<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   const active = latest !== null && ACTIVE_IMPORT.includes(latest.status);
 
-  // While an import is active: re-read the page, and hand a paused import back to the agent for
-  // its next slice. Only once per pause (the key includes updated_at), so an agent that refuses
-  // does not get called every few seconds; Resume is there for that case.
+  // Only once per pause (the key includes updated_at), so an agent that refuses does not get
+  // called every few seconds; Resume is there for that case.
   useEffect(() => {
     if (!active) return;
     const timer = setInterval(() => {
@@ -87,6 +80,125 @@ export function ImportPanel({
       router.refresh();
     });
   }, [latest, router]);
+
+  async function act(path: string, method: "POST" | "DELETE") {
+    setBusy(true);
+    setError(null);
+    const result = await sendJson(path, method, {});
+    setBusy(false);
+    if (!result.ok) setError(result.error);
+    router.refresh();
+  }
+
+  if (latest === null) return null;
+  if (importComplete(latest) && !error) {
+    return (
+      <p className="flex items-center gap-1.5">
+        <Check aria-hidden className="size-4 text-success" />
+        <span className="font-medium">Imported OK</span>
+      </p>
+    );
+  }
+
+  const stale =
+    (latest.status === "queued" || latest.status === "running") &&
+    now - new Date(latest.updatedAt).getTime() > (latest.status === "queued" ? POLL_MS * 4 : STALE_MS);
+
+  return (
+    <section className="grid gap-2" aria-labelledby="import-status-heading">
+      <h2 id="import-status-heading" className="text-base font-semibold">
+        Import
+      </h2>
+      <div className="grid gap-2 rounded-xl border bg-card p-4">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="font-medium">{latest.sourceName}</span>
+          <span className="text-xs text-muted-foreground">
+            started <RelativeTime iso={latest.createdAt} />
+          </span>
+          <span className={latest.status === "failed" ? "text-danger" : "text-muted-foreground"}>
+            {IMPORT_STATUS_LABELS[latest.status]}
+          </span>
+        </div>
+        <ImportProgress counts={latest.counts} active={active} />
+        <p>{describeCounts(latest.counts)}</p>
+        <StepProgress label="Paragraphs" step={latest.steps.split} unit="versions split" />
+        <StepProgress
+          label="Pictures"
+          step={latest.steps.pictures.total > 0 ? latest.steps.pictures : null}
+          unit="read"
+          model={latest.steps.pictures.model}
+          note={
+            latest.steps.split && latest.steps.split.done < latest.steps.split.total
+              ? "counted in the versions split so far"
+              : undefined
+          }
+        />
+        {latest.error ? <p className="text-danger">{latest.error}</p> : null}
+        {latest.failedFiles.length > 0 ? (
+          <ul className="grid gap-0.5 text-xs">
+            {latest.failedFiles.map((file) => (
+              <li key={file.name}>
+                <span className="font-medium">{file.name}</span>: {file.error}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {latest.status === "failed" ? (
+          <div className="flex flex-wrap gap-2">
+            {/* The agent resumes a failed import where it stopped: stored files are skipped and
+                only versions without paragraphs are split (prepare in regulations.py, #57). */}
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => void act(`/api/regulations/imports/${latest.id}/advance`, "POST")}
+            >
+              Resume
+            </Button>
+          </div>
+        ) : null}
+        {active ? (
+          <div className="flex flex-wrap gap-2">
+            {stale ? (
+              <Button
+                size="sm"
+                disabled={busy}
+                onClick={() => void act(`/api/regulations/imports/${latest.id}/advance`, "POST")}
+              >
+                Resume
+              </Button>
+            ) : null}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => void act(`/api/regulations/imports/${latest.id}`, "DELETE")}
+            >
+              Cancel import
+            </Button>
+            <span className="text-xs font-medium text-attention">
+              Keep this page open: the import continues in slices only while it is.
+            </span>
+          </div>
+        ) : null}
+        {error ? (
+          <p role="alert" className="text-danger">
+            {error}
+          </p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+// Starting an import, at the end of the page where "Add regulations" jumps: the index file, and the
+// imports before the latest. Hidden while an import is active, which the agent allows one at a time.
+export function ImportForm({ org, active, earlier }: { org: string; active: boolean; earlier: EarlierImport[] }) {
+  const router = useRouter();
+  const [chosen, setChosen] = useState<{ name: string; index: unknown; summary: IndexSummary } | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function choose(file: File | undefined) {
     setChosen(null);
@@ -124,25 +236,13 @@ export function ImportPanel({
     setChosen(null);
     setMessage(result.body.warning ? `The import is saved but did not start: ${result.body.warning}` : null);
     router.refresh();
+    // The new import's progress is at the top of the page.
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
-
-  async function act(path: string, method: "POST" | "DELETE") {
-    setBusy(true);
-    setError(null);
-    const result = await sendJson(path, method, {});
-    setBusy(false);
-    if (!result.ok) setError(result.error);
-    router.refresh();
-  }
-
-  const stale =
-    latest !== null &&
-    (latest.status === "queued" || latest.status === "running") &&
-    now - new Date(latest.updatedAt).getTime() > (latest.status === "queued" ? POLL_MS * 4 : STALE_MS);
 
   return (
     <section className="grid gap-3">
-      <h2 className="text-base font-semibold">Import</h2>
+      <h2 className="text-base font-semibold">Add regulations</h2>
       <p className="max-w-prose text-muted-foreground">
         Upload an index file in the challenge&apos;s <code>regulations/index.json</code> format. The agent downloads
         every PDF it lists, checks each against its sha256 and stores it in this organisation&apos;s library, where
@@ -150,86 +250,9 @@ export function ImportPanel({
         again. Nothing is deleted.
       </p>
 
-      {latest ? (
-        <div className="grid gap-2 rounded-xl border bg-card p-4">
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="font-medium">{latest.sourceName}</span>
-            <span className="text-xs text-muted-foreground">
-              started <RelativeTime iso={latest.createdAt} />
-            </span>
-            <span className={latest.status === "failed" ? "text-danger" : "text-muted-foreground"}>
-              {IMPORT_STATUS_LABELS[latest.status]}
-            </span>
-          </div>
-          <ImportProgress counts={latest.counts} active={active} />
-          <p>{describeCounts(latest.counts)}</p>
-          <StepProgress
-            label="Paragraphs"
-            step={latest.steps.split}
-            unit="versions split"
-          />
-          <StepProgress
-            label="Pictures"
-            step={latest.steps.pictures.total > 0 ? latest.steps.pictures : null}
-            unit="read"
-            model={latest.steps.pictures.model}
-            note={
-              latest.steps.split && latest.steps.split.done < latest.steps.split.total
-                ? "counted in the versions split so far"
-                : undefined
-            }
-          />
-          {latest.error ? <p className="text-danger">{latest.error}</p> : null}
-          {latest.failedFiles.length > 0 ? (
-            <ul className="grid gap-0.5 text-xs">
-              {latest.failedFiles.map((file) => (
-                <li key={file.name}>
-                  <span className="font-medium">{file.name}</span>: {file.error}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {latest.status === "failed" ? (
-            <div className="flex flex-wrap gap-2">
-              {/* The agent resumes a failed import where it stopped: stored files are skipped and
-                  only versions without paragraphs are split (prepare in regulations.py, #57). */}
-              <Button
-                size="sm"
-                disabled={busy}
-                onClick={() => void act(`/api/regulations/imports/${latest.id}/advance`, "POST")}
-              >
-                Resume
-              </Button>
-            </div>
-          ) : null}
-          {active ? (
-            <div className="flex flex-wrap gap-2">
-              {stale ? (
-                <Button
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => void act(`/api/regulations/imports/${latest.id}/advance`, "POST")}
-                >
-                  Resume
-                </Button>
-              ) : null}
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                onClick={() => void act(`/api/regulations/imports/${latest.id}`, "DELETE")}
-              >
-                Cancel import
-              </Button>
-              <span className="text-xs font-medium text-attention">
-                Keep this page open: the import continues in slices only while it is.
-              </span>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {active ? null : (
+      {active ? (
+        <p className="text-muted-foreground">An import is in progress: its progress is at the top of the page.</p>
+      ) : (
         <div className="grid gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <FilePickerButton

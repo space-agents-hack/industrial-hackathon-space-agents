@@ -9,6 +9,7 @@ import {
   countFiles,
   countPictures,
   countSplit,
+  importComplete,
   describeConsequences,
   describeCounts,
   describeDeletion,
@@ -129,4 +130,18 @@ test("versions count as split only by the reader the agent uses now", () => {
 test("pictures are counted once however often they appear", () => {
   // "a" is in two versions; "c" was refused by the provider, which also counts as handled.
   assert.deepEqual(countPictures(["a", "b", "a", "c"], new Set(["a", "c", "z"])), { read: 2, total: 3 });
+});
+
+test("an import is complete only when nothing is left to do or to look at", () => {
+  const done = {
+    status: "succeeded" as const,
+    counts: countFiles(["stored", "unchanged"]),
+    steps: { split: { done: 2, total: 2 }, pictures: { read: 3, total: 3, model: "anthropic:claude-haiku-5-5" } },
+  };
+  assert.equal(importComplete(done), true);
+  // Pictures still unread (no figure model, a slice that ran out): the bars stay.
+  assert.equal(importComplete({ ...done, steps: { ...done.steps, pictures: { ...done.steps.pictures, read: 2 } } }), false);
+  assert.equal(importComplete({ ...done, steps: { ...done.steps, split: { done: 1, total: 2 } } }), false);
+  assert.equal(importComplete({ ...done, counts: countFiles(["stored", "failed"]) }), false);
+  assert.equal(importComplete({ ...done, status: "running" }), false);
 });

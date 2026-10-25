@@ -1,5 +1,6 @@
 "use client";
 
+import { Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -85,6 +86,17 @@ export function IndexPanel({
   const search = describeSearch(index);
   const complete = indexComplete(index);
   const percent = index.paragraphs === 0 ? 0 : Math.floor((index.embedded / index.paragraphs) * 100);
+
+  // Every paragraph has a vector and every version a summary: one green line instead of the bars
+  // (Ramón, 2026-10-25). The full panel comes back as soon as an import adds paragraphs.
+  if (complete && index.paragraphs > 0 && !running && !error && notes.length === 0) {
+    return (
+      <p className="flex items-center gap-1.5">
+        <Check aria-hidden className="size-4 text-success" />
+        <span className="font-medium">Search index OK</span>
+      </p>
+    );
+  }
 
   return (
     <section className="grid gap-2" aria-labelledby="search-index-heading">

@@ -123,6 +123,20 @@ export type ImportSteps = {
   pictures: { read: number; total: number; model: string | null };
 };
 
+// Whether the latest import needs no attention: every file handled without a failure, every
+// version split by the current reader and every picture found read. Then its card shrinks to one
+// green line (Ramón, 2026-10-25); anything short of that keeps the bars, which say what is left.
+export function importComplete(latest: { status: ImportStatus; counts: FileCounts; steps: ImportSteps }): boolean {
+  const { split, pictures } = latest.steps;
+  return (
+    latest.status === "succeeded" &&
+    latest.counts.failed === 0 &&
+    latest.counts.pending === 0 &&
+    (split === null || split.done >= split.total) &&
+    pictures.read >= pictures.total
+  );
+}
+
 export function countSplit(
   versions: readonly { extracted_with: string | null }[],
   extractor: string | null,
