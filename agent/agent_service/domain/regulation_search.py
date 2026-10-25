@@ -54,8 +54,12 @@ _KEY_ENV: dict[EmbeddingProvider, str] = {
 # stays well under the token limit and one slow request does not eat the slice.
 _MAX_INPUTS = 256
 _MAX_CHARS = 400_000
-# A write of 250 vectors is about 2.5 MB of JSON.
-_WRITE = 250
+# Vectors per insert. Each one is also an insertion into the HNSW index (migration 20261024360000,
+# #44): 250 took 0.5 s locally with the index against about 0.05 s without, and the hosted
+# database's CPU has run the same work 10 to 20 times slower, with up to EMBEDDING_CONCURRENCY
+# writes and an import at once. After the index, production slices failed with 57014 halfway
+# through the vectors (#57). 50 is about 0.1 s here.
+_WRITE = 50
 
 
 class EmbeddingError(Exception):
