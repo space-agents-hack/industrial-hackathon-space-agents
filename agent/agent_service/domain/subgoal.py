@@ -10,7 +10,10 @@ A run, step by step, each step a `tool_call` and `tool_result` pair in the trace
 1. `read_case`: the requirements and the two versions. PDFs missing from the case are fetched
    from files.json, checked against its sha256 and stored in the case, so the case still runs
    after Certivity's links expire (they do, after the event) and the data is in Supabase (SYS-16).
-2. `extract_versions`: both PDFs into numbered paragraphs, with the store's extractor (#3).
+2. `extract_versions`: both PDFs as numbered paragraphs from the organisation's regulation library,
+   found by sha256 and put through the library's own ingestion when missing or split by an older
+   extractor (`subgoal_library.py`). In memory only when the library cannot be used; the trace
+   says which, version by version.
 3. `compare_versions`: the rules diff (`regdiff`), no model. Measured: 7/7 flagged, 0 extra,
    16/17 added on the dev pair, and robust on 14 other version pairs (subgoal-gaps.md).
 4. `review_changes`: reviewer agents re-read the requirements whose cited paragraph changed in any
@@ -38,6 +41,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -47,7 +51,14 @@ import httpx
 from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
 
-from agent_service.domain import paragraphs, regdiff, subgoal_review, subgoal_write
+from agent_service.domain import (
+    paragraphs,
+    regdiff,
+    subgoal_library,
+    subgoal_review,
+    subgoal_write,
+)
+from agent_service.domain.regulations import DescribeFigures
 from agent_service.records import CaseFile, Run
 from agent_service.store import RunStore
 
@@ -60,6 +71,14 @@ MAX_REQUIREMENTS = 5000
 # a wrong link from filling the function's memory.
 MAX_PDF_BYTES = 64 * 1024 * 1024
 _FETCH_TIMEOUT_S = 60
+# How long describing a version's new pictures may take when the run puts a PDF through the
+# library's ingestion (subgoal_library.py). Clemente wants a run in about a minute; a picture
+# not described by then is listed for the library's next import, and the diff does not wait for
+# pictures anyway (it leaves figure lines out).
+_FIGURES_S = 45
+# The same at upload, where nobody waits on a run: the ingest request streams a heartbeat and has
+# the function's 800 s.
+_INGEST_FIGURES_S = 300
 
 FileKind = str  # "requirements", "files", "answer_key", "pdf", or "other"
 
@@ -92,12 +111,19 @@ ANSWER_KEY_NOTE = (
 )
 
 
-async def ingest_case(store: RunStore, case_id: UUID) -> dict[str, int]:
-    """Mark every pending file of a sub-goal case parsed or failed, saying what it was taken for.
+async def ingest_case(
+    store: RunStore,
+    case_id: UUID,
+    *,
+    figures: DescribeFigures | None = None,
+    http: Callable[[], httpx.AsyncClient] | None = None,
+) -> dict[str, int]:
+    """Mark every pending file of a sub-goal case parsed or failed, saying what it was taken for,
+    then put the two versions into the organisation's regulation library (`_into_library`).
 
-    No model and no content blocks: a sub-goal run reads the files themselves. This replaces the
-    main goal's parsing so the case page shows, file by file, what the run will use, and no
-    transcription model is paid to read regulation PDFs."""
+    No transcription and no content blocks: a sub-goal run reads the versions from the library.
+    This replaces the main goal's parsing so the case page shows, file by file, what the run will
+    use, and no transcription model is paid to read regulation PDFs."""
     counts = {"parsed": 0, "failed": 0}
     for file in await store.case_files(case_id):
         if file.status != "pending" or not await store.set_case_file(
@@ -116,7 +142,83 @@ async def ingest_case(store: RunStore, case_id: UUID) -> dict[str, int]:
         else:
             await store.set_case_file(file.id, "failed", only_if="parsing", error=note)
         counts[status] += 1
+    if counts["parsed"]:
+        await _into_library(store, case_id, figures, http or http_client)
     return counts
+
+
+async def _into_library(
+    store: RunStore,
+    case_id: UUID,
+    figures: DescribeFigures | None,
+    http: Callable[[], httpx.AsyncClient],
+) -> None:
+    """Both versions into the regulation library at upload (Clemente, 2026-10-25: "the pdfs
+    should be ingested when uploaded"), through the library's own ingestion with its figures
+    (subgoal_library.py). The run then finds them there by sha256 and does not wait for it.
+
+    PDFs given only as links in files.json are fetched here and kept in the case, as a run would
+    (`read_inputs`). Nothing here fails the upload: a folder still incomplete (no requirements
+    yet, one PDF), a link that does not answer or a library that does not, leaves the versions
+    for the run, which tries the same steps again. Each PDF's notes say where it ended up."""
+    library = store.subgoal_library()
+    files = await store.case_files(case_id)
+    if library is None or not files:
+        return
+    org = files[0].organization_id
+    try:
+        inputs = await read_inputs(store, case_id, org, http)
+        cited = regdiff.cited_regulation(inputs.requirements)
+        deadline = time.monotonic() + _INGEST_FIGURES_S
+        old = await subgoal_library.read_version(
+            library, figures, org, inputs.old_pdf, inputs.old_name, cited, deadline
+        )
+        new = await subgoal_library.read_version(
+            library,
+            figures,
+            org,
+            inputs.new_pdf,
+            inputs.new_name,
+            old.regulation or cited,
+            deadline,
+        )
+    except (SubgoalRefused, paragraphs.ExtractionProblem) as exc:
+        log.info("Sub-goal case %s: versions left for the run: %s", case_id, exc)
+        return
+    if old.version_id or new.version_id:
+        try:
+            await library.link_case(case_id, old.version_id, new.version_id)
+        except Exception:
+            log.exception("Sub-goal case %s: linking its library versions failed", case_id)
+    pdfs = [f for f in await store.case_files(case_id) if f.format == "pdf"]
+    for pdf, name, read in (
+        (inputs.old_pdf, inputs.old_name, old),
+        (inputs.new_pdf, inputs.new_name, new),
+    ):
+        # By content where the row has its sha256 (the files a run fetched), else by name: the
+        # web does not always send one.
+        sha = hashlib.sha256(pdf).hexdigest()
+        file = next((f for f in pdfs if f.sha256 == sha), None) or next(
+            (f for f in pdfs if f.filename == name), None
+        )
+        if file is not None:
+            await store.set_case_file(
+                file.id, "parsed", only_if="parsed", notes=[*file.notes, _library_note(read)]
+            )
+
+
+def _library_note(read: subgoal_library.Read) -> str:
+    if read.version_id is None:
+        return f"Not in the regulation library ({read.source}); the run reads it in memory."
+    how = {
+        "library": "already there",
+        "library, split now": "split again with the current extractor",
+        "library, ingested now": "added from this case, with no role",
+    }.get(read.source, read.source)
+    return (
+        f"In the regulation library as {read.regulation} {read.version_label} ({how}): "
+        f"{len(read.paragraphs)} paragraphs."
+    )
 
 
 async def _describe(store: RunStore, file: CaseFile) -> tuple[str, str, int | None]:
@@ -186,6 +288,7 @@ async def execute(
     reviewer_note: str | None,
     review: subgoal_review.Limits,
     writer: Model | str | None = None,
+    figures: DescribeFigures | None = None,
     http: Callable[[], httpx.AsyncClient] | None = None,
 ) -> Outcome:
     """The changes file of the run's sub-goal case. Raises SubgoalRefused with a message for the
@@ -247,33 +350,61 @@ async def execute(
     await step("read_case", {"case": case_name}, read)
     inputs: Inputs = holder["inputs"]
 
+    library = store.subgoal_library()
+    cited = regdiff.cited_regulation(inputs.requirements)
+
     async def extract() -> dict[str, Any]:
+        # One after the other, never in parallel: pdfium is not thread-safe, and two documents
+        # read at once in two threads broke the production run (Ramón, 2026-10-24).
+        deadline = time.monotonic() + _FIGURES_S
         try:
-            # One after the other, never in parallel: pdfium is not thread-safe, and two
-            # documents read at once in two threads broke the production run (Ramón, 2026-10-24).
-            old_x = await asyncio.to_thread(paragraphs.extract, inputs.old_pdf)
-            new_x = await asyncio.to_thread(paragraphs.extract, inputs.new_pdf)
+            old_r = await subgoal_library.read_version(
+                library,
+                figures,
+                run.organization_id,
+                inputs.old_pdf,
+                inputs.old_name,
+                cited,
+                deadline,
+            )
+            new_r = await subgoal_library.read_version(
+                library,
+                figures,
+                run.organization_id,
+                inputs.new_pdf,
+                inputs.new_name,
+                old_r.regulation or cited,
+                deadline,
+            )
         except paragraphs.ExtractionProblem as exc:
             raise SubgoalRefused(f"A PDF could not be read: {exc}") from None
-        holder["x"] = (old_x, new_x)
+        if library is not None and (old_r.version_id or new_r.version_id):
+            try:
+                await library.link_case(case_id, old_r.version_id, new_r.version_id)
+            except Exception:
+                # The link is a record for the case page, not something the diff needs.
+                log.exception("Sub-goal case %s: linking its library versions failed", case_id)
+        holder["x"] = (old_r, new_r)
         return {
-            "old": _described(old_x),
-            "new": _described(new_x),
-            "warnings": [*old_x.warnings, *new_x.warnings][:10],
+            "old": old_r.described(),
+            "new": new_r.described(),
+            "warnings": [*old_r.warnings, *new_r.warnings][:10],
         }
 
     await step("extract_versions", {"old": inputs.old_name, "new": inputs.new_name}, extract)
-    old_x, new_x = holder["x"]
+    old_r, new_r = holder["x"]
 
-    # The regulation's name in the reasons is the one the requirements cite (the index's
-    # spelling); each version's label is the one printed in its PDF, as the CLI does.
-    regulation = regdiff.cited_regulation(inputs.requirements) or "the regulation"
-    old_v = regdiff.build_version(
-        regulation, old_x.version_label or "old", [p for p in old_x.paragraphs if p.label]
-    )
-    new_v = regdiff.build_version(
-        regulation, new_x.version_label or "new", [p for p in new_x.paragraphs if p.label]
-    )
+    # The regulation's name in the reasons: the library's code when a version came from there,
+    # else the one the requirements cite (the index's spelling either way). Each version's label:
+    # the library's (what the index calls it), else the one printed in its PDF, as the CLI does.
+    regulation = old_r.regulation or new_r.regulation or cited or "the regulation"
+    old_label = old_r.version_label or "old"
+    new_label = new_r.version_label or "new"
+    old_v = regdiff.build_version(regulation, old_label, subgoal_library.for_diff(old_r))
+    new_v = regdiff.build_version(regulation, new_label, subgoal_library.for_diff(new_r))
+    # What the writer step reads as each change's context: the same paragraphs with their
+    # figure descriptions, so values drawn in a picture can reach the text (subgoal_library.py).
+    new_context = regdiff.build_version(regulation, new_label, subgoal_library.with_figures(new_r))
 
     async def compare() -> dict[str, Any]:
         changes = await asyncio.to_thread(regdiff.diff_versions, inputs.requirements, old_v, new_v)
@@ -332,7 +463,7 @@ async def execute(
 
         async def writing() -> dict[str, Any]:
             written = await subgoal_write.write(
-                final, inputs.requirements, new_v, writer, review, progress
+                final, inputs.requirements, new_context, writer, review, progress
             )
             holder["write"] = written
             return written.summary()
@@ -353,14 +484,6 @@ async def execute(
 
 def http_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=_FETCH_TIMEOUT_S)
-
-
-def _described(x: paragraphs.Extraction) -> dict[str, Any]:
-    return {
-        "pages": x.page_count,
-        "version": x.version_label,
-        "paragraphs": sum(1 for p in x.paragraphs if p.label),
-    }
 
 
 def _counts(changes: list[regdiff.Change]) -> dict[str, int]:
@@ -488,7 +611,7 @@ async def _keep(
             "media_type": "application/pdf",
             "bytes": len(data),
             "sha256": hashlib.sha256(data).hexdigest(),
-            "notes": ["Fetched by the run from files.json; checksum matches."],
+            "notes": ["Fetched from files.json; checksum matches."],
         }
     )
 

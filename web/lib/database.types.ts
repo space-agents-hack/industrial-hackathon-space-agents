@@ -304,6 +304,8 @@ export type Database = {
           id: string
           kind: string
           name: string
+          new_version_id: string | null
+          old_version_id: string | null
           organization_id: string
           project_id: string
         }
@@ -313,6 +315,8 @@ export type Database = {
           id?: string
           kind?: string
           name: string
+          new_version_id?: string | null
+          old_version_id?: string | null
           organization_id: string
           project_id: string
         }
@@ -322,10 +326,26 @@ export type Database = {
           id?: string
           kind?: string
           name?: string
+          new_version_id?: string | null
+          old_version_id?: string | null
           organization_id?: string
           project_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "cases_new_version_fkey"
+            columns: ["new_version_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "regulation_versions"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "cases_old_version_fkey"
+            columns: ["old_version_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "regulation_versions"
+            referencedColumns: ["id", "organization_id"]
+          },
           {
             foreignKeyName: "cases_project_id_organization_id_fkey"
             columns: ["project_id", "organization_id"]

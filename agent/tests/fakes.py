@@ -77,6 +77,8 @@ class InMemoryRunStore:
         self.versions: dict[UUID, list[LibraryVersion]] = {}
         self.paragraphs: dict[UUID, list[Paragraph]] = {}
         self.requirements: list[Requirement] = []
+        # What a sub-goal run reads and fills (domain/subgoal_library.py); None: in memory.
+        self.subgoal: Any = None
         self.closed = False
 
     # Helpers the tests use to play the web's part.
@@ -350,6 +352,9 @@ class InMemoryRunStore:
 
     def search_store(self) -> "TextSearch":
         return TextSearch(self)
+
+    def subgoal_library(self) -> Any:
+        return self.subgoal
 
     async def add_requirements(self, rows: list[NewRequirement]) -> None:
         taken = {(r.run_id, r.ext_id) for r in self.requirements}

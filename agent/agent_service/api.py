@@ -26,7 +26,7 @@ import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 from supabase_auth.errors import AuthApiError
 
 from agent_service import domain, metering, providers, runner
@@ -34,7 +34,6 @@ from agent_service.domain import (
     assistant,
     case_ingest,
     certivity,
-    changes,
     figures,
     regulation_search,
     regulations,
@@ -331,10 +330,17 @@ async def ingest_case(
         raise HTTPException(404, "No files in this case.")
 
     async def work() -> dict[str, int]:
-        if await store.case_kind(case_id) == subgoal.KIND:
-            # Certivity's sub-goal folder: nothing to transcribe, only to recognise (#42).
-            return await subgoal.ingest_case(store, case_id)
         org = files[0].organization_id
+        if await store.case_kind(case_id) == subgoal.KIND:
+            # Certivity's sub-goal folder: nothing to transcribe, only to recognise (#42), and
+            # both versions into the regulation library with their figures, metered on the case.
+            meter = metering.Meter(org, case_id=case_id)
+            library = store.subgoal_library()
+            step = None if library is None else figures.FigureStep(library, settings, org, meter)
+            try:
+                return await subgoal.ingest_case(store, case_id, figures=step)
+            finally:
+                await meter.flush(store)
         # The organisation's choice first (Admin, SYS-33), then the deployment's.
         chosen = await store.organization_model(org, "transcription")
         name = (chosen or settings.ingest_model).strip()
@@ -712,87 +718,3 @@ async def _run_source(store: RunStore, run: Run, text: str) -> Literal["output",
     except json.JSONDecodeError:
         return None
     return "stored" if sent == await domain.stored_submission(store, run) else None
-
-
-# ------------------------------------------------------------------------------------------
-# Sub-goal: which requirements derived from one version of a regulation change in another
-# (domain/changes.py). Reads the library and Certivity's reference files, writes nothing, calls no
-# model. The web shows the result and sends it through POST /checks like any other file.
-# ------------------------------------------------------------------------------------------
-
-
-async def get_versions(
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> changes.VersionStore:
-    if not settings.supabase_url or not settings.supabase_secret_key:
-        raise HTTPException(503, "SUPABASE_URL and SUPABASE_SECRET_KEY are not configured.")
-    return await changes.SupabaseVersionStore.connect(
-        settings.supabase_url, settings.supabase_secret_key
-    )
-
-
-@app.get("/subgoal/cases", dependencies=[Depends(require_secret)])
-async def subgoal_cases(
-    store: Annotated[RunStore, Depends(get_store)],
-) -> dict[str, list[dict[str, str | None]]]:
-    try:
-        rows = await store.certivity_reference()
-    finally:
-        await store.aclose()
-    return {"cases": changes.subgoal_cases(rows)}
-
-
-# The fields regdiff reads. Anything else in an uploaded file is kept and ignored, as
-# Certivity's own format allows.
-class OldRequirement(BaseModel):
-    model_config = ConfigDict(extra="allow")
-    id: str = Field(min_length=1, max_length=200)
-    text: str = Field(max_length=20_000)
-    source: dict[str, Any] | None = None
-
-
-class ChangesRequest(BaseModel):
-    organization_id: UUID
-    old_version_id: UUID
-    new_version_id: UUID
-    case_id: str = Field(min_length=1, max_length=200)
-    team_id: str = Field(min_length=1, max_length=200)
-    # None: Certivity's requirements_old.json for case_id, from the database.
-    requirements_old: list[OldRequirement] | None = Field(
-        default=None, max_length=changes.MAX_REQUIREMENTS
-    )
-
-
-@app.post("/subgoal/changes", dependencies=[Depends(require_secret)])
-async def subgoal_changes(
-    body: ChangesRequest,
-    store: Annotated[RunStore, Depends(get_store)],
-    versions: Annotated[changes.VersionStore, Depends(get_versions)],
-) -> dict[str, Any]:
-    try:
-        if body.requirements_old is not None:
-            requirements = [r.model_dump(exclude_none=True) for r in body.requirements_old]
-        else:
-            reference = await certivity.load_reference(store, body.organization_id)
-            found = reference.requirements_old.get(body.case_id)
-            if found is None:
-                raise HTTPException(
-                    404,
-                    f"No requirements are loaded for case {body.case_id!r}. Upload a "
-                    "requirements file, or load Certivity's package (make certivity-load).",
-                )
-            requirements = found
-        return await changes.build(
-            versions,
-            organization_id=body.organization_id,
-            old_version_id=body.old_version_id,
-            new_version_id=body.new_version_id,
-            requirements_old=requirements,
-            team_id=body.team_id,
-            case_id=body.case_id,
-        )
-    except changes.ChangesRefused as exc:
-        raise HTTPException(exc.status, str(exc)) from None
-    finally:
-        await store.aclose()
-        await versions.aclose()

@@ -89,13 +89,23 @@ A case with `kind = 'subgoal'` lives under Changes, not in the project's case li
 Certivity's sub-goal folder, uploaded the same way. The web calls the same two endpoints. What
 differs is inside the agent:
 
-- **Ingest** (`domain/subgoal.py`) only recognises each file: the requirements, `files.json`,
-  a PDF and its printed version. It refuses an answer key. No model is called and no blocks are
-  stored.
+- **Ingest** (`domain/subgoal.py`) recognises each file: the requirements, `files.json`,
+  a PDF and its printed version. It refuses an answer key. No blocks are stored. Then both
+  versions go into the organisation's regulation library (`domain/subgoal_library.py`):
+  - each PDF is found by its sha256, so a file the library has is never stored twice;
+  - one it lacks is stored, recorded with no role under the cited regulation and its printed
+    version, and split by the import's own step with its figures;
+  - links in `files.json` are fetched first.
+
+  Each PDF's notes say where it ended up, and `cases.old_version_id`/`new_version_id` record the
+  pair. A file that would replace a library file, or sit beside a lone version without a role,
+  is not recorded, because that would change what the main goal cites.
 - **The run** is a fixed sequence of steps, written as `tool_call`/`tool_result` events:
   - read the case: PDFs named in `files.json` that the case lacks are fetched, their sha256
     checked, and kept as case files;
-  - extract both versions;
+  - both versions' stored paragraphs from the library: found by sha256, and split or ingested
+    there if upload did not do it. In memory only when the library cannot be used, and the
+    trace says why. Figure descriptions are left out of the diff and given to the writer step;
   - the rules diff (`domain/regdiff.py`);
   - reviewer agents (`domain/subgoal_review.py`), in parallel batches, on the requirements whose
     cited paragraph changed. Code keeps a verdict only if its quotes are found in the PDFs' text;

@@ -104,11 +104,13 @@ freeze.
 3. Drop the whole `subgoal/<folder>` folder onto the review's Files. `requirements_old.json` and
    `files.json` are enough. Dropping `old.pdf` and `new.pdf` as well (after
    `fetch_regulations.py`) avoids depending on Certivity's links. An `expected.json`, if there is
-   one, is held back and never reaches the run.
+   one, is held back and never reaches the run. On upload, both versions go into the
+   organisation's regulation library, or are found there if the library import already has
+   them. Each PDF's notes on the case say which.
 4. **Review requirements** (the button). The trace shows each step:
    - the requirements count;
    - each PDF fetched, with its checksum checked;
-   - both versions' pages and printed version;
+   - where each version was read from (`library`, or `in memory:` and why) and its paragraphs;
    - the rules' counts;
    - the reviewer batches;
    - the writer batches, and which texts kept the regulation's wording.

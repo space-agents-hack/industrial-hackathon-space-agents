@@ -70,6 +70,9 @@ if TYPE_CHECKING:
 # while some of its pictures had no description yet is split again once they have one
 # (regulation_versions.figures_missing), not through this value.
 EXTRACTOR = "paragraphs-3"
+# How a described picture starts its line. Readers that must tell model-written text from the
+# PDF's own (the sub-goal's diff, subgoal_library.py) look for this, so it is one constant.
+FIGURE_PREFIX = "[Figure: "
 
 Kind = Literal["paragraph", "text"]
 
@@ -252,7 +255,7 @@ def _read_lines_alone(data: bytes, descriptions: Mapping[str, str]) -> _Read:
                         )
                     page_lines[edge] = replace(page_lines[edge], text="")
                 for at, figure in reversed(inserts):
-                    text = f"[Figure: {' '.join(descriptions[figure.sha256].split())}]"
+                    text = f"{FIGURE_PREFIX}{' '.join(descriptions[figure.sha256].split())}]"
                     page_lines.insert(at, _Line(number, text, 0.0, False, figure=True))
                 lines += [line for line in page_lines if line.text]
             finally:

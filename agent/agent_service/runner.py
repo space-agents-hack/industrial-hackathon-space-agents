@@ -52,6 +52,7 @@ from pydantic_core import to_jsonable_python
 
 from agent_service import domain
 from agent_service.domain import case_ingest, ingest, subgoal, subgoal_review
+from agent_service.domain.figures import FigureStep
 from agent_service.metering import Credential, Meter, metered
 from agent_service.providers import build_model, credentials, scrub
 from agent_service.records import Approval, ApprovalRequest, Run, RunFile, RunStatus
@@ -212,7 +213,7 @@ async def _execute(store: RunStore, settings: Settings, plan: Plan) -> RunStatus
             credential = Credential.for_model(name, key, endpoint.root() if endpoint else None)
             model = metered(build_model(name, key, endpoint), meter, "check", name, credential)
             async with asyncio.timeout(settings.run_timeout_s):
-                return await _run_subgoal(store, settings, plan, model)
+                return await _run_subgoal(store, settings, plan, model, meter)
         key, endpoint = await credentials(store, plan.run.organization_id, name)
         credential = Credential.for_model(name, key, endpoint.root() if endpoint else None)
         model = metered(build_model(name, key, endpoint), meter, "writer", name, credential)
@@ -235,7 +236,7 @@ async def _execute(store: RunStore, settings: Settings, plan: Plan) -> RunStatus
 
 
 async def _run_subgoal(
-    store: RunStore, settings: Settings, plan: Plan, model: Model | str
+    store: RunStore, settings: Settings, plan: Plan, model: Model | str, meter: Meter
 ) -> RunStatus:
     """A sub-goal case's run (domain/subgoal.py): a fixed sequence of steps, not a model loop,
     so it never pauses and has no conversation to save."""
@@ -250,6 +251,10 @@ async def _run_subgoal(
         # answer for what was not reviewed is better than no file.
         deadline=loop.time() + settings.run_timeout_s - 30,
     )
+    # A PDF the library has not split with its pictures yet goes through the import's figure
+    # step (subgoal_library.py): the organisation's figure model, metered on this run.
+    library = store.subgoal_library()
+    figures = None if library is None else FigureStep(library, settings, run.organization_id, meter)
     try:
         outcome = await subgoal.execute(
             store,
@@ -260,6 +265,7 @@ async def _run_subgoal(
             reviewer_note=None if settings.subgoal_review else "review is off (SUBGOAL_REVIEW)",
             review=limits,
             writer=model if settings.subgoal_write else None,
+            figures=figures,
         )
     except subgoal.SubgoalRefused as exc:
         return await _fail(store, run.id, str(exc))

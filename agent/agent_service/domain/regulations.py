@@ -374,7 +374,31 @@ class ImportRow(BaseModel):
     updated_at: Any
 
 
-class LibraryStore(FigureStore, Protocol):
+class SplitStore(FigureStore, Protocol):
+    """What splitting one stored version needs (`split_one`): the import, and a sub-goal run that
+    puts a version through the same steps (subgoal_library.py)."""
+
+    async def download_pdf(self, path: str) -> bytes: ...
+
+    async def save_paragraphs(
+        self, version: VersionToSplit, extractor: str, extraction: Extraction
+    ) -> bool:
+        """Replaces the version's paragraphs at once. False if the version's file changed since
+        it was listed, in which case nothing is written."""
+        ...
+
+    async def splitting_failed(self, version: VersionToSplit, extractor: str, error: str) -> None:
+        """The version's file cannot be split by `extractor`: record why, drop its paragraphs."""
+        ...
+
+    async def save_figures(
+        self, version: VersionToSplit, figures: list[Figure], missing: int
+    ) -> None:
+        """Replaces where the version's pictures are, and records how many have no description."""
+        ...
+
+
+class LibraryStore(SplitStore, Protocol):
     """The import's tables and bucket, and what figures.FigureStep reads and writes."""
 
     async def get_import(self, import_id: UUID) -> ImportRow | None: ...
@@ -424,25 +448,6 @@ class LibraryStore(FigureStore, Protocol):
         self, organization_id: UUID, extractor: str
     ) -> list[VersionToSplit]:
         """Versions of the library not split by `extractor` yet, failures included."""
-        ...
-
-    async def download_pdf(self, path: str) -> bytes: ...
-
-    async def save_paragraphs(
-        self, version: VersionToSplit, extractor: str, extraction: Extraction
-    ) -> bool:
-        """Replaces the version's paragraphs at once. False if the version's file changed since
-        it was listed, in which case nothing is written."""
-        ...
-
-    async def splitting_failed(self, version: VersionToSplit, extractor: str, error: str) -> None:
-        """The version's file cannot be split by `extractor`: record why, drop its paragraphs."""
-        ...
-
-    async def save_figures(
-        self, version: VersionToSplit, figures: list[Figure], missing: int
-    ) -> None:
-        """Replaces where the version's pictures are, and records how many have no description."""
         ...
 
     async def splitting_errors(self, organization_id: UUID, extractor: str) -> list[str]:
@@ -563,7 +568,7 @@ async def _execute(
         if not await store.touch_import(job.id):
             cancelled = True
             return False
-        if not await _split_one(store, version, split, figures, deadline):
+        if not await split_one(store, version, split, figures, deadline):
             skipped.append(version.name)
         return True
 
@@ -604,8 +609,8 @@ async def _execute(
     return outcome
 
 
-async def _split_one(
-    store: LibraryStore,
+async def split_one(
+    store: SplitStore,
     version: VersionToSplit,
     split: Splitter,
     figures: DescribeFigures | None,

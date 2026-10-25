@@ -36,6 +36,7 @@ from agent_service.settings import agent_version
 
 if TYPE_CHECKING:
     from agent_service.domain.regulation_search import SearchStore
+    from agent_service.domain.subgoal_library import SubgoalLibrary
 
 _approvals = TypeAdapter(list[Approval])
 _files = TypeAdapter(list[RunFile])
@@ -147,6 +148,11 @@ class RunStore(Protocol):
 
     def search_store(self) -> "SearchStore":
         """The library search (domain/regulation_search.py), on this store's connection."""
+        ...
+
+    def subgoal_library(self) -> "SubgoalLibrary | None":
+        """The regulation library as a sub-goal run reads and fills it (domain/subgoal_library.py),
+        on this store's connection. None: the run reads its PDFs in memory."""
         ...
 
     async def add_requirements(self, rows: list[NewRequirement]) -> None: ...
@@ -589,6 +595,11 @@ class SupabaseRunStore:
         from agent_service.domain.search_store import SupabaseSearchStore
 
         return SupabaseSearchStore(self._db)
+
+    def subgoal_library(self) -> "SubgoalLibrary | None":
+        from agent_service.domain.subgoal_library import SupabaseSubgoalLibrary
+
+        return SupabaseSubgoalLibrary(self._db)
 
     async def add_requirements(self, rows: list[NewRequirement]) -> None:
         payload = [r.model_dump(mode="json") for r in rows]
