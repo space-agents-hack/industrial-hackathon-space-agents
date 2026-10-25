@@ -176,7 +176,7 @@ def test_a_regulation_the_case_names_is_found_by_code_or_number() -> None:
     assert screen.named_in_case("UN R01", named) is None
 
 
-def test_the_fixed_rules_read_named_applies_and_possibly_and_log_rule_3() -> None:
+def test_the_fixed_rules_read_named_applies_and_possibly_and_apply_rule_3() -> None:
     codes = ["UN R901", "UN R902", "UN R903", "UN R904", "UN R905", "UN R906"]
     verdicts = [
         verdict("UN R901"),
@@ -200,24 +200,25 @@ def test_the_fixed_rules_read_named_applies_and_possibly_and_log_rule_3() -> Non
     assert read == {
         "UN R901": True,
         "UN R902": True,
-        # Ranked 6th at best: marked by rule 3, and still read while it is in shadow.
-        "UN R903": True,
+        # Ranked 6th at best: marked by rule 3 and left out, since the rule is live.
+        "UN R903": False,
         "UN R904": False,
         "UN R905": True,  # does_not, but the case names it
         "UN R906": False,  # its screen call failed: no verdict, the orchestrator decides
     }
     assert [d.regulation for d in decisions if d.rule3] == ["UN R903"]
     assert decisions[4].because == "named in the case: spec.pdf p.1: UN R905"
-    # Same verdicts and hits, same answer; live, rule 3 leaves out what it marked and only that.
+    # Same verdicts and hits, same answer; in shadow, rule 3 marks the same one and reads it.
     assert screen.decide(codes, verdicts, found, named) == decisions
-    live = screen.decide(codes, verdicts, found, named, live=True)
-    assert [d.regulation for d in live if d.read] == ["UN R901", "UN R902", "UN R905"]
-    assert not screen.RULE3_LIVE
+    assert screen.RULE3_LIVE
+    shadow = screen.decide(codes, verdicts, found, named, live=False)
+    assert [d.regulation for d in shadow if d.read] == ["UN R901", "UN R902", "UN R903", "UN R905"]
+    assert [d.regulation for d in shadow if d.rule3] == ["UN R903"]
 
 
-async def test_the_screen_searches_each_entry_and_returns_what_to_read(
-    store, settings, monkeypatch
-) -> None:
+async def _screen(store, settings, monkeypatch, failing: str | None = None):
+    """A screen over four made-up regulations and a one-component profile. `failing` is a query
+    whose search raises."""
     search = TextSearch(store)
     monkeypatch.setattr(store, "search_store", lambda: search)
     run_id = case_run(store)
@@ -275,20 +276,49 @@ async def test_the_screen_searches_each_entry_and_returns_what_to_read(
         ]
         return ModelResponse(parts=[ToolCallPart("report_screen", {"response": out})])
 
+    if failing is not None:
+        real = tools._search
+
+        async def search_or_fail(deps, http, query, k):
+            if query == failing:
+                raise RuntimeError("search down")
+            return await real(deps, http, query, k)
+
+        monkeypatch.setattr(tools, "_search", search_or_fail)
     ctx = SimpleNamespace(deps=d, model=FunctionModel(judge), usage=RunUsage())
     result = await tools.screen_regulations(ctx)  # pyright: ignore[reportArgumentType]
+    return result, d, search, shown
+
+
+async def test_the_screen_searches_each_entry_and_returns_what_to_read(
+    store, settings, monkeypatch
+) -> None:
+    result, d, search, shown = await _screen(store, settings, monkeypatch)
 
     assert {r["regulation"]: r["because"] for r in result["to_read"]} == {
         "UN R901": "its scope applies",
         "UN R902": "its scope possibly applies",
-        "UN R903": result["to_read"][2]["because"],
         "UN R904": "named in the case: spec.pdf p.4: UN R904",
     }
-    assert [r["regulation"] for r in result["rule3_shadow"]] == ["UN R903"]
-    assert result["not_read"] == []
+    # No search finds the doors regulation: rule 3 leaves it out, and says so where it is listed.
+    assert [r["regulation"] for r in result["rule3"]] == ["UN R903"]
+    assert result["rule3_live"] is True
+    assert [r["regulation"] for r in result["not_read"]] == ["UN R903"]
+    assert "no search ranks it" in result["not_read"][0]["because"]
     # One search per function and per component, and the screen saw where each ranked.
     assert sorted(q or "" for q in search.queries) == ["emits signal", "emitter, electronic"]
     assert 'ranked 1 of 2 regulations for "emitter"' in "".join(shown)
     assert "No search for a function or component of the profile found it." in "".join(shown)
+    rule3 = [e for e in store.payloads(d.run.id, "text") if "Rule 3" in e["text"]]
+    assert rule3 and "live, left out" in rule3[0]["text"]
+
+
+async def test_a_failed_search_puts_rule_3_back_in_shadow(store, settings, monkeypatch) -> None:
+    # The component's search is the only one that finds UN R902. Without it R902 has no rank,
+    # which is not evidence against it: rule 3 marks it and the doors one, and leaves out neither.
+    result, d, _, _ = await _screen(store, settings, monkeypatch, failing="emitter, electronic")
+    assert result["rule3_live"] is False
+    assert [r["regulation"] for r in result["rule3"]] == ["UN R902", "UN R903"]
+    assert {"UN R902", "UN R903"} <= {r["regulation"] for r in result["to_read"]}
     rule3 = [e for e in store.payloads(d.run.id, "text") if "Rule 3" in e["text"]]
     assert rule3 and "shadow" in rule3[0]["text"]

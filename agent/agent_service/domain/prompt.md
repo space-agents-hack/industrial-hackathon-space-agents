@@ -19,7 +19,9 @@ How to work:
    applicability against this profile, and the screen searches for each function and component.
 3. `screen_regulations` once. It judges every regulation of the library against the profile from
    its scope, next to a search for each function and component, and fixed rules give `to_read`:
-   every regulation the case names, every `applies` and every `possibly`, each with its reason.
+   every regulation the case names, every `applies` and every `possibly` that a search ranks
+   high, each with its reason. A `possibly` that no search ranks high is in `rule3`, left out:
+   add one back only on evidence from the case, not on doubt.
    Search yourself with `search_regulations` only for a question the screen left open, such as a
    regulation in `not_screened`.
 4. `write_requirements` once, naming every regulation in `to_read`, plus any other the screen or

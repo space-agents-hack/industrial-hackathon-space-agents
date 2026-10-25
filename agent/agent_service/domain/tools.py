@@ -218,10 +218,12 @@ async def screen_regulations(ctx: RunContext[Deps]) -> dict[str, Any]:
     """Choose what to read: every regulation of the library judged against the product profile
     from its scope section, introduction and transitional provisions, next to where a search for
     each function and each component of the profile ranks it. Fixed rules then give `to_read`:
-    every regulation the case names, every `applies` and every `possibly`, each with the sentence
-    it rests on. Unlike a search, it cannot miss a regulation because no query was written for it.
-    Also lists the profile entries that several regulations to read cover, and what their own
-    texts say about replacing one another. Call it once, after `record_product_profile`."""
+    every regulation the case names, every `applies`, and every `possibly` that some search ranks
+    among the first five regulations, each with the sentence it rests on. A `possibly` no search
+    ranks there is in `not_read` and `rule3`. Unlike a search, it cannot miss a regulation because
+    no query was written for it. Also lists the profile entries that several regulations to read
+    cover, and what their own texts say about replacing one another. Call it once, after
+    `record_product_profile`."""
     deps = ctx.deps
     profile = await _require_profile(deps)
     versions = _citable(await _library(deps))
@@ -233,13 +235,16 @@ async def screen_regulations(ctx: RunContext[Deps]) -> dict[str, Any]:
         async with semaphore:
             return screen.candidate(version, await _paragraphs(deps, version.id))
 
+    failed: list[str] = []
+
     async def entry_search(http: httpx.AsyncClient, query: str) -> list[regulation_search.Hit]:
         # A failed search is no evidence, not a failed screen: the verdicts still come from the
-        # scope text, and rule 3 only logs.
+        # scope text, and rule 3 goes back to logging only (below).
         try:
             async with searching:
                 return await _search(deps, http, query, _SCREEN_SEARCH_K)
         except Exception as exc:
+            failed.append(query)
             await _progress(deps, f"Search for {query!r} failed: {type(exc).__name__}: {exc}"[:400])
             return []
 
@@ -293,8 +298,11 @@ async def screen_regulations(ctx: RunContext[Deps]) -> dict[str, Any]:
             verdicts += outcome
     titles = {v.regulation: v.title for v in versions}
     by_code = {v.regulation: v for v in verdicts}
+    # Rule 3 leaves a `possibly` out only on a full set of ranks. With no entries to search, or a
+    # search that failed (the one that would have ranked it, perhaps), it logs instead.
+    live = screen.RULE3_LIVE and bool(entries) and not failed
     decisions = screen.decide(
-        [v.regulation for v in versions], verdicts, found, profile.named_in_case
+        [v.regulation for v in versions], verdicts, found, profile.named_in_case, live=live
     )
 
     def row(d: screen.Decision) -> dict[str, Any]:
@@ -316,18 +324,18 @@ async def screen_regulations(ctx: RunContext[Deps]) -> dict[str, Any]:
         return out
 
     to_read = [row(d) for d in decisions if d.read]
-    shadow = [
+    marked = [
         {"regulation": d.regulation, "search": screen.describe(found.get(d.regulation, []), 2)}
         for d in decisions
         if d.rule3
     ]
-    if shadow:
-        # For the person reading the trace: what rule 3 would cut once live (SYS-44, #53).
+    if marked:
+        # For the person reading the trace: what rule 3 left out, or would have (SYS-44, #53).
         await _progress(
             deps,
-            f"Rule 3 ({'live' if screen.RULE3_LIVE else 'shadow, nothing left out'}): "
-            f"{len(shadow)} `possibly` regulation(s) no search ranks in the first {screen.TOP}: "
-            + ", ".join(r["regulation"] for r in shadow)
+            f"Rule 3 ({'live, left out' if live else 'shadow, nothing left out'}): "
+            f"{len(marked)} `possibly` regulation(s) no search ranks in the first {screen.TOP}: "
+            + ", ".join(r["regulation"] for r in marked)
             + ".",
         )
     read_codes = {d.regulation for d in decisions if d.read}
@@ -345,7 +353,9 @@ async def screen_regulations(ctx: RunContext[Deps]) -> dict[str, Any]:
         "shared_profile_entries": screen.shared_entries(
             [v for v in verdicts if v.regulation in read_codes]
         ),
-        "rule3_shadow": shadow,
+        # Left out by rule 3 when `rule3_live`, else only marked. Add one back only on evidence.
+        "rule3": marked,
+        "rule3_live": live,
         # A batch that failed is not a verdict of does_not: search those regulations instead.
         "not_screened": errors,
     }

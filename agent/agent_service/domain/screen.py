@@ -15,9 +15,10 @@ decides by one.
 
 Search and rules (Certivity's second tip, #53): code also runs one search per function and
 component of the profile and shows each regulation's ranks next to its scope, and fixed rules
-(`decide`) turn verdicts and ranks into what to read. What this does NOT do: leave a regulation
-out on search ranks (rule 3 logs only, RULE3_LIVE), judge near-twins (the orchestrator does, on
-quoted evidence), or stop the orchestrator from adding one with a reason.
+(`decide`) turn verdicts and ranks into what to read. What this does NOT do: leave out an `applies`
+or a regulation the case names on search ranks (rule 3 touches `possibly` only), judge
+near-twins (the orchestrator does, on quoted evidence), or stop the orchestrator from adding one
+with a reason.
 """
 
 import re
@@ -172,9 +173,13 @@ def _one_verdict_each(ctx: RunContext[list[Candidate]], verdicts: list[Verdict])
 # Rule 3's line: a `possibly` is "without search evidence" when no search for a function or a
 # component ranks it among the first TOP regulations. Five was fixed in the plan before any run
 # (certivity-tips-plan.md), not fitted to a score; a library of ~56 regulations has 3 to 10 that
-# share a part's subject. The rule only logs (SHADOW) until a dev run shows what it would cut.
+# share a part's subject.
+# Live since Ramón's call on #53 (2026-10-25): in shadow on the last dev run it marked one
+# `possibly` and none of the regulations that run needed. The line was not moved to get there.
+# Callers switch it off for a run whose searches failed or did not run: no ranks is no evidence
+# either way, and without that every `possibly` would go (tools.screen_regulations).
 TOP = 5
-RULE3_LIVE = False
+RULE3_LIVE = True
 
 
 def evidence(searches: Sequence[tuple[str, Sequence[str]]]) -> dict[str, list[Evidence]]:
@@ -239,7 +244,7 @@ class Decision:
     read: bool
     because: str
     verdict: str | None
-    # Rule 3, in shadow: this `possibly` would be left out if the rule were live.
+    # Rule 3 marked this `possibly`: left out when the rule is live, only logged when it is not.
     rule3: bool = False
 
 
