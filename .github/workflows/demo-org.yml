@@ -9,8 +9,10 @@ name: Demo organisation
 #   copy       scripts/demo-org.sql (one transaction: the organisation, read-only, its rows and the
 #              account), then the agent copies the files it queued, until none is left.
 #
-# Shares the release queue: a copy never runs while migrations are being applied, and the agent
-# it calls is the one the last release promoted.
+# Its own queue, not the release's: GitHub keeps one pending job per group and cancels the older
+# one, so sharing it could cancel a pending release. Start a copy when no release is running;
+# before the migration it needs is applied, the script fails on the missing column and its
+# transaction leaves nothing behind.
 #
 # The password is an input, not a secret, because it is meant to be handed out; it is masked in
 # the log all the same. Leave it empty to keep an existing account's password.
@@ -61,7 +63,7 @@ env:
   NODE_VERSION: "24"
 
 concurrency:
-  group: production-release
+  group: demo-org
   cancel-in-progress: false
 
 jobs:
