@@ -483,6 +483,16 @@ async def prepare(store: LibraryStore, settings: Settings, import_id: UUID) -> I
             raise CannotAdvance("The import is already running.")
         log.warning("Import %s had no heartbeat; taking it over.", import_id)
         return job
+    if job.status == "failed":
+        # Resumed from the page (#57). An unexpected error, often a database timeout, ends an
+        # import as failed and asks for a Resume. Like a takeover, resuming is safe: stored files
+        # are skipped and only versions without paragraphs are split. Another import of the same
+        # organisation that is active refuses the claim (regulation_imports_one_active).
+        if not await store.claim_import(import_id, "failed"):
+            raise CannotAdvance(
+                "Another import of this organisation is active, or this one was resumed already."
+            )
+        return job
     raise CannotAdvance(f"The import is already {job.status}.")
 
 

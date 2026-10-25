@@ -171,6 +171,19 @@ export function ImportPanel({
               ))}
             </ul>
           ) : null}
+          {latest.status === "failed" ? (
+            <div className="flex flex-wrap gap-2">
+              {/* The agent resumes a failed import where it stopped: stored files are skipped and
+                  only versions without paragraphs are split (prepare in regulations.py, #57). */}
+              <Button
+                size="sm"
+                disabled={busy}
+                onClick={() => void act(`/api/regulations/imports/${latest.id}/advance`, "POST")}
+              >
+                Resume
+              </Button>
+            </div>
+          ) : null}
           {active ? (
             <div className="flex flex-wrap gap-2">
               {stale ? (

@@ -30,6 +30,7 @@ from agent_service.domain.regulations import (
     FileProblem,
     ImportNotFound,
     IndexProblem,
+    VersionToSplit,
     fetch_pdf,
     parse_index,
 )
@@ -384,6 +385,39 @@ async def test_a_running_import_without_a_heartbeat_is_taken_over(
     # Unlike a run, an import is safe to resume: a stored file is skipped, not written twice.
     import_id = library.add_import(INDEX, "running", idle_s=settings.import_stale_after_s + 1)
     assert await run(library, settings, import_id, Server()) == "succeeded"
+
+
+async def test_an_import_that_failed_on_an_unexpected_error_is_resumed(
+    library: InMemoryLibraryStore, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # As on production (#57): a read of the library hit the statement timeout after every file
+    # was stored.
+    async def times_out(*_args: object) -> list[VersionToSplit]:
+        raise RuntimeError("canceling statement due to statement timeout")
+
+    monkeypatch.setattr(library, "versions_to_split", times_out)
+    import_id = library.add_import(INDEX)
+    server = Server()
+    assert await run(library, settings, import_id, server) == "failed"
+    assert "Resume it" in (library.errors[import_id] or "")
+    downloads = len(server.requests)
+
+    monkeypatch.undo()
+    assert await run(library, settings, import_id, server) == "succeeded"
+
+    assert len(server.requests) == downloads  # every file was stored before the error
+    assert all(v.paragraphs for v in library.versions)
+
+
+async def test_a_failed_import_waits_while_another_of_its_organisation_is_active(
+    library: InMemoryLibraryStore, settings: Settings
+) -> None:
+    failed = library.add_import(INDEX, "failed")
+    library.add_import(INDEX, "paused")
+
+    with pytest.raises(CannotAdvance, match="Another import"):
+        await regulations.prepare(library, settings, failed)
+    assert library.imports[failed].status == "failed"
 
 
 # ---------------------------------------------------------------------------------- HTTP

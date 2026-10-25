@@ -103,6 +103,12 @@ class InMemoryLibraryStore:
         job = self.imports.get(import_id)
         if job is None or job.status != expected:
             return False
+        if expected == "failed" and any(
+            other.organization_id == job.organization_id
+            and other.status in ("queued", "running", "paused")
+            for other in self.imports.values()
+        ):
+            return False  # regulation_imports_one_active
         if idle_s and datetime.now(UTC) - job.updated_at < timedelta(seconds=idle_s):
             return False
         self._set(import_id, "running")

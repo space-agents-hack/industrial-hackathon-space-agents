@@ -475,3 +475,51 @@ async def test_an_import_describes_the_pictures_and_keeps_them_with_the_model(
         .execute()
     )
     assert usage == [{"process": "figures", "requests": 2}]
+
+
+async def test_a_failed_import_is_resumed_once_no_other_import_is_active(
+    db: AsyncClient, code: str, org: UUID
+) -> None:
+    raw = index(code, ("1.0.0", "base", b"%PDF-1.7 base"))
+    failed = UUID(
+        rows(
+            await db.table("regulation_imports")
+            .insert(
+                {
+                    "organization_id": str(org),
+                    "source_name": "t.json",
+                    "index": raw,
+                    "status": "failed",
+                    "error": "The import stopped on an unexpected error (APIError). Resume it.",
+                    "finished_at": "2026-10-25T02:22:16Z",
+                }
+            )
+            .execute()
+        )[0]["id"]
+    )
+    other = rows(
+        await db.table("regulation_imports")
+        .insert({"organization_id": str(org), "source_name": "u.json", "index": raw})
+        .execute()
+    )[0]["id"]
+    store = await SupabaseLibraryStore.connect(URL, KEY)
+    settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+    try:
+        # regulation_imports_one_active refuses a second active import of the organisation.
+        with pytest.raises(regulations.CannotAdvance, match="Another import"):
+            await regulations.prepare(store, settings, failed)
+        await (
+            db.table("regulation_imports").update({"status": "cancelled"}).eq("id", other).execute()
+        )
+
+        await regulations.prepare(store, settings, failed)
+    finally:
+        await store.aclose()
+
+    job = rows(
+        await db.table("regulation_imports")
+        .select("status, error, finished_at")
+        .eq("id", str(failed))
+        .execute()
+    )
+    assert job == [{"status": "running", "error": None, "finished_at": None}]

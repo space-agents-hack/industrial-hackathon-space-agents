@@ -8,6 +8,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from postgrest import ReturnMethod
+from postgrest.exceptions import APIError
 from supabase import AsyncClient, acreate_client
 
 from agent_service.domain.figures import Described
@@ -58,14 +59,21 @@ class SupabaseLibraryStore:
         # The status filter is the lock, as for runs: of two requests, one update matches a row.
         query = (
             self._db.table("regulation_imports")
-            .update({"status": "running", "error": None})
+            .update({"status": "running", "error": None, "finished_at": None})
             .eq("id", str(import_id))
             .eq("status", expected)
         )
         if idle_s:
             cutoff = datetime.now(UTC) - timedelta(seconds=idle_s)
             query = query.lt("updated_at", cutoff.isoformat())
-        return len(_rows(await query.execute())) == 1
+        try:
+            return len(_rows(await query.execute())) == 1
+        except APIError as exc:
+            # A failed import resumed while another of the organisation is active: the index
+            # that allows one active import per organisation refuses it.
+            if exc.code == "23505":
+                return False
+            raise
 
     async def touch_import(self, import_id: UUID) -> bool:
         res = (
