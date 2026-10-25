@@ -366,6 +366,47 @@ async def test_keys_are_added_in_batches_until_every_current_paragraph_has_one(
         await store.aclose()
 
 
+async def test_vectors_without_a_paragraph_are_pruned_in_batches(
+    db: AsyncClient, org: UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # After a library was cleared and imported again, nearly every vector had lost its paragraph,
+    # and one delete of them all passed the hosted database's 8 s timeout (#57).
+    from agent_service.domain import search_store
+
+    monkeypatch.setattr(search_store, "_PRUNE_BATCH", 2)
+    model = "test-prune@1024"
+    vector = search_store.vector_literal([0.5] * 1024)
+    await (
+        db.table("regulation_embeddings")
+        .insert(
+            [
+                {
+                    "organization_id": str(org),
+                    "model": model,
+                    "input_sha256": hashlib.sha256(f"orphan {i}".encode()).hexdigest(),
+                    "embedding": vector,
+                }
+                for i in range(5)
+            ]
+        )
+        .execute()
+    )
+    store = await search_store.SupabaseSearchStore.connect(URL, KEY)
+    try:
+        assert await store.prune_embeddings(org, model) == 5
+        assert await store.prune_embeddings(org, model) == 0
+    finally:
+        await store.aclose()
+    left = await (
+        db.table("regulation_embeddings")
+        .select("input_sha256")
+        .eq("organization_id", str(org))
+        .eq("model", model)
+        .execute()
+    )
+    assert rows(left) == []
+
+
 async def test_an_import_describes_the_pictures_and_keeps_them_with_the_model(
     db: AsyncClient, code: str, org: UUID, monkeypatch: pytest.MonkeyPatch
 ) -> None:

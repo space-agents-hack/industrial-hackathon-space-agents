@@ -33,6 +33,9 @@ def vector_literal(vector: list[float]) -> str:
 
 # Paragraph keys per call of add_regulation_embedding_keys (migration 20261024330000).
 _KEY_BATCH = 1000
+# Vectors deleted per call of prune_regulation_embeddings. A vector is about 2 KB in TOAST plus an
+# HNSW entry; 1,000 is a fraction of a second where 29,655 at once was cancelled.
+_PRUNE_BATCH = 1000
 
 
 class SupabaseSearchStore:
@@ -147,10 +150,19 @@ class SupabaseSearchStore:
         )
 
     async def prune_embeddings(self, org: UUID, model: str) -> int:
-        res = await self._db.rpc(
-            "prune_regulation_embeddings", {"p_organization_id": str(org), "p_model": model}
-        ).execute()
-        return int(cast(Any, res.data) or 0)
+        # In batches, like the keys: after a library is cleared and imported again, nearly every
+        # vector has lost its paragraph, and deleting them in one statement passed the hosted
+        # database's 8 s statement timeout (migration 20261025020000, #57).
+        pruned = 0
+        while True:
+            res = await self._db.rpc(
+                "prune_regulation_embeddings",
+                {"p_organization_id": str(org), "p_model": model, "p_limit": _PRUNE_BATCH},
+            ).execute()
+            n = int(cast(Any, res.data) or 0)
+            pruned += n
+            if n < _PRUNE_BATCH:
+                return pruned
 
     async def analyze(self) -> None:
         await self._db.rpc("analyze_regulation_search", {}).execute()
