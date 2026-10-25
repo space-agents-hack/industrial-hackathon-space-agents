@@ -82,8 +82,13 @@ for the whole library, about 0.1 s for 10 versions (`docs/regulations-store.md`,
 
 Status: **added, not yet called.** Asked for on #53 (Clemente's request, Certivity's tip to scope by
 rules and semantic search together, SYS-28, SYS-44) with this shape; built on the producer side
-without a migration. Additive: `search` and `Hit` are unchanged. The pipeline's `screen.evidence`
-still ranks regulations its own way (by best paragraph); switching it is the pipeline's call.
+without a migration. Additive: `search` and `Hit` are unchanged.
+
+Decided by Ramón, 2026-10-25, on #53: the screen's rule 3 reads the **best paragraph's rank**
+(`best_rank`), not `score`, because `score` grows with how many pages mention an entry and so
+favours long regulations that mention it in passing. `screen.evidence` already ranks that way
+(checked: on 2,000 random hit lists it orders regulations exactly as `best_rank` does), so the
+pipeline needs no change for it; `score` stays available for a reader who wants volume.
 
 **Query**, `regulation_search.rank_regulations(store, http, settings, org, query, *, version_ids,
 k_paragraphs=50, mode, case_id, meter)`: one `search` with k = `k_paragraphs`, so one embedding and
