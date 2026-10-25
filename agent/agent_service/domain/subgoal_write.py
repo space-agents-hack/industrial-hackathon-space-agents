@@ -45,6 +45,9 @@ from pydantic_ai.usage import RunUsage
 from agent_service.domain import regdiff
 from agent_service.domain.subgoal_review import Limits
 
+# The main goal's near-duplicate test (3a7a849), one copy so the two cannot drift apart.
+from agent_service.domain.writer import _content_words  # pyright: ignore[reportPrivateUsage]
+
 _HERE = Path(__file__).parent
 _TEXT_MAX = 2000
 # A list or a step-by-step procedure rarely holds more obligations than this; more texts than
@@ -267,12 +270,14 @@ class Report:
     kept_rules: list[str] = field(default_factory=list)
     failed: list[str] = field(default_factory=list)
     split: int = 0
+    duplicates: list[str] = field(default_factory=list)
 
     def summary(self) -> dict[str, Any]:
         return {
             "written": self.written,
             "added_split_into": self.split,
             "kept_rules_text": self.kept_rules[:60],
+            "dropped_as_duplicates": self.duplicates[:60],
             "failed_batches": self.failed,
         }
 
@@ -302,37 +307,48 @@ async def write(
     loop = asyncio.get_running_loop()
     report = Report(list(changes), usage)
 
-    async def one(batch: list[Item], label: str) -> dict[str, list[str]] | str | None:
-        async with semaphore:
-            if limits.deadline is not None and loop.time() + limits.timeout_s >= limits.deadline:
-                return None
-            started = loop.time()
-            try:
-                async with asyncio.timeout(limits.timeout_s):
-                    result = await write_agent.run(
-                        render(batch),
-                        model=model,
-                        deps=WriteDeps({it.key: it for it in batch}),
-                        usage_limits=UsageLimits(
-                            request_limit=_REQUESTS, input_tokens_limit=_INPUT_TOKENS
-                        ),
-                    )
-            except Exception as exc:
-                if isinstance(exc, TimeoutError):
-                    failure = f"TimeoutError: no answer within {limits.timeout_s:g} s"
-                else:
-                    failure = f"{type(exc).__name__}: {exc}"[:300]
-                await progress(
-                    f"Writing batch {label} failed after {loop.time() - started:.0f} s: {failure}"
+    def has_time() -> bool:
+        return limits.deadline is None or loop.time() + limits.timeout_s < limits.deadline
+
+    async def attempt(batch: list[Item], label: str) -> dict[str, list[str]] | str:
+        started = loop.time()
+        try:
+            async with asyncio.timeout(limits.timeout_s):
+                result = await write_agent.run(
+                    render(batch),
+                    model=model,
+                    deps=WriteDeps({it.key: it for it in batch}),
+                    usage_limits=UsageLimits(
+                        request_limit=_REQUESTS, input_tokens_limit=_INPUT_TOKENS
+                    ),
                 )
-                return failure
-            usage.incr(result.usage)
+        except Exception as exc:
+            if isinstance(exc, TimeoutError):
+                failure = f"TimeoutError: no answer within {limits.timeout_s:g} s"
+            else:
+                failure = f"{type(exc).__name__}: {exc}"[:300]
             await progress(
-                f"Writing batch {label}: {len(result.output)} of {len(batch)} texts in "
-                f"{loop.time() - started:.0f} s, {result.usage.input_tokens} tokens in, "
-                f"{result.usage.output_tokens} out."
+                f"Writing batch {label} failed after {loop.time() - started:.0f} s: {failure}"
             )
-            return {w.id: w.texts for w in result.output}
+            return failure
+        usage.incr(result.usage)
+        await progress(
+            f"Writing batch {label}: {len(result.output)} of {len(batch)} texts in "
+            f"{loop.time() - started:.0f} s, {result.usage.input_tokens} tokens in, "
+            f"{result.usage.output_tokens} out."
+        )
+        return {w.id: w.texts for w in result.output}
+
+    async def one(batch: list[Item], label: str) -> dict[str, list[str]] | str | None:
+        # A failed batch is tried again at once, as the reviewer's is (e38811b): waiting for the
+        # round's slowest batch first would add its time to the run.
+        async with semaphore:
+            if not has_time():
+                return None
+            outcome = await attempt(batch, label)
+            if isinstance(outcome, str) and has_time():
+                outcome = await attempt(batch, f"{label}, second try")
+            return outcome
 
     outcomes = await asyncio.gather(
         *(one(b, f"{i} of {len(batches)}") for i, b in enumerate(batches, 1))
@@ -367,5 +383,23 @@ async def write(
         if change.change == "added" and len(clean) > 1:
             report.split += len(clean) - 1
         out += [replace(change, new_text=t) for t in clean]
-    report.changes = out
+    report.changes = _without_duplicates(out, report)
     return report
+
+
+def _without_duplicates(changes: list[regdiff.Change], report: Report) -> list[regdiff.Change]:
+    """An added text that states what another text of the same paragraph states, in other words,
+    is dropped. Splitting per obligation can write one twice (a lead-in repeated into each item,
+    then the lead-in alone), and the platform matches one to one, so a second copy never scores.
+    A modified or removed change is never dropped: it carries a requirement's id."""
+    seen: set[tuple[str, tuple[str, ...]]] = set()
+    out: list[regdiff.Change] = []
+    for c in changes:
+        key = ((c.paragraph or "").rstrip("."), _content_words(c.new_text or ""))
+        if c.change == "added" and c.new_text and key in seen:
+            report.duplicates.append(f"added at {c.paragraph}: {c.new_text[:80]}")
+            continue
+        if c.new_text:
+            seen.add(key)
+        out.append(c)
+    return out

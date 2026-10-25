@@ -196,6 +196,49 @@ async def test_a_writer_that_cannot_be_reached_leaves_the_rules_file() -> None:
     assert report.failed and "provider down" in report.failed[0]
 
 
+async def test_a_failed_batch_is_tried_again_at_once() -> None:
+    model, calls = answering(
+        RuntimeError("overloaded"),
+        [
+            {"id": "C1", "texts": ["The rear lamp shall have an intensity of no more than 25 cd."]},
+            {
+                "id": "C2",
+                "texts": ["The lamp shall bear the maker's name, and may bear a part number."],
+            },
+        ],
+    )
+
+    report, _ = await written(model)
+
+    assert calls[0] == 2
+    assert report.failed == []
+    assert report.written == 2
+
+
+async def test_an_added_text_that_repeats_another_of_its_paragraph_is_dropped() -> None:
+    model, _ = answering(
+        [
+            {"id": "C1", "texts": ["The rear lamp shall have an intensity of no more than 25 cd."]},
+            {
+                "id": "C2",
+                "texts": [
+                    "The lamp shall bear the maker's name.",
+                    "The lamp may bear a part number.",
+                    "Lamps shall bear the maker's name.",
+                ],
+            },
+        ]
+    )
+
+    report, _ = await written(model)
+
+    assert [c.new_text for c in report.changes if c.change == "added"] == [
+        "The lamp shall bear the maker's name.",
+        "The lamp may bear a part number.",
+    ]
+    assert len(report.duplicates) == 1
+
+
 # ------------------------------------------------------------------------------------------
 # The rules' own text over the cap
 # ------------------------------------------------------------------------------------------
