@@ -80,7 +80,11 @@ What counts:
   function. A regulation that covers a device with several functions (several signalling functions,
   several modes) has obligations specific to each: when the case names or describes one, through
   its purpose, colour or position, take the function it fits best, not every function it might
-  serve, and leave out those specific to the others. The obligations common to every device the
+  serve, and leave out those specific to the others. A lamp the case does not name by a signal the driver
+  operates (turning, braking, reversing, hazard warning) is not that lamp: such a lamp comes
+  with a control and a tell-tale the case would show. A lamp the case names only by a general
+  role ("signalling", "marking") takes the one function that marks the vehicle's presence from
+  where it sits, and the obligations specific to every other function are left out. The obligations common to every device the
   regulation covers still apply. A test of the whole vehicle in which the part is one system
   among many (the vehicle's own emissions or immunity) is not the part's, when the regulation
   also states what a component or sub-assembly must meet: those are the part's, and so is
