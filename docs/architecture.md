@@ -125,6 +125,7 @@ texts are the regulation's wording as printed.
 | The loop, limits, what gets logged | `agent/agent_service/runner.py`, `settings.py` |
 | Tables, who can read and write | `supabase/migrations/` and `supabase/tests/` |
 | The regulation library and its import | `agent/agent_service/domain/regulations.py`, `web/app/(app)/regulations/`, `docs/regulations-store.md` |
+| Why search, parsing and the writer are built the way they are, and what was ruled out | `docs/retrieval-and-extraction.md` |
 | Regulation PDFs split into paragraphs with pages | `agent/agent_service/domain/paragraphs.py`, table `regulation_paragraphs` |
 | Pages and the trace | `web/app/`, `web/lib/trace.ts` |
 | The assistant on every page of a project | `agent/agent_service/domain/assistant.py` and `assistant.md`, `domain/project_store.py`, `web/components/assistant.tsx` |
