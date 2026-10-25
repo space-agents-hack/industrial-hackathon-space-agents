@@ -80,6 +80,13 @@ class Deps:
     # Its key, which no error message from a check call may carry (the run's own key is scrubbed
     # by the runner).
     check_secret: str | None = None
+    # The scope screen's model and the window triage's (settings screen_model, triage_model), or
+    # None: the screen then runs on the run's model, and no window is triaged (every window is
+    # read). None in tests and on the scripted model. `side_secrets`: their keys, scrubbed from
+    # their error messages.
+    screen_model: Model | str | None = None
+    triage_model: Model | str | None = None
+    side_secrets: list[str] = field(default_factory=list[str])
     # The run's usage (agent_service/metering.py): the query vector of each search goes here. None
     # in tests that do not look at usage.
     meter: Meter | None = None
@@ -279,13 +286,13 @@ async def screen_regulations(ctx: RunContext[Deps]) -> dict[str, Any]:
                 async with asyncio.timeout(deps.settings.subagent_timeout_s):
                     result = await screen.screen_agent.run(
                         [*head, CachePoint(), "\n\n".join(c.render() for c in batch)],
-                        model=cast(Model, ctx.model),
+                        model=cast(Model, deps.screen_model or ctx.model),
                         deps=batch,
                         usage_limits=UsageLimits(request_limit=_SUB_REQUESTS),
                     )
             except Exception as exc:
                 codes = ", ".join(c.version.regulation for c in batch)
-                return f"{codes}: {_failure(deps, exc)[:300]}"
+                return f"{codes}: {_scrub(deps, _failure(deps, exc))[:300]}"
             _add_tokens(ctx.usage, result.usage)
             return result.output
 
@@ -439,10 +446,13 @@ async def _search(
 
 @toolset.tool
 async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> dict[str, Any]:
-    """Read the base version of each regulation in full, in parallel windows of about 15 pages,
-    and store a draft requirement for every obligation that applies to this product. Each one
-    cites the paragraph it comes from. Name every regulation that applies in one call: they are
-    read side by side. A regulation already written in this run is not read again.
+    """Read the base version of each regulation, in parallel windows of about 15 pages, and store
+    a draft requirement for every obligation that applies to this product. Each one cites the
+    paragraph it comes from. Inside each regulation, code first searches for every function and
+    component of the profile and marks the paragraphs found for the writers; a window with none
+    may be skipped by a quick triage (`skipped_windows`). Name every regulation that applies in
+    one call: they are read side by side. A regulation already written in this run is not read
+    again.
 
     Args:
         regulations: Regulation codes exactly as `list_regulations` gives them, e.g. ["UN R<n>"].
@@ -471,6 +481,9 @@ async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> d
         jobs += writer.windows(version, paragraphs)
     if not jobs:
         raise ModelRetry("Nothing to write. " + " ".join(refused))
+    found, complete = await _focus(deps, jobs)
+    if found:
+        jobs = [replace(w, focus=found) for w in jobs]
     jobs = writer.queue_order(jobs)
 
     await _progress(
@@ -486,7 +499,25 @@ async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> d
     tally: Counter[str] = Counter()
     covers: dict[str, Counter[str]] = {}
     agreement: Counter[str] = Counter()
-    results = await _write_windows(ctx, jobs, tally, covers, agreement)
+    # Triage only next to searches that all answered and found something: with a search missing
+    # (failed, or FOCUS_K=0) a window it would have marked could be skipped.
+    skipped: list[dict[str, Any]] | None = (
+        [] if found and complete and deps.triage_model is not None else None
+    )
+    results = await _write_windows(ctx, jobs, tally, covers, agreement, skipped)
+    if skipped is not None:
+        hitless = sum(1 for w in jobs if not w.focused)
+        await _progress(
+            deps,
+            f"Triage: {hitless} of {len(jobs)} windows had no paragraph the searches found; "
+            f"{len(skipped)} skipped as holding nothing the part could have to meet"
+            + (
+                ": " + "; ".join(f"{s['regulation']} p. {s['pages']}" for s in skipped[:40])
+                if skipped
+                else ""
+            )
+            + ".",
+        )
     if agreement:
         await _progress(
             deps,
@@ -538,6 +569,9 @@ async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> d
         # most of a regulation, the writers may be filing other devices' obligations under it.
         "obligations_by_covers": {reg: dict(c.most_common()) for reg, c in covers.items()},
         "failed_windows": failed,
+        # Not failures: a quick triage judged these windows to hold nothing the part could have to
+        # meet, and no search for the profile found a paragraph in them.
+        **({"skipped_windows": skipped} if skipped else {}),
         "refused": refused,
     }
 
@@ -833,12 +867,56 @@ async def _require_profile(deps: Deps) -> writer.ProductProfile:
     return deps.profile
 
 
+async def _focus(deps: Deps, jobs: list[Window]) -> tuple[dict[UUID, list[str]], bool]:
+    """Paragraph id -> profile entries, from one search per function and component of the profile
+    inside each regulation to read (regulation_search.focus, settings.focus_k); and whether every
+    search answered. Empty when FOCUS_K is 0, the profile has no entries, or the searches failed:
+    the windows are then read as before, unmarked."""
+    profile = deps.profile
+    if profile is None or deps.settings.focus_k <= 0:
+        return {}, False
+    entries = profile.search_entries()
+    versions = list(dict.fromkeys(w.version.id for w in jobs))
+    try:
+        async with httpx.AsyncClient(timeout=30) as http:
+            result = await regulation_search.focus(
+                deps.store.search_store(),
+                http,
+                deps.settings,
+                deps.run.organization_id,
+                entries,
+                versions,
+                k=deps.settings.focus_k,
+                meter=deps.meter,
+                concurrency=_SCREEN_SEARCHES,
+            )
+    except Exception as exc:
+        await _progress(deps, f"Search inside the regulations failed: {_failure(deps, exc)}"[:400])
+        return {}, False
+    marked = sum(1 for w in jobs if any(p.id in result.found for p in w.paragraphs))
+    await _progress(
+        deps,
+        f"Searched inside {len(versions)} regulation(s) once per function and component of the "
+        f"profile ({len(entries)} entries, best {deps.settings.focus_k} each): "
+        f"{len(result.found)} paragraphs marked for the writers, in {marked} of {len(jobs)} "
+        "windows."
+        + (f" By words only: {result.words_only}." if result.words_only else "")
+        + (
+            f" {len(result.problems)} search(es) failed, e.g. {result.problems[0]}"
+            if result.problems
+            else ""
+        ),
+    )
+    return result.found, not result.problems
+
+
 async def _write_windows(
     ctx: RunContext[Deps],
     jobs: list[Window],
     tally: Counter[str] | None = None,
     covers: dict[str, Counter[str]] | None = None,
     agreement: Counter[str] | None = None,
+    skipped: list[dict[str, Any]] | None = None,
 ) -> list[tuple[int, str | None]]:
     """Every window through the writer; (stored, error) per window. `tally` counts the clauses
     set aside, by reason, and those left without an answer: what the trace shows of the
@@ -851,7 +929,11 @@ async def _write_windows(
     per window does both. Per-window calls run `concurrency` at a time and translators
     translate_concurrency at a time, in separate lanes, so a window's translations start as soon
     as its first stage answers. Drafts are stored as each call answers, and no call runs past the
-    run's write reserve (_call_timeout), so a slow run keeps what it wrote and still checks it."""
+    run's write reserve (_call_timeout), so a slow run keeps what it wrote and still checks it.
+
+    With `skipped` (a list to fill) and a triage model, a window no search marked goes first to
+    the triage, in a lane of its own; one it skips is listed there and its paragraphs are set
+    aside. A triage call that fails reads the window: only a clear "skip" skips."""
     deps = ctx.deps
     window_lane = asyncio.Semaphore(deps.concurrency)
     translate_lane = asyncio.Semaphore(deps.settings.translate_concurrency)
@@ -966,9 +1048,46 @@ async def _write_windows(
         return stored, ("; ".join(errors)[:300] or None)
 
     covers_from = writer.coverable(deps.profile)
+    triage_lane = asyncio.Semaphore(deps.concurrency)
+
+    async def triage(window: Window) -> writer.Triage | None:
+        try:
+            async with triage_lane:
+                async with asyncio.timeout(_call_timeout(deps, deps.settings.write_reserve_s)):
+                    result = await writer.triage_agent.run(
+                        [*case, CachePoint(), window.render()],
+                        model=cast(Model, deps.triage_model),
+                        deps=window,
+                        usage_limits=UsageLimits(request_limit=_SUB_REQUESTS),
+                    )
+        except Exception as exc:
+            await _progress(
+                deps,
+                _scrub(
+                    deps,
+                    f"Triage of {window.version.regulation} p. {window.pages} failed, so it is "
+                    f"read: {_failure(deps, exc)}",
+                )[:400],
+            )
+            return None
+        _add_tokens(ctx.usage, result.usage)
+        return result.output
 
     async def one(window: Window) -> tuple[int, str | None]:
         window = replace(window, covers_from=covers_from)
+        if skipped is not None and deps.triage_model is not None and not window.focused:
+            verdict = await triage(window)
+            if verdict is not None and not verdict.read:
+                skipped.append(
+                    {
+                        "regulation": window.version.regulation,
+                        "pages": window.pages,
+                        "reason": verdict.reason[:200],
+                    }
+                )
+                for p in window.paragraphs:
+                    deps.set_aside.setdefault(p.id, writer.SKIPPED_BY_TRIAGE)
+                return 0, None
         try:
             if two_stages:
                 return await two_stage(window)
@@ -1014,6 +1133,12 @@ def _failure(deps: Deps, exc: Exception) -> str:
             "the run's time limit, stopped."
         )
     return f"{type(exc).__name__}: {exc}"
+
+
+def _scrub(deps: Deps, message: str) -> str:
+    for secret in deps.side_secrets:
+        message = message.replace(secret, "[redacted]")
+    return message
 
 
 def _code_action(problem: str) -> str:

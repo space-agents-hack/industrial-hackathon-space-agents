@@ -14,7 +14,7 @@ from pydantic_ai.usage import RunUsage
 
 from agent_service.domain import tools, writer
 from agent_service.settings import Settings
-from tests.fakes import InMemoryRunStore, case_run
+from tests.fakes import InMemoryRunStore, TextSearch, case_run
 
 pytestmark = pytest.mark.anyio
 
@@ -248,3 +248,111 @@ async def test_several_disposition_samples_are_voted_and_counted(store, settings
     assert first_asks.count("record_disposition") == 4  # two windows, two answers each
     assert result["written"]["UN R148"]["requirements"] == 2  # the same obligation, once
     assert result["disposition_vote"]["vote: kept by all"] == 2
+
+
+# A profile whose searches find exactly one paragraph of the made-up R148 (5.4.3, page 4): the
+# fake search matches words as substrings, and only "luminous" occurs, once.
+FOCUSED = writer.ProductProfile(
+    part="A made-up lamp.",
+    functions=["luminous"],
+    components=[
+        writer.Component(name="qqq", functions=["luminous"], technology="zzz", build="integral")
+    ],
+    mounted=["rear"],
+    vehicles=["M1"],
+)
+
+
+def triage_model(read: bool, seen: list[str]) -> FunctionModel:
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        assert info.output_tools[0].name == "report_triage"
+        seen.append(str(messages))
+        args = {"read": read, "reason": "Made up."}
+        return ModelResponse(parts=[ToolCallPart("report_triage", args)])
+
+    return FunctionModel(model)
+
+
+async def test_the_writer_sees_which_paragraphs_a_search_inside_the_regulation_found(
+    store, settings
+) -> None:
+    # Certivity, 2026-10-25: queries from the part's functions and components, run inside each
+    # regulation to read, so the writer reads those paragraphs closely.
+    d = deps(store, settings)
+    d.profile = FOCUSED
+    search = TextSearch(store)
+    store.search_store = lambda: search  # type: ignore[method-assign]
+    prompts: list[str] = []
+    inner = stalls_on("no marker").function
+    assert inner is not None
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        if info.output_tools[0].name == "record_disposition":
+            prompts.append(str(messages))
+        return await inner(messages, info)  # type: ignore[misc]
+
+    await tools.write_requirements(ctx(d, FunctionModel(model)), ["UN R148"])
+
+    # Only the window of 5.4.3 (pages 1-4) carries a mark, once per disposition sample.
+    marked = [p for p in prompts if "Found by the search for: luminous" in p]
+    assert marked and all("5.4.3" in p and "6.1." not in p for p in marked)
+    assert any("6.1." in p for p in prompts if p not in marked)
+    # One search per profile entry, inside the one regulation read.
+    assert sorted(q or "" for q in search.queries) == ["luminous", "qqq, zzz"]
+
+
+async def test_the_triage_skips_only_a_window_no_search_found(store, settings) -> None:
+    # The window of 6.1 (page 20) has no paragraph the searches found: the triage may skip it,
+    # and the check does not list it as uncovered. The window of 5.4.3 is read without triage.
+    d = deps(store, settings)
+    d.profile = FOCUSED
+    seen: list[str] = []
+    d.triage_model = triage_model(read=False, seen=seen)
+
+    result = await tools.write_requirements(ctx(d, stalls_on("no marker")), ["UN R148"])
+
+    assert len(seen) == 1 and "6.1." in seen[0] and "5.4.3" not in seen[0]
+    assert [s["pages"] for s in result["skipped_windows"]] == ["20"]
+    assert result["written"]["UN R148"]["requirements"] == 1
+    assert writer.SKIPPED_BY_TRIAGE in d.set_aside.values()
+
+
+async def test_a_window_is_read_when_the_triage_says_so_or_fails(store, settings) -> None:
+    d = deps(store, settings)
+    d.profile = FOCUSED
+    d.triage_model = triage_model(read=True, seen=[])
+
+    result = await tools.write_requirements(ctx(d, stalls_on("no marker")), ["UN R148"])
+
+    assert "skipped_windows" not in result
+    assert result["written"]["UN R148"]["requirements"] == 2
+
+
+async def test_no_triage_without_the_search_inside_the_regulations(store, settings) -> None:
+    # FOCUS_K=0: nothing is marked, so nothing is known to be safe to skip; every window is read.
+    d = deps(store, settings.model_copy(update={"focus_k": 0}))
+    d.profile = FOCUSED
+    seen: list[str] = []
+    d.triage_model = triage_model(read=False, seen=seen)
+
+    result = await tools.write_requirements(ctx(d, stalls_on("no marker")), ["UN R148"])
+
+    assert seen == []
+    assert result["written"]["UN R148"]["requirements"] == 2
+
+
+async def test_a_provider_run_gets_its_own_screen_and_triage_models_and_a_scripted_one_none(
+    store, settings
+) -> None:
+    from agent_service.domain import prepare_deps
+
+    run = store.runs[case_run(store)]
+    real = await prepare_deps(store, run, settings, model_name="anthropic:claude-opus-5-5")
+    scripted = await prepare_deps(store, run, settings, model_name="scripted")
+    off = await prepare_deps(
+        store, run, settings.model_copy(update={"triage_model": ""}), model_name="anthropic:x"
+    )
+
+    assert real.screen_model is not None and real.triage_model is not None
+    assert scripted.screen_model is None and scripted.triage_model is None
+    assert off.triage_model is None

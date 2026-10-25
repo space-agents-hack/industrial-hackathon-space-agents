@@ -345,6 +345,9 @@ def _next_step(messages: list[ModelMessage], info: AgentInfo) -> tuple[str, list
         return _write_changes(messages)
     if "report_screen" in outputs:
         return _screen(messages)
+    if "report_triage" in outputs:
+        # Reads every window: the scripted run tests the plumbing, not what is safe to skip.
+        return "", [("report_triage", {"read": True, "reason": "Scripted: every window is read."})]
     return _orchestrate(messages)
 
 

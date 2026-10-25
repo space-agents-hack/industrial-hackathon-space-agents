@@ -108,6 +108,9 @@ def clauses(text: str) -> list[str]:
 
 
 _HERE = Path(__file__).parent
+# Profile entries named next to one paragraph at most: a general paragraph ("every lamp shall")
+# is found by most searches, and the list would only repeat the profile.
+_FOCUS_SHOWN = 4
 
 
 class UnknownRegulation(Exception):
@@ -122,6 +125,17 @@ class Window:
     # What an obligation may name as `covers`: the profile's functions and components plus
     # WHOLE_PART (coverable). Empty means `covers` is not checked (tests, or no profile).
     covers_from: tuple[str, ...] = ()
+    # Paragraph id -> the profile entries whose search inside this regulation found it
+    # (regulation_search.focus). Shown next to the paragraph so the writer reads those closely;
+    # every other paragraph is still read and judged on its text.
+    focus: Mapping[UUID, Sequence[str]] = field(
+        default_factory=dict[UUID, Sequence[str]], hash=False, compare=False
+    )
+
+    @property
+    def focused(self) -> bool:
+        """Whether a search inside the regulation found any paragraph of this window."""
+        return any(p.id in self.focus for p in self.paragraphs)
 
     @property
     def pages(self) -> str:
@@ -143,7 +157,10 @@ class Window:
                 lines += [f"## {p.heading}", ""]
                 heading = p.heading
             label = p.label or "(unnumbered text)"
-            lines += [f"[#{p.position}] {label} (page {p.page_start})", p.text]
+            lines.append(f"[#{p.position}] {label} (page {p.page_start})")
+            if found_by := self.focus.get(p.id):
+                lines.append(f"(Found by the search for: {'; '.join(found_by[:_FOCUS_SHOWN])}.)")
+            lines.append(p.text)
             found = self.clauses.get(p.position, [])
             if found:
                 lines.append("Clauses to account for:")
@@ -745,6 +762,33 @@ class TranslationJob:
                 if len(out) >= _REFERRED_MAX:
                     return out
         return out
+
+
+# ------------------------------------------------------------------------------------------
+# Triage: a quick read-or-skip for windows no search inside the regulation points to
+# ------------------------------------------------------------------------------------------
+
+
+# The reason a paragraph of a window the triage skipped is set aside with (Deps.set_aside): the
+# check does not list it as uncovered, so the orchestrator does not write it back out of context.
+SKIPPED_BY_TRIAGE = "skipped_by_triage"
+
+
+class Triage(BaseModel):
+    read: bool = Field(
+        description="true unless the window holds nothing the part, its installation or its "
+        "marking could have to meet"
+    )
+    reason: str = Field(description="One sentence: what the window is about.")
+
+
+triage_agent = Agent(
+    name="window-triage",
+    deps_type=Window,
+    output_type=ToolOutput(Triage, name="report_triage"),
+    instructions=(_HERE / "triage.md").read_text(),
+    retries=1,
+)
 
 
 translator_agent = Agent(

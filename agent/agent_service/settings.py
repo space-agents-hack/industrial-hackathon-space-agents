@@ -69,6 +69,30 @@ class Settings(BaseSettings):
     # the dev key (SYS-42). DISPOSITION_SAMPLES=1 in Vercel goes back without a code change.
     disposition_samples: int = Field(default=3, ge=1, le=3)
     disposition_vote: Literal["union", "majority"] = "union"
+    # The scope screen's model (screen_regulations). Not the run's model: the screen reads scope
+    # sections and answers applies, possibly or does_not, and its fixed rules (screen.decide) and
+    # the search ranks decide what is read, so a mid-size model is enough (Clemente, 2026-10-25,
+    # after Certivity's feedback: "the same approach with Sonnet, keeping the guardrails"). Empty,
+    # or a run on the scripted model, means the run's model. Billed as checking: model_usage has no
+    # process of its own for it.
+    screen_model: str = "anthropic:claude-sonnet-5-5"
+    # Inside each regulation to read, code searches once per function and component of the
+    # profile, restricted to that one regulation, and keeps the focus_k best paragraphs of each
+    # search (Certivity, 2026-10-25: "top 10 instead of top 5", and queries from the product's
+    # functions and components that look inside the regulation itself). Those paragraphs are
+    # marked in the window the writers read, so the obligations about the part's own functions
+    # and components are the ones read closely. 10 per query per regulation; with about 20
+    # entries that is up to 200 marked paragraphs per regulation, a few per page of a 15-page
+    # window. 0 turns the search off.
+    focus_k: int = Field(default=10, ge=0, le=50)
+    # Windows that none of those searches points to go first to a quick triage call on this
+    # model, which may skip a window that holds nothing the part could have to meet (a test
+    # procedure, a form, another kind of device). Windows a search points to are always read.
+    # Empty means no triage: every window is read, as before. Why a mid-size model and not the
+    # writer's: it answers read or skip for a window, it writes nothing, and a skipped window
+    # saves three of the writer's calls (disposition_samples). Why Sonnet and not Haiku: a wrong
+    # skip loses every requirement of the window, and under F2 a miss costs about four extras.
+    triage_model: str = "anthropic:claude-sonnet-5-5"
     # Translator calls in flight at once, in their own lane beside the writer_concurrency lane of
     # the per-window calls. In one shared lane every window's first stage queued ahead of every
     # translation, so the translations ran in rounds after all of them, and the first two-stage

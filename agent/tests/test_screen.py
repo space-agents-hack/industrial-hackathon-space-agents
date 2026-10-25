@@ -216,7 +216,9 @@ def test_the_fixed_rules_read_named_applies_and_possibly_and_apply_rule_3() -> N
     assert [d.regulation for d in shadow if d.rule3] == ["UN R903"]
 
 
-async def _screen(store, settings, monkeypatch, failing: str | None = None):
+async def _screen(
+    store, settings, monkeypatch, failing: str | None = None, own_model: bool = False
+):
     """A screen over four made-up regulations and a one-component profile. `failing` is a query
     whose search raises."""
     search = TextSearch(store)
@@ -285,7 +287,16 @@ async def _screen(store, settings, monkeypatch, failing: str | None = None):
             return await real(deps, http, query, k)
 
         monkeypatch.setattr(tools, "_search", search_or_fail)
-    ctx = SimpleNamespace(deps=d, model=FunctionModel(judge), usage=RunUsage())
+    run_model = FunctionModel(judge)
+    if own_model:
+        # SCREEN_MODEL: the screen's own model judges; the run's model is never asked.
+        d.screen_model = run_model
+
+        def never(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            raise AssertionError("the run's model screened")
+
+        run_model = FunctionModel(never)
+    ctx = SimpleNamespace(deps=d, model=run_model, usage=RunUsage())
     result = await tools.screen_regulations(ctx)  # pyright: ignore[reportArgumentType]
     return result, d, search, shown
 
@@ -322,3 +333,15 @@ async def test_a_failed_search_puts_rule_3_back_in_shadow(store, settings, monke
     assert {"UN R902", "UN R903"} <= {r["regulation"] for r in result["to_read"]}
     rule3 = [e for e in store.payloads(d.run.id, "text") if "Rule 3" in e["text"]]
     assert rule3 and "shadow" in rule3[0]["text"]
+
+
+async def test_the_screen_runs_on_its_own_model_with_the_same_rules(
+    store, settings, monkeypatch
+) -> None:
+    # Clemente, 2026-10-25: the same screen on Sonnet, keeping the guardrails (the fixed rules).
+    on_run_model, *_ = await _screen(store, settings, monkeypatch)
+    store.runs.clear()
+    on_own_model, *_ = await _screen(store, settings, monkeypatch, own_model=True)
+
+    assert on_own_model["not_screened"] == []
+    assert on_own_model["to_read"] == on_run_model["to_read"]

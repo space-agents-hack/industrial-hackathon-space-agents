@@ -330,7 +330,9 @@ async def _run_agent(
         conversation=plan.conversation,
         deferred_tool_results=deferred_results,
         model=model,
-        deps=await domain.prepare_deps(store, plan.run, settings, meter),
+        deps=await domain.prepare_deps(
+            store, plan.run, settings, meter, model_name=plan.config.model
+        ),
         usage_limits=UsageLimits(request_limit=plan.config.max_model_requests),
         event_stream_handler=record,
         # Each orchestrator turn re-sends the case (with its page images), the library and every

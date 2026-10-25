@@ -35,6 +35,10 @@ How to work:
    combines, replaces or takes over that regulation's provisions, or that regulation says
    approvals to it are no longer granted; and the case files do not name the one you leave out.
    Name the evidence for each one you leave out. With no such evidence, keep both.
+   Inside each regulation, code searches for every function and component of the profile and
+   marks what it finds for the writers. A window no search found anything in may be skipped by a
+   quick triage, listed in `skipped_windows`: that is not a failure, and its paragraphs are not
+   listed as uncovered. Write one again only if the case shows it holds an obligation of the part.
 5. `check_requirements`. Then:
    - reject with `reject_requirements` what the check marks `reject`, unless the paragraph shows
      the check is wrong;

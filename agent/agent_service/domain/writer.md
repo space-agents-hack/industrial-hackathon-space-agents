@@ -5,6 +5,13 @@ intended vehicles and markets), the product profile stated from it, and then a w
 consecutive paragraphs of one regulation.
 Each paragraph starts with its number in brackets, `[#n]`, then its label and page.
 
+Some paragraphs carry a line "(Found by the search for: ...)": a search for that function or
+component of the product profile, run inside this regulation, returned the paragraph. Those are
+where the part's own obligations most likely are: read them, and the paragraphs around them that
+give their subject and conditions, with particular care. A mark is not a verdict: judge every
+clause on its text, and judge a paragraph without a mark the same way, since a search misses
+obligations worded differently from the profile.
+
 Regulations are written by lawyers, not engineers: an obligation is often split over a heading, a
 lead-in and a list, has its subject several paragraphs above, sits in a table, or is a bare
 "Operating temperature: -40 °C to +85 °C" under a heading. Your job is to interpret that legal

@@ -774,3 +774,91 @@ async def rank_regulations(
         meter=meter,
     )
     return rank_hits(hits)
+
+
+# ------------------------------------------------------------------------------------------
+# Searching inside each regulation to read (Certivity's feedback, 2026-10-25)
+# ------------------------------------------------------------------------------------------
+
+
+@dataclass
+class Focus:
+    """What the searches inside the regulations to read found: per paragraph, the profile
+    entries whose search returned it; and what could not be searched, as sentences."""
+
+    found: dict[UUID, list[str]] = field(default_factory=dict[UUID, list[str]])
+    problems: list[str] = field(default_factory=list[str])
+    words_only: str | None = None
+
+
+async def focus(
+    store: SearchStore,
+    http: httpx.AsyncClient,
+    settings: Settings,
+    org: UUID,
+    queries: Sequence[tuple[str, str]],
+    version_ids: Sequence[UUID],
+    *,
+    k: int,
+    meter: Meter | None = None,
+    concurrency: int = 6,
+) -> Focus:
+    """One hybrid search per (profile entry, query) inside each version alone, keeping its `k`
+    best paragraphs.
+
+    Why inside each version and not once over all of them: across the library a long regulation
+    that names a component on many pages fills the first places, and a short one's paragraph
+    about the same component is ranked past k (see RRF_K above). Searched alone, every regulation
+    to read gives its own best k for every function and component.
+
+    All queries are embedded in one request; then one database call per (query, version). A
+    search by meaning the database cancels for time is run again by words. With no embedding key
+    every search is by words, and `words_only` says why.
+
+    What this does NOT do: decide what is read. The caller marks the paragraphs in the windows
+    and reads every window a search points to."""
+    out = Focus()
+    if k <= 0 or not queries or not version_ids:
+        return out
+    model = await embedding_model_for(store, settings, org)
+    texts = [q[:24000] for _, q in queries]
+    vectors: list[list[float] | None] = [None] * len(texts)
+    try:
+        api_key, credential = await _embedding_key(store, org, model)
+        if not api_key:
+            raise EmbeddingError(f"no {model.provider} key is connected to embed the query")
+        own = meter or Meter(org)
+        for start in range(0, len(texts), _MAX_INPUTS):
+            batch = texts[start : start + _MAX_INPUTS]
+            got = await embed(
+                http, model, api_key, batch, meter=own, process="search", credential=credential
+            )
+            vectors[start : start + len(batch)] = got
+        if meter is None:
+            await own.flush(store)
+    except (EmbeddingError, ValueError, httpx.HTTPError) as exc:
+        out.words_only = str(exc).rstrip(".") or type(exc).__name__
+        vectors = [None] * len(texts)
+    lane = asyncio.Semaphore(concurrency)
+
+    async def one(i: int, version_id: UUID) -> tuple[int, list[Hit]]:
+        query, vector = texts[i], vectors[i]
+        async with lane:
+            try:
+                return i, await store.match(org, query, vector, model.key, [version_id], k)
+            except SearchTimeout:
+                if vector is None:
+                    raise
+                return i, await store.match(org, query, None, model.key, [version_id], k)
+
+    pairs = [(i, v) for i in range(len(texts)) for v in dict.fromkeys(version_ids)]
+    results = await asyncio.gather(*(one(i, v) for i, v in pairs), return_exceptions=True)
+    for (i, _), result in zip(pairs, results, strict=True):
+        if isinstance(result, BaseException):
+            out.problems.append(f"{queries[i][0]!r}: {type(result).__name__}: {result}"[:200])
+            continue
+        for hit in result[1]:
+            entries = out.found.setdefault(hit.paragraph_id, [])
+            if queries[i][0] not in entries:
+                entries.append(queries[i][0])
+    return out

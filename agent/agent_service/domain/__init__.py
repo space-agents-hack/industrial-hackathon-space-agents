@@ -47,10 +47,16 @@ agent = Agent(
 
 
 async def prepare_deps(
-    store: RunStore, run: Run, settings: Settings, meter: Meter | None = None
+    store: RunStore,
+    run: Run,
+    settings: Settings,
+    meter: Meter | None = None,
+    model_name: str | None = None,
 ) -> Deps:
     """What a run's tools need from the database, read once when the request starts. `meter` is
-    the run's: the check model and the search vectors are billed to it."""
+    the run's: the check model and the search vectors are billed to it. `model_name` is the run's
+    model; on a provider's model the screen and the window triage get their own (settings
+    screen_model, triage_model), and without it (scripted, tests) they run on the run's."""
     # Taken first: the runner's run_timeout_s started just before this request, so the reads
     # below already count against it.
     deadline = asyncio.get_running_loop().time() + settings.run_timeout_s
@@ -74,6 +80,11 @@ async def prepare_deps(
             name,
             Credential.for_model(name, check_secret, endpoint.root() if endpoint else None),
         )
+    screen_model = triage_model = None
+    side_secrets: list[str] = []
+    if model_name and model_name != "scripted":
+        screen_model = await _side_model(store, run, settings.screen_model, meter, side_secrets)
+        triage_model = await _side_model(store, run, settings.triage_model, meter, side_secrets)
     team_id, case_name = await submission_ids(store, run)
     parts, chosen = [], None
     if run.case_id is not None:
@@ -91,11 +102,37 @@ async def prepare_deps(
         settings=settings,
         check_model=check_model,
         check_secret=check_secret,
+        screen_model=screen_model,
+        triage_model=triage_model,
+        side_secrets=side_secrets,
         chosen=chosen,
         reference=reference,
         concurrency=settings.writer_concurrency,
         meter=meter,
         deadline=deadline,
+    )
+
+
+async def _side_model(
+    store: RunStore, run: Run, name: str, meter: Meter | None, secrets: list[str]
+) -> Model | str | None:
+    """A model for a side step (screen, triage), billed as checking: model_usage has no process of
+    its own for them. None for an empty name: the step then runs on the run's model, or not at
+    all (the triage)."""
+    if not name.strip():
+        return None
+    # Imported here: providers imports this package (resolve_model).
+    from agent_service import providers
+
+    secret, endpoint = await providers.credentials(store, run.organization_id, name)
+    if secret:
+        secrets.append(secret)
+    return metered(
+        providers.build_model(name, secret, endpoint),
+        meter,
+        "check",
+        name,
+        Credential.for_model(name, secret, endpoint.root() if endpoint else None),
     )
 
 
