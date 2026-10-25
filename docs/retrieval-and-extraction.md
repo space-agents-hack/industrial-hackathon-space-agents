@@ -67,7 +67,10 @@ chance, without the answer key. Two samples double the first stage: watch the 77
   than a plain one. RAFT (Xue et al. 2026), a regulation-to-requirement pipeline, votes 2 of 3
   where precision matters and takes the union where recall matters. **Built** as an option:
   `DISPOSITION_SAMPLES`, `DISPOSITION_VOTE` (de37a98). On by default since 2026-10-25: 3 samples,
-  majority, to cut the excess on the dev run (457 requirements for 190 expected).
+  majority at first, to cut the excess on the dev run (457 requirements for 190 expected). Union
+  since 04:04 UTC (Ramón): with majority, the dev run's requirements on the key's paragraphs fell
+  from 171 to 148, mostly second and third obligations of a paragraph. Under F2 that trade
+  loses, so the extras are cut by the prompt rules of 206f50b instead.
 - **Tables are the hard part of PDF parsing**, as Certivity's partners said. In PDF-Bench (Dec
   2025, 17 parsers, 353 documents) the table score (TEDS) was pdfplumber 93.4%, pymupdf4llm 84.8%,
   Docling 84.5%. On PDFs with a real text layer, as ours have, a small pure-Python library beats

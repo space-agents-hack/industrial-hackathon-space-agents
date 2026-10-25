@@ -55,9 +55,12 @@ class Settings(BaseSettings):
     writer_stages: Literal["one", "two"] = "two"
     # Answers of the disposition agent per window, merged by vote (writer.vote_dispositions;
     # research doc retrieval-extraction-research.md, proposal 1). 1 is one answer and no vote.
-    # 3 with "majority", the default since 2026-10-25 (Clemente): of the dev run's 457
-    # requirements about 270 have no counterpart in the key's counts, so precision is the lever,
-    # and 2 of 3 is the vote fixed in advance in the research doc, not one picked on the dev key.
+    # 3 samples, "union" (Ramón, 2026-10-25 04:04 UTC; it was "majority" from 03:35, Clemente).
+    # Why union: on the dev run with majority, the requirements on the key's paragraphs fell from
+    # 171 to 148, mostly the second and third obligation of a paragraph, which only some answers
+    # keep. Under F2 one more match is worth about eight extras, so a vote that cuts recall to
+    # cut extras loses. The extras are cut by the prompt rules instead (206f50b). One run per
+    # setting, so run-to-run noise is not separated: the next uploads settle it (#54).
     # 2 or 3 make that many calls per window in the same lane, so the first stage takes about
     # that many times longer: watch run_timeout_s. The trace counts units kept by every sample
     # and by only some: the agreement rate, measured without the answer key. The vote: "union"
@@ -65,7 +68,7 @@ class Settings(BaseSettings):
     # with 2 samples that is both). Which one pays is settled by platform uploads, not tuned on
     # the dev key (SYS-42). DISPOSITION_SAMPLES=1 in Vercel goes back without a code change.
     disposition_samples: int = Field(default=3, ge=1, le=3)
-    disposition_vote: Literal["union", "majority"] = "majority"
+    disposition_vote: Literal["union", "majority"] = "union"
     # Translator calls in flight at once, in their own lane beside the writer_concurrency lane of
     # the per-window calls. In one shared lane every window's first stage queued ahead of every
     # translation, so the translations ran in rounds after all of them, and the first two-stage
