@@ -471,6 +471,7 @@ async def write_requirements(ctx: RunContext[Deps], regulations: list[str]) -> d
         jobs += writer.windows(version, paragraphs)
     if not jobs:
         raise ModelRetry("Nothing to write. " + " ".join(refused))
+    jobs = writer.queue_order(jobs)
 
     await _progress(
         deps,

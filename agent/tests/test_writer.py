@@ -69,6 +69,31 @@ def test_a_paragraph_longer_than_a_window_is_a_window_of_its_own() -> None:
     assert [[p.position for p in w.paragraphs] for w in cut] == [[0], [1], [2]]
 
 
+def test_main_text_of_every_regulation_starts_before_any_annex() -> None:
+    # A run that reaches its write reserve loses the windows not yet started: annex tails, not
+    # the whole of the regulations named last.
+    a, b = version("UN R1"), version("UN R2")
+    a_main = [writer.Window(a, [paragraph(i, i)]) for i in range(3)]
+    a_annex = [writer.Window(a, [paragraph(9, 9, label="Annex 3 1.2")])]
+    b_main = [writer.Window(b, [paragraph(0, 1)])]
+    b_annex = [
+        writer.Window(b, [paragraph(5, 5, label="Appendix 2 1")]),
+        writer.Window(b, [paragraph(6, 6, label="Annex 1 Part 1 2")]),
+    ]
+
+    queued = writer.queue_order([*a_main, *a_annex, *b_main, *b_annex])
+
+    assert queued == [
+        a_main[0],
+        b_main[0],
+        a_main[1],
+        a_main[2],
+        a_annex[0],
+        b_annex[0],
+        b_annex[1],
+    ]
+
+
 def test_the_window_shows_numbers_labels_pages_and_headings() -> None:
     p = paragraph(7, 12, "5.4.2. The lamp shall be red.", label="5.4.2")
     p = p.model_copy(update={"heading": "5. General"})

@@ -195,6 +195,35 @@ def windows(
     return out
 
 
+def _in_annex(p: Paragraph) -> bool:
+    # Labels and headings of annex text start with "Annex" (paragraphs.Paragraph.label/heading);
+    # appendices printed after the main text, before the annexes, with "Appendix".
+    return (p.label or p.heading).startswith(("Annex", "Appendix"))
+
+
+def queue_order(jobs: Sequence[Window]) -> list[Window]:
+    """The order windows start in: every regulation's main text before any annex, and inside each
+    of the two, one window of each regulation in turn.
+
+    Why: windows start in this order and none starts once the write reserve is reached, so on a
+    run that runs short the last ones are lost. In the order the regulations were named, that was
+    every window of the last regulations, so whole regulations went missing from the file. This
+    way a slow run loses annex tails first:
+    mostly test procedures and forms, the clauses the disposition sets aside as test_method most
+    often. When the run fits, the order changes nothing but the sequence. A window that starts in
+    the main text counts as main text."""
+    groups: dict[UUID, tuple[list[Window], list[Window]]] = {}
+    for w in jobs:
+        main, annex = groups.setdefault(w.version.id, ([], []))
+        (annex if _in_annex(w.paragraphs[0]) else main).append(w)
+    out: list[Window] = []
+    for part in (0, 1):
+        lanes = [g[part] for g in groups.values()]
+        for i in range(max((len(lane) for lane in lanes), default=0)):
+            out += [lane[i] for lane in lanes if i < len(lane)]
+    return out
+
+
 def citable_version(versions: Sequence[LibraryVersion], regulation: str) -> LibraryVersion:
     """The version a main-goal requirement cites: the one the index calls `base`, or the only one.
 
