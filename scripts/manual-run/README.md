@@ -17,8 +17,13 @@ for replaceable light sources the brief excluded).
 |---|---|---|
 | run-000b5f2 | none (259) | 0.600 |
 | run-90e5c3b | side direction-indicator reading, REESS charging (29) | 0.580: the 29 matched nothing |
-| run-<this commit> | replaceable light-source and module rules, aerials, lower legform tolerances (29) | pending |
+| run-d32c3db | replaceable light-source and module rules, aerials, lower legform tolerances (29) | 0.670: about 19 of the 29 matched |
+| run-<this commit> | run-d32c3db's 29 plus: light-source technology alternatives, "D"/"Y" letters, variable intensity control, Annex 8 reference, GTR 9 headform limits (44) | pending |
 
 Why the third: on the dev case the experts wrote the "in case of replaceable light source
 modules" obligations although the case did not show replaceable modules; the brief left them out.
 The bumper carries a keyless-entry aerial; the brief read the aerial rules as outside aerials only.
+
+Why the fourth: d32c3db showed the brief's assumptions (LED fitted, not replaceable) cut real
+items. Its siblings are the incandescent / other-technology photometry rules and the general
+markings the brief set aside; the headform limits are the one test the brief cut as bonnet-only.
