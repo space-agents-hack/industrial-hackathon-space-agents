@@ -1,0 +1,71 @@
+name: Demo organisation
+
+# A read-only copy of one organisation's library, one project's case and some of its runs, for
+# people who should explore the product without changing anything or spending model money (#59,
+# SYS-47). Run by hand from the Actions tab. Through psql because GitHub holds the database
+# password, not the API's secret key, as for Certivity's reference files in deploy.yml.
+#
+#   inventory  reads only: what the source holds, so the copy is chosen from facts.
+#
+# Shares the release queue: a copy never runs while migrations are being applied.
+
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        description: What to do
+        type: choice
+        options: [inventory]
+        default: inventory
+      source:
+        description: Organisation to copy from (its name)
+        default: team-09
+      case_like:
+        description: Case or project name pattern (SQL ILIKE)
+        default: "%rear-lamp%"
+      email:
+        description: Demo account's email
+        default: demo@certivity.demo
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+jobs:
+  demo:
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 20
+    environment: production
+    env:
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_POOLER_URL: ${{ vars.SUPABASE_POOLER_URL }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Database address
+        shell: bash
+        run: |
+          # The same rule as the release: the password goes only to this project's pooler.
+          if [[ ! "$SUPABASE_POOLER_URL" =~ ^postgresql://postgres\.${SUPABASE_PROJECT_REF}@[a-z0-9.-]+\.pooler\.supabase\.com:[0-9]+/[a-z_]+$ ]]; then
+            echo "::error::SUPABASE_POOLER_URL is not this project's Supabase pooler."
+            exit 1
+          fi
+          db_url="$(python3 -c 'import os, urllib.parse as u; a = os.environ["SUPABASE_POOLER_URL"]; print(a.replace("@", ":" + u.quote(os.environ["SUPABASE_DB_PASSWORD"], safe="") + "@", 1))')"
+          echo "::add-mask::$db_url"
+          echo "DB_URL=$db_url" >> "$GITHUB_ENV"
+
+      - name: Inventory
+        shell: bash
+        env:
+          SOURCE: ${{ inputs.source }}
+          CASE_LIKE: ${{ inputs.case_like }}
+          EMAIL: ${{ inputs.email }}
+        run: |
+          out="$RUNNER_TEMP/inventory.txt"
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -v source="$SOURCE" -v case_like="$CASE_LIKE" \
+            -v email="$EMAIL" -f scripts/demo-org-inventory.sql | tee "$out"
+          { echo '```'; cat "$out"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
